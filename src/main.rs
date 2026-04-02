@@ -4,6 +4,10 @@ use winit::event_loop::EventLoop;
 
 fn main() -> Result<(), EventLoopError> {
     let event_loop = EventLoop::new()?;
-    let mut app = Screen::default();
-    event_loop.run_app(&mut app)
+    const WIDTH: u32 = 320;
+    const HEIGHT: u32 = 200;
+    let framebuffer = vec![0xAAFFFFEE; (WIDTH * HEIGHT) as usize];
+    let mut screen = Screen::new(WIDTH);
+    screen.update_framebuffer(&framebuffer);
+    event_loop.run_app(&mut screen)
 }
