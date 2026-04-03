@@ -1,9 +1,20 @@
-#[derive(Default)]
-pub struct VIC {
+use crate::memory::Memory;
+use crate::screen::PAL_HEIGHT;
+use crate::screen::PAL_WIDTH;
+
+pub struct VIC<'a> {
     registers: [u8; 16],
+    memory: &'a Memory,
 }
 
-impl VIC {
+impl<'a> VIC<'a> {
+    pub fn new(memory: &'a Memory) -> Self {
+        Self {
+            registers: [0; 16],
+            memory,
+        }
+    }
+
     pub fn border_colour(&self) -> u8 {
         self.registers[0xF] & 0x0F
     }
@@ -12,32 +23,31 @@ impl VIC {
         self.registers[0x0F] = value & 0x0F;
     }
 
-    pub fn render_frame(
-        &self,
-        screen_ram: &[u8],         // 22x23 = 506 bytes
-        color_ram: &[u8],          // 22x23 = 506 bytes
-        char_rom: &[[u8; 8]; 256], // 256 chars, 8 rows each
-    ) -> Vec<u32> {
-        let width = 176;
-        let height = 184;
+    pub fn render_frame(&self) -> Vec<u32> {
+        let screen_ram = &self.memory.bytes[0x1E00..0x2000];
+        let color_ram = &self.memory.bytes[0x9400..0x9800];
+        let char_rom = &self.memory.bytes[0x8000..0x9000];
+        let width = PAL_WIDTH;
+        let height = PAL_HEIGHT;
         let mut framebuffer = Vec::with_capacity(width * height);
         let border_color = self.registers[0x0F] & 0x0F;
         let background_color = self.registers[0x0E] & 0x0F;
         for y in 0..height {
             for x in 0..width {
-                if self.is_border(x, y) {
-                    framebuffer.push(self.palette(border_color));
+                let colour_index = if self.is_border(x, y) {
+                    border_color
                 } else {
                     let row = y / 8;
                     let col = x / 8;
                     let idx = row * 22 + col;
                     let char_code = screen_ram[idx];
                     let fg_color = color_ram[idx] & 0x0F;
-                    let bitmap_row = char_rom[char_code as usize][y % 8];
+                    let bitmap_row =
+                        &char_rom[char_code as usize * 8..(char_code as usize + 1) * 8][y % 8];
                     let bit = (bitmap_row >> (7 - (x % 8))) & 1;
-                    let color = if bit == 1 { fg_color } else { background_color };
-                    framebuffer.push(self.palette(color));
-                }
+                    if bit == 1 { fg_color } else { background_color }
+                };
+                framebuffer.push(self.palette(colour_index));
             }
         }
         framebuffer

@@ -3,6 +3,10 @@ use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowId};
+use winit::dpi::LogicalSize;
+
+pub const PAL_WIDTH: usize = 312;
+pub const PAL_HEIGHT: usize = 312;
 
 #[derive(Default)]
 pub struct Screen {
@@ -13,8 +17,11 @@ pub struct Screen {
 }
 
 impl Screen {
-    pub fn new(width: u32) -> Self {
-        Self { width, ..Default::default() }
+    pub fn new() -> Self {
+        Self {
+            width: PAL_WIDTH as u32,
+            ..Default::default()
+        }
     }
 
     pub fn update_framebuffer(&mut self, framebuffer: &Vec<u32>) {
@@ -27,7 +34,9 @@ impl Screen {
         };
 
         let frame = pixels.frame_mut();
-        let chunks = frame.chunks_exact_mut(4).zip(self.framebuffer.iter().copied());
+        let chunks = frame
+            .chunks_exact_mut(4)
+            .zip(self.framebuffer.iter().copied());
         for (pixel, rgba) in chunks {
             pixel.copy_from_slice(&rgba.to_be_bytes());
         }
@@ -42,8 +51,11 @@ impl ApplicationHandler for Screen {
             return;
         }
 
+        let attributes = Window::default_attributes()
+            .with_title("Vic 20 Emulator")
+            .with_inner_size(LogicalSize::new(800.0, 600.0));
         let window = event_loop
-            .create_window(Window::default_attributes().with_title("Vic 20 Cyan Screen"))
+            .create_window(attributes)
             .expect("failed to create window");
 
         // Pixels borrows the window for app lifetime, so keep it alive to shutdown.
@@ -78,7 +90,7 @@ impl ApplicationHandler for Screen {
             }
             WindowEvent::Resized(size) => {
                 if let Some(pixels) = self.pixels.as_mut() {
-                    let _ = pixels.resize_surface(size.width, size.height);
+                    pixels.resize_surface(size.width, size.height).expect("Failed to resize");
                 }
             }
             _ => {}
