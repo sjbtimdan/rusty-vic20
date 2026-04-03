@@ -1,9 +1,9 @@
 use pixels::{Pixels, SurfaceTexture};
 use winit::application::ApplicationHandler;
+use winit::dpi::LogicalSize;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowId};
-use winit::dpi::LogicalSize;
 
 pub const PAL_WIDTH: usize = 312;
 pub const PAL_HEIGHT: usize = 312;
@@ -90,7 +90,9 @@ impl ApplicationHandler for Screen {
             }
             WindowEvent::Resized(size) => {
                 if let Some(pixels) = self.pixels.as_mut() {
-                    pixels.resize_surface(size.width, size.height).expect("Failed to resize");
+                    pixels
+                        .resize_surface(size.width, size.height)
+                        .expect("Failed to resize");
                 }
             }
             _ => {}

@@ -1,4 +1,4 @@
-use crate::memory::Memory;
+use crate::memory::*;
 use crate::screen::PAL_HEIGHT;
 use crate::screen::PAL_WIDTH;
 
@@ -24,9 +24,9 @@ impl<'a> VIC<'a> {
     }
 
     pub fn render_frame(&self) -> Vec<u32> {
-        let screen_ram = &self.memory.bytes[0x1E00..0x2000];
-        let color_ram = &self.memory.bytes[0x9400..0x9800];
-        let char_rom = &self.memory.bytes[0x8000..0x9000];
+        let screen_ram = &self.memory.bytes[SCREEN_RAM_START..SCREEN_RAM_END + 1];
+        let color_ram = &self.memory.bytes[COLOUR_RAM_START..COLOUR_RAM_END + 1];
+        let char_rom = &self.memory.bytes[CHARACTER_ROM_START..CHARACTER_ROM_END + 1];
         let width = PAL_WIDTH;
         let height = PAL_HEIGHT;
         let mut framebuffer = Vec::with_capacity(width * height);
