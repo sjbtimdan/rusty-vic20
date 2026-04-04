@@ -53,159 +53,94 @@ impl Registers {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::{fixture, rstest};
 
-    #[test]
-    fn test_default_registers() {
-        let regs = Registers::default();
-        assert_eq!(regs.a, 0);
-        assert_eq!(regs.x, 0);
-        assert_eq!(regs.y, 0);
-        assert_eq!(regs.sp, 0);
-        assert_eq!(regs.pc, 0);
-        assert_eq!(regs.status, 0);
+    #[fixture]
+    fn registers() -> Registers {
+        Registers::default()
     }
 
-    #[test]
-    fn test_set_accumulator_nonzero() {
-        let mut regs = Registers::default();
-        regs.set_accumulator(0x42);
-        assert_eq!(regs.a, 0x42);
-        assert!(!regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be clear");
+    #[rstest]
+    fn test_default_registers(registers: Registers) {
+        assert_eq!(registers.a, 0);
+        assert_eq!(registers.x, 0);
+        assert_eq!(registers.y, 0);
+        assert_eq!(registers.sp, 0);
+        assert_eq!(registers.pc, 0);
+        assert_eq!(registers.status, 0);
+    }
+
+    #[rstest]
+    #[case(0x42, false, false)]
+    #[case(0x00, true, false)]
+    #[case(0x80, false, true)]
+    fn test_set_accumulator(mut registers: Registers, #[case] value: u8, #[case] zero: bool, #[case] negative: bool) {
+        registers.set_accumulator(value);
+        assert_eq!(registers.a, value);
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    fn test_set_accumulator_clears_flags(mut registers: Registers) {
+        registers.set_accumulator(0x00);
+        registers.set_accumulator(0x01);
+        assert!(!registers.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be cleared");
         assert!(
-            !regs.is_flag_set(NEGATIVE_FLAG_BITMASK),
-            "negative flag should be clear"
-        );
-    }
-
-    #[test]
-    fn test_set_accumulator_zero_sets_zero_flag() {
-        let mut regs = Registers::default();
-        regs.set_accumulator(0x00);
-        assert_eq!(regs.a, 0x00);
-        assert!(regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be set");
-        assert!(
-            !regs.is_flag_set(NEGATIVE_FLAG_BITMASK),
-            "negative flag should be clear"
-        );
-    }
-
-    #[test]
-    fn test_set_accumulator_negative_sets_negative_flag() {
-        let mut regs = Registers::default();
-        regs.set_accumulator(0x80);
-        assert_eq!(regs.a, 0x80);
-        assert!(!regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be clear");
-        assert!(regs.is_flag_set(NEGATIVE_FLAG_BITMASK), "negative flag should be set");
-    }
-
-    #[test]
-    fn test_set_accumulator_clears_flags_on_positive_after_zero() {
-        let mut regs = Registers::default();
-        regs.set_accumulator(0x00);
-        regs.set_accumulator(0x01);
-        assert!(!regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be cleared");
-        assert!(
-            !regs.is_flag_set(NEGATIVE_FLAG_BITMASK),
+            !registers.is_flag_set(NEGATIVE_FLAG_BITMASK),
             "negative flag should be cleared"
         );
     }
 
-    #[test]
-    fn test_set_and_is_break_flag() {
-        let mut regs = Registers::default();
-        regs.set_flag(BREAK_FLAG_BITMASK, true);
-        assert!(regs.is_flag_set(BREAK_FLAG_BITMASK), "break flag should be set");
-        regs.set_flag(BREAK_FLAG_BITMASK, false);
-        assert!(!regs.is_flag_set(BREAK_FLAG_BITMASK), "break flag should be clear");
+    #[rstest]
+    #[case(0x42, false, false)]
+    #[case(0x00, true, false)]
+    #[case(0x80, false, true)]
+    fn test_set_x(mut registers: Registers, #[case] value: u8, #[case] zero: bool, #[case] negative: bool) {
+        registers.set_x(value);
+        assert_eq!(registers.x, value);
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
     }
 
-    #[test]
-    fn test_set_x_nonzero() {
-        let mut regs = Registers::default();
-        regs.set_x(0x42);
-        assert_eq!(regs.x, 0x42);
-        assert!(!regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be clear");
+    #[rstest]
+    fn test_set_x_clears_flags(mut registers: Registers) {
+        registers.set_x(0x00);
+        registers.set_x(0x01);
+        assert!(!registers.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be cleared");
         assert!(
-            !regs.is_flag_set(NEGATIVE_FLAG_BITMASK),
-            "negative flag should be clear"
-        );
-    }
-
-    #[test]
-    fn test_set_x_zero_sets_zero_flag() {
-        let mut regs = Registers::default();
-        regs.set_x(0x00);
-        assert_eq!(regs.x, 0x00);
-        assert!(regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be set");
-        assert!(
-            !regs.is_flag_set(NEGATIVE_FLAG_BITMASK),
-            "negative flag should be clear"
-        );
-    }
-
-    #[test]
-    fn test_set_x_negative_sets_negative_flag() {
-        let mut regs = Registers::default();
-        regs.set_x(0x80);
-        assert_eq!(regs.x, 0x80);
-        assert!(!regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be clear");
-        assert!(regs.is_flag_set(NEGATIVE_FLAG_BITMASK), "negative flag should be set");
-    }
-
-    #[test]
-    fn test_set_x_clears_flags_on_positive_after_zero() {
-        let mut regs = Registers::default();
-        regs.set_x(0x00);
-        regs.set_x(0x01);
-        assert!(!regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be cleared");
-        assert!(
-            !regs.is_flag_set(NEGATIVE_FLAG_BITMASK),
+            !registers.is_flag_set(NEGATIVE_FLAG_BITMASK),
             "negative flag should be cleared"
         );
     }
 
-    #[test]
-    fn test_set_y_nonzero() {
-        let mut regs = Registers::default();
-        regs.set_y(0x42);
-        assert_eq!(regs.y, 0x42);
-        assert!(!regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be clear");
-        assert!(
-            !regs.is_flag_set(NEGATIVE_FLAG_BITMASK),
-            "negative flag should be clear"
-        );
+    #[rstest]
+    #[case(0x42, false, false)]
+    #[case(0x00, true, false)]
+    #[case(0x80, false, true)]
+    fn test_set_y(mut registers: Registers, #[case] value: u8, #[case] zero: bool, #[case] negative: bool) {
+        registers.set_y(value);
+        assert_eq!(registers.y, value);
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
     }
 
-    #[test]
-    fn test_set_y_zero_sets_zero_flag() {
-        let mut regs = Registers::default();
-        regs.set_y(0x00);
-        assert_eq!(regs.y, 0x00);
-        assert!(regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be set");
+    #[rstest]
+    fn test_set_y_clears_flags(mut registers: Registers) {
+        registers.set_y(0x00);
+        registers.set_y(0x01);
+        assert!(!registers.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be cleared");
         assert!(
-            !regs.is_flag_set(NEGATIVE_FLAG_BITMASK),
-            "negative flag should be clear"
-        );
-    }
-
-    #[test]
-    fn test_set_y_negative_sets_negative_flag() {
-        let mut regs = Registers::default();
-        regs.set_y(0x80);
-        assert_eq!(regs.y, 0x80);
-        assert!(!regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be clear");
-        assert!(regs.is_flag_set(NEGATIVE_FLAG_BITMASK), "negative flag should be set");
-    }
-
-    #[test]
-    fn test_set_y_clears_flags_on_positive_after_zero() {
-        let mut regs = Registers::default();
-        regs.set_y(0x00);
-        regs.set_y(0x01);
-        assert!(!regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be cleared");
-        assert!(
-            !regs.is_flag_set(NEGATIVE_FLAG_BITMASK),
+            !registers.is_flag_set(NEGATIVE_FLAG_BITMASK),
             "negative flag should be cleared"
         );
+    }
+
+    #[rstest]
+    fn test_set_and_is_break_flag(mut registers: Registers) {
+        registers.set_flag(BREAK_FLAG_BITMASK, true);
+        assert!(registers.is_flag_set(BREAK_FLAG_BITMASK), "break flag should be set");
+        registers.set_flag(BREAK_FLAG_BITMASK, false);
+        assert!(!registers.is_flag_set(BREAK_FLAG_BITMASK), "break flag should be clear");
     }
 }

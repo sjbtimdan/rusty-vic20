@@ -29,6 +29,9 @@ pub fn execute_instruction(
 
 #[cfg(test)]
 mod tests {
+    use rstest::fixture;
+    use rstest::rstest;
+
     use super::*;
     use crate::cpu::instructions::{AddressingMode, Instruction, InstructionInfo};
     use crate::cpu::registers::{NEGATIVE_FLAG_BITMASK, Registers, ZERO_FLAG_BITMASK};
@@ -40,40 +43,40 @@ mod tests {
         cycles: 2,
     };
 
-    #[test]
-    fn test_lda_immediate() {
-        let mut regs = Registers::default();
-        execute_instruction(&mut regs, &LDA_IMMEDIATE, &[0x42]);
-        assert_eq!(regs.a, 0x42);
+    #[fixture]
+    fn registers() -> Registers {
+        Registers::default()
     }
 
-    #[test]
-    fn test_lda_immediate_sets_zero_flag() {
-        let mut regs = Registers::default();
-        execute_instruction(&mut regs, &LDA_IMMEDIATE, &[0x00]);
-        assert_eq!(regs.a, 0x00);
-        assert!(regs.is_flag_set(ZERO_FLAG_BITMASK)); // zero flag
+    #[fixture]
+    fn memory() -> Memory {
+        Memory::default()
     }
 
-    #[test]
-    fn test_lda_immediate_clears_zero_flag() {
-        let mut regs = Registers::default();
-        execute_instruction(&mut regs, &LDA_IMMEDIATE, &[0x01]);
-        assert!(!regs.is_flag_set(ZERO_FLAG_BITMASK)); // zero flag cleared
+    #[rstest]
+    fn test_lda_immediate(mut registers: Registers, mut memory: Memory) {
+        execute_instruction(&mut registers, &mut memory, &LDA_IMMEDIATE, &[0x42]);
+        assert_eq!(registers.a, 0x42);
+        assert!(registers.is_flag_set(ZERO_FLAG_BITMASK)); // zero flag
+        assert!(!registers.is_flag_set(NEGATIVE_FLAG_BITMASK)); // negative flag
     }
 
-    #[test]
-    fn test_lda_immediate_sets_negative_flag() {
-        let mut regs = Registers::default();
-        execute_instruction(&mut regs, &LDA_IMMEDIATE, &[0x80]);
-        assert_eq!(regs.a, 0x80);
-        assert!(regs.is_flag_set(NEGATIVE_FLAG_BITMASK)); // negative flag
+    #[rstest]
+    fn test_lda_immediate_clears_zero_flag(mut registers: Registers, mut memory: Memory) {
+        execute_instruction(&mut registers, &mut memory, &LDA_IMMEDIATE, &[0x01]);
+        assert!(!registers.is_flag_set(ZERO_FLAG_BITMASK)); // zero flag cleared
     }
 
-    #[test]
-    fn test_lda_immediate_clears_negative_flag() {
-        let mut regs = Registers::default();
-        execute_instruction(&mut regs, &LDA_IMMEDIATE, &[0x7F]);
-        assert!(!regs.is_flag_set(NEGATIVE_FLAG_BITMASK)); // negative flag cleared
+    #[rstest]
+    fn test_lda_immediate_sets_negative_flag(mut registers: Registers, mut memory: Memory) {
+        execute_instruction(&mut registers, &mut memory, &LDA_IMMEDIATE, &[0x80]);
+        assert_eq!(registers.a, 0x80);
+        assert!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK)); // negative flag
+    }
+
+    #[rstest]
+    fn test_lda_immediate_clears_negative_flag(mut registers: Registers, mut memory: Memory) {
+        execute_instruction(&mut registers, &mut memory, &LDA_IMMEDIATE, &[0x7F]);
+        assert!(!registers.is_flag_set(NEGATIVE_FLAG_BITMASK)); // negative flag cleared
     }
 }
