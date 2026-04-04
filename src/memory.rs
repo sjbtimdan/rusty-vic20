@@ -23,6 +23,10 @@ pub const KERNEL_ROM_START: usize = 0xE000;
 pub const KERNEL_ROM_END: usize = 0xFFFF;
 
 impl Memory {
+    pub fn read_zero_page(&self, address: u8) -> u8 {
+        self.bytes[address as usize]
+    }
+
     fn load_rom(&mut self, data: &[u8], rom_name: &str, start_address: usize, end_address: usize) {
         info!("Loading {} ROM", rom_name);
         let expected_len = end_address - start_address + 1;

@@ -8,14 +8,13 @@ pub struct Registers {
     pub status: u8, // Processor Status
 }
 
-const CARRY_FLAG_BITMASK: u8 = 0x01; // Bit 0 - C
-const ZERO_FLAG_BITMASK: u8 = 0x02; // Bit 1 - Z
-const INTERRUPT_FLAG_BITMASK: u8 = 0x04; // Bit 2 - I
-const DECIMAL_FLAG_BITMASK: u8 = 0x08; // Bit 3 - D
-const BREAK_FLAG_BITMASK: u8 = 0x10; // Bit 4 - B
-const UNUSED_FLAG_BITMASK: u8 = 0x20; // Bit 5 - (always 1 on stack)
-const OVERFLOW_FLAG_BITMASK: u8 = 0x40; // Bit 6 - V
-const NEGATIVE_FLAG_BITMASK: u8 = 0x80; // Bit 7 - N
+pub const CARRY_FLAG_BITMASK: u8 = 0x01; // Bit 0 - C
+pub const ZERO_FLAG_BITMASK: u8 = 0x02; // Bit 1 - Z
+pub const INTERRUPT_FLAG_BITMASK: u8 = 0x04; // Bit 2 - I
+pub const DECIMAL_FLAG_BITMASK: u8 = 0x08; // Bit 3 - D
+pub const BREAK_FLAG_BITMASK: u8 = 0x10; // Bit 4 - B
+pub const OVERFLOW_FLAG_BITMASK: u8 = 0x40; // Bit 6 - V
+pub const NEGATIVE_FLAG_BITMASK: u8 = 0x80; // Bit 7 - N
 
 impl Registers {
     pub fn set_flag(&mut self, flag_bitmask: u8, condition: bool) {
@@ -30,7 +29,7 @@ impl Registers {
         self.status & flag_bitmask != 0
     }
 
-    pub fn set_accoumulator(&mut self, value: u8) {
+    pub fn set_accumulator(&mut self, value: u8) {
         self.a = value;
         self.update_zero_and_negative(value);
     }
@@ -69,7 +68,7 @@ mod tests {
     #[test]
     fn test_set_accumulator_nonzero() {
         let mut regs = Registers::default();
-        regs.set_accoumulator(0x42);
+        regs.set_accumulator(0x42);
         assert_eq!(regs.a, 0x42);
         assert!(!regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be clear");
         assert!(
@@ -81,7 +80,7 @@ mod tests {
     #[test]
     fn test_set_accumulator_zero_sets_zero_flag() {
         let mut regs = Registers::default();
-        regs.set_accoumulator(0x00);
+        regs.set_accumulator(0x00);
         assert_eq!(regs.a, 0x00);
         assert!(regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be set");
         assert!(
@@ -93,7 +92,7 @@ mod tests {
     #[test]
     fn test_set_accumulator_negative_sets_negative_flag() {
         let mut regs = Registers::default();
-        regs.set_accoumulator(0x80);
+        regs.set_accumulator(0x80);
         assert_eq!(regs.a, 0x80);
         assert!(!regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be clear");
         assert!(regs.is_flag_set(NEGATIVE_FLAG_BITMASK), "negative flag should be set");
@@ -102,8 +101,8 @@ mod tests {
     #[test]
     fn test_set_accumulator_clears_flags_on_positive_after_zero() {
         let mut regs = Registers::default();
-        regs.set_accoumulator(0x00);
-        regs.set_accoumulator(0x01);
+        regs.set_accumulator(0x00);
+        regs.set_accumulator(0x01);
         assert!(!regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be cleared");
         assert!(
             !regs.is_flag_set(NEGATIVE_FLAG_BITMASK),
