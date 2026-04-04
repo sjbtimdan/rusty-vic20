@@ -1,4 +1,4 @@
-pub mod cpu6502;
+pub mod cpu;
 pub mod instructions;
 pub mod memory;
 pub mod screen;

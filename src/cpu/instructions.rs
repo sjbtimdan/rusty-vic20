@@ -264,3 +264,20 @@ pub const fn decode(opcode: u8) -> InstructionInfo {
 pub const fn cycles_for(opcode: u8) -> u8 {
     decode(opcode).cycles
 }
+
+pub const fn length_for(mode: AddressingMode) -> usize {
+    return match mode {
+        AddressingMode::Implied | AddressingMode::Accumulator => 1,
+        AddressingMode::Immediate
+        | AddressingMode::ZeroPage
+        | AddressingMode::ZeroPageX
+        | AddressingMode::ZeroPageY
+        | AddressingMode::Relative
+        | AddressingMode::IndexedIndirect
+        | AddressingMode::IndirectIndexed => 2,
+        AddressingMode::Absolute
+        | AddressingMode::AbsoluteX
+        | AddressingMode::AbsoluteY
+        | AddressingMode::Indirect => 3,
+    };
+}
