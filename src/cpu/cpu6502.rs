@@ -25,15 +25,9 @@ impl<'a> CPU6502<'a> {
                 AddressingMode::Immediate => {
                     self.registers.set_accoumulator(operands[0]);
                 }
-                _ => unimplemented!(
-                    "Addressing mode {:?} not implemented for LDA",
-                    instruction.mode
-                ),
+                _ => unimplemented!("Addressing mode {:?} not implemented for LDA", instruction.mode),
             },
-            _ => unimplemented!(
-                "Instruction {:?} not implemented yet",
-                instruction.instruction
-            ),
+            _ => unimplemented!("Instruction {:?} not implemented yet", instruction.instruction),
         }
     }
 }

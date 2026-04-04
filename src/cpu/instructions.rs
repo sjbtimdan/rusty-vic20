@@ -84,12 +84,7 @@ pub struct InstructionInfo {
     pub cycles: u8,
 }
 
-const fn info(
-    opcode: u8,
-    instruction: Instruction,
-    mode: AddressingMode,
-    cycles: u8,
-) -> InstructionInfo {
+const fn info(opcode: u8, instruction: Instruction, mode: AddressingMode, cycles: u8) -> InstructionInfo {
     InstructionInfo {
         opcode,
         instruction,
@@ -275,9 +270,8 @@ pub const fn length_for(mode: AddressingMode) -> usize {
         | AddressingMode::Relative
         | AddressingMode::IndexedIndirect
         | AddressingMode::IndirectIndexed => 2,
-        AddressingMode::Absolute
-        | AddressingMode::AbsoluteX
-        | AddressingMode::AbsoluteY
-        | AddressingMode::Indirect => 3,
+        AddressingMode::Absolute | AddressingMode::AbsoluteX | AddressingMode::AbsoluteY | AddressingMode::Indirect => {
+            3
+        }
     };
 }

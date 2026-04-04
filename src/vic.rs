@@ -42,8 +42,7 @@ impl<'a> VIC<'a> {
                     let idx = row * 22 + col;
                     let char_code = screen_ram[idx];
                     let fg_color = color_ram[idx] & 0x0F;
-                    let bitmap_row =
-                        &char_rom[char_code as usize * 8..(char_code as usize + 1) * 8][y % 8];
+                    let bitmap_row = &char_rom[char_code as usize * 8..(char_code as usize + 1) * 8][y % 8];
                     let bit = (bitmap_row >> (7 - (x % 8))) & 1;
                     if bit == 1 { fg_color } else { background_color }
                 };

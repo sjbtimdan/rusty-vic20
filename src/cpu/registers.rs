@@ -8,26 +8,46 @@ pub struct Registers {
     pub status: u8, // Processor Status
 }
 
-const ZERO_FLAG_BITMASK: u8 = 0x02;
-const NEGATIVE_FLAG_BITMASK: u8 = 0x80;
+const CARRY_FLAG_BITMASK: u8 = 0x01; // Bit 0 - C
+const ZERO_FLAG_BITMASK: u8 = 0x02; // Bit 1 - Z
+const INTERRUPT_FLAG_BITMASK: u8 = 0x04; // Bit 2 - I
+const DECIMAL_FLAG_BITMASK: u8 = 0x08; // Bit 3 - D
+const BREAK_FLAG_BITMASK: u8 = 0x10; // Bit 4 - B
+const UNUSED_FLAG_BITMASK: u8 = 0x20; // Bit 5 - (always 1 on stack)
+const OVERFLOW_FLAG_BITMASK: u8 = 0x40; // Bit 6 - V
+const NEGATIVE_FLAG_BITMASK: u8 = 0x80; // Bit 7 - N
 
 impl Registers {
+    pub fn set_flag(&mut self, flag_bitmask: u8, condition: bool) {
+        if condition {
+            self.status |= flag_bitmask; // Set the flag
+        } else {
+            self.status &= !flag_bitmask; // Clear the flag
+        }
+    }
+
+    pub fn is_flag_set(&self, flag_bitmask: u8) -> bool {
+        self.status & flag_bitmask != 0
+    }
+
     pub fn set_accoumulator(&mut self, value: u8) {
         self.a = value;
+        self.update_zero_and_negative(value);
+    }
+
+    pub fn set_x(&mut self, value: u8) {
+        self.x = value;
+        self.update_zero_and_negative(value);
+    }
+
+    pub fn set_y(&mut self, value: u8) {
+        self.y = value;
         self.update_zero_and_negative(value);
     }
 
     fn update_zero_and_negative(&mut self, value: u8) {
         self.set_flag(ZERO_FLAG_BITMASK, value == 0);
         self.set_flag(NEGATIVE_FLAG_BITMASK, value & 0x80 != 0);
-    }
-
-    fn set_flag(&mut self, flag_bitmask: u8, condition: bool) {
-        if condition {
-            self.status |= flag_bitmask; // Set the flag
-        } else {
-            self.status &= !flag_bitmask; // Clear the flag
-        }
     }
 }
 
@@ -51,14 +71,9 @@ mod tests {
         let mut regs = Registers::default();
         regs.set_accoumulator(0x42);
         assert_eq!(regs.a, 0x42);
-        assert_eq!(
-            regs.status & ZERO_FLAG_BITMASK,
-            0,
-            "zero flag should be clear"
-        );
-        assert_eq!(
-            regs.status & NEGATIVE_FLAG_BITMASK,
-            0,
+        assert!(!regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be clear");
+        assert!(
+            !regs.is_flag_set(NEGATIVE_FLAG_BITMASK),
             "negative flag should be clear"
         );
     }
@@ -68,14 +83,9 @@ mod tests {
         let mut regs = Registers::default();
         regs.set_accoumulator(0x00);
         assert_eq!(regs.a, 0x00);
-        assert_ne!(
-            regs.status & ZERO_FLAG_BITMASK,
-            0,
-            "zero flag should be set"
-        );
-        assert_eq!(
-            regs.status & NEGATIVE_FLAG_BITMASK,
-            0,
+        assert!(regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be set");
+        assert!(
+            !regs.is_flag_set(NEGATIVE_FLAG_BITMASK),
             "negative flag should be clear"
         );
     }
@@ -85,16 +95,8 @@ mod tests {
         let mut regs = Registers::default();
         regs.set_accoumulator(0x80);
         assert_eq!(regs.a, 0x80);
-        assert_eq!(
-            regs.status & ZERO_FLAG_BITMASK,
-            0,
-            "zero flag should be clear"
-        );
-        assert_ne!(
-            regs.status & NEGATIVE_FLAG_BITMASK,
-            0,
-            "negative flag should be set"
-        );
+        assert!(!regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be clear");
+        assert!(regs.is_flag_set(NEGATIVE_FLAG_BITMASK), "negative flag should be set");
     }
 
     #[test]
@@ -102,21 +104,108 @@ mod tests {
         let mut regs = Registers::default();
         regs.set_accoumulator(0x00);
         regs.set_accoumulator(0x01);
-        assert_eq!(
-            regs.status & ZERO_FLAG_BITMASK,
-            0,
-            "zero flag should be cleared"
+        assert!(!regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be cleared");
+        assert!(
+            !regs.is_flag_set(NEGATIVE_FLAG_BITMASK),
+            "negative flag should be cleared"
         );
     }
 
     #[test]
-    fn test_set_accumulator_clears_negative_flag_on_positive_after_negative() {
+    fn test_set_and_is_break_flag() {
         let mut regs = Registers::default();
-        regs.set_accoumulator(0x80);
-        regs.set_accoumulator(0x01);
-        assert_eq!(
-            regs.status & NEGATIVE_FLAG_BITMASK,
-            0,
+        regs.set_flag(BREAK_FLAG_BITMASK, true);
+        assert!(regs.is_flag_set(BREAK_FLAG_BITMASK), "break flag should be set");
+        regs.set_flag(BREAK_FLAG_BITMASK, false);
+        assert!(!regs.is_flag_set(BREAK_FLAG_BITMASK), "break flag should be clear");
+    }
+
+    #[test]
+    fn test_set_x_nonzero() {
+        let mut regs = Registers::default();
+        regs.set_x(0x42);
+        assert_eq!(regs.x, 0x42);
+        assert!(!regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be clear");
+        assert!(
+            !regs.is_flag_set(NEGATIVE_FLAG_BITMASK),
+            "negative flag should be clear"
+        );
+    }
+
+    #[test]
+    fn test_set_x_zero_sets_zero_flag() {
+        let mut regs = Registers::default();
+        regs.set_x(0x00);
+        assert_eq!(regs.x, 0x00);
+        assert!(regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be set");
+        assert!(
+            !regs.is_flag_set(NEGATIVE_FLAG_BITMASK),
+            "negative flag should be clear"
+        );
+    }
+
+    #[test]
+    fn test_set_x_negative_sets_negative_flag() {
+        let mut regs = Registers::default();
+        regs.set_x(0x80);
+        assert_eq!(regs.x, 0x80);
+        assert!(!regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be clear");
+        assert!(regs.is_flag_set(NEGATIVE_FLAG_BITMASK), "negative flag should be set");
+    }
+
+    #[test]
+    fn test_set_x_clears_flags_on_positive_after_zero() {
+        let mut regs = Registers::default();
+        regs.set_x(0x00);
+        regs.set_x(0x01);
+        assert!(!regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be cleared");
+        assert!(
+            !regs.is_flag_set(NEGATIVE_FLAG_BITMASK),
+            "negative flag should be cleared"
+        );
+    }
+
+    #[test]
+    fn test_set_y_nonzero() {
+        let mut regs = Registers::default();
+        regs.set_y(0x42);
+        assert_eq!(regs.y, 0x42);
+        assert!(!regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be clear");
+        assert!(
+            !regs.is_flag_set(NEGATIVE_FLAG_BITMASK),
+            "negative flag should be clear"
+        );
+    }
+
+    #[test]
+    fn test_set_y_zero_sets_zero_flag() {
+        let mut regs = Registers::default();
+        regs.set_y(0x00);
+        assert_eq!(regs.y, 0x00);
+        assert!(regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be set");
+        assert!(
+            !regs.is_flag_set(NEGATIVE_FLAG_BITMASK),
+            "negative flag should be clear"
+        );
+    }
+
+    #[test]
+    fn test_set_y_negative_sets_negative_flag() {
+        let mut regs = Registers::default();
+        regs.set_y(0x80);
+        assert_eq!(regs.y, 0x80);
+        assert!(!regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be clear");
+        assert!(regs.is_flag_set(NEGATIVE_FLAG_BITMASK), "negative flag should be set");
+    }
+
+    #[test]
+    fn test_set_y_clears_flags_on_positive_after_zero() {
+        let mut regs = Registers::default();
+        regs.set_y(0x00);
+        regs.set_y(0x01);
+        assert!(!regs.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be cleared");
+        assert!(
+            !regs.is_flag_set(NEGATIVE_FLAG_BITMASK),
             "negative flag should be cleared"
         );
     }
