@@ -123,20 +123,21 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0x10, 0x05, 0x42, false, false)]
-    #[case(0x20, 0x03, 0x00, true, false)]
-    #[case(0x30, 0x02, 0x80, false, true)]
+    #[case(0x10, 0x05, 0x15, 0x42, false, false)]
+    #[case(0x20, 0x03, 0x23, 0x00, true, false)]
+    #[case(0x30, 0x02, 0x32, 0x80, false, true)]
     fn test_lda_zero_page_x(
         mut registers: Registers,
         mut memory: Memory,
         #[case] base: u8,
         #[case] x: u8,
+        #[case] address: u8,
         #[case] value: u8,
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
         registers.x = x;
-        memory.bytes[base.wrapping_add(x) as usize] = value;
+        memory.bytes[address as usize] = value;
         execute_instruction(&mut registers, &mut memory, &LDA_ZERO_PAGE_X, &[base]);
         assert_eq!(registers.a, value);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
@@ -144,20 +145,20 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0x02, 0x00, 0x42, false, false)]
-    #[case(0x03, 0x00, 0x00, true, false)]
-    #[case(0x04, 0x00, 0x80, false, true)]
+    #[case(0x02, 0x00, 0x0002, 0x42, false, false)]
+    #[case(0x03, 0x00, 0x0003, 0x00, true, false)]
+    #[case(0x04, 0x00, 0x0004, 0x80, false, true)]
     fn test_lda_absolute(
         mut registers: Registers,
         mut memory: Memory,
         #[case] lo: u8,
         #[case] hi: u8,
+        #[case] address: u16,
         #[case] value: u8,
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
-        let address = (hi as u16) << 8 | lo as u16;
-        memory.bytes[address as usize] = value;
+        memory.set_byte(address, value);
         execute_instruction(&mut registers, &mut memory, &LDA_ABSOLUTE, &[lo, hi]);
         assert_eq!(registers.a, value);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
@@ -165,21 +166,21 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0x00, 0x02, 0x04, 0x42, false, false)]
-    #[case(0x00, 0x03, 0x02, 0x00, true, false)]
-    #[case(0x00, 0x04, 0x01, 0x80, false, true)]
+    #[case(0x00, 0x02, 0x04, 0x0204, 0x42, false, false)]
+    #[case(0x00, 0x03, 0x02, 0x0302, 0x00, true, false)]
+    #[case(0x00, 0x04, 0x01, 0x0401, 0x80, false, true)]
     fn test_lda_absolute_x(
         mut registers: Registers,
         mut memory: Memory,
         #[case] lo: u8,
         #[case] hi: u8,
         #[case] x: u8,
+        #[case] address: u16,
         #[case] value: u8,
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
         registers.x = x;
-        let address = ((hi as u16) << 8 | lo as u16).wrapping_add(x as u16);
         memory.bytes[address as usize] = value;
         execute_instruction(&mut registers, &mut memory, &LDA_ABSOLUTE_X, &[lo, hi]);
         assert_eq!(registers.a, value);
@@ -188,21 +189,21 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0x00, 0x02, 0x04, 0x42, false, false)]
-    #[case(0x00, 0x03, 0x02, 0x00, true, false)]
-    #[case(0x00, 0x04, 0x01, 0x80, false, true)]
+    #[case(0x00, 0x02, 0x04, 0x0204, 0x42, false, false)]
+    #[case(0x00, 0x03, 0x02, 0x0302, 0x00, true, false)]
+    #[case(0x00, 0x04, 0x01, 0x0401, 0x80, false, true)]
     fn test_lda_absolute_y(
         mut registers: Registers,
         mut memory: Memory,
         #[case] lo: u8,
         #[case] hi: u8,
         #[case] y: u8,
+        #[case] address: u16,
         #[case] value: u8,
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
         registers.y = y;
-        let address = ((hi as u16) << 8 | lo as u16).wrapping_add(y as u16);
         memory.bytes[address as usize] = value;
         execute_instruction(&mut registers, &mut memory, &LDA_ABSOLUTE_Y, &[lo, hi]);
         assert_eq!(registers.a, value);
@@ -211,25 +212,26 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0x10, 0x03, 0x05, 0x00, 0x42, false, false)]
-    #[case(0x20, 0x01, 0x06, 0x00, 0x00, true, false)]
-    #[case(0x30, 0x02, 0x07, 0x00, 0x80, false, true)]
+    #[case(0x10, 0x03, 0x13, 0x14, 0x05, 0x00, 0x0005, 0x42, false, false)]
+    #[case(0x20, 0x01, 0x21, 0x22, 0x06, 0x00, 0x0006, 0x00, true, false)]
+    #[case(0x30, 0x02, 0x32, 0x33, 0x07, 0x00, 0x0007, 0x80, false, true)]
     fn test_lda_indexed_indirect(
         mut registers: Registers,
         mut memory: Memory,
         #[case] base: u8,
         #[case] x: u8,
+        #[case] ptr: u8,
+        #[case] ptr_next: u8,
         #[case] ptr_lo: u8,
         #[case] ptr_hi: u8,
+        #[case] address: u16,
         #[case] value: u8,
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
         registers.x = x;
-        let ptr = base.wrapping_add(x);
         memory.bytes[ptr as usize] = ptr_lo;
-        memory.bytes[ptr.wrapping_add(1) as usize] = ptr_hi;
-        let address = (ptr_hi as u16) << 8 | ptr_lo as u16;
+        memory.bytes[ptr_next as usize] = ptr_hi;
         memory.bytes[address as usize] = value;
         execute_instruction(&mut registers, &mut memory, &LDA_INDEXED_INDIRECT, &[base]);
         assert_eq!(registers.a, value);
