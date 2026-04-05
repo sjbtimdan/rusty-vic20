@@ -41,6 +41,22 @@ pub fn execute_instruction(
                 let read = memory.bytes[address as usize];
                 registers.set_accumulator(read);
             }
+            AddressingMode::IndexedIndirect => {
+                let ptr = operands[0].wrapping_add(registers.x);
+                let lo = memory.read_zero_page(ptr);
+                let hi = memory.read_zero_page(ptr.wrapping_add(1));
+                let address = (hi as u16) << 8 | lo as u16;
+                let read = memory.bytes[address as usize];
+                registers.set_accumulator(read);
+            }
+            AddressingMode::IndirectIndexed => {
+                let lo = memory.read_zero_page(operands[0]);
+                let hi = memory.read_zero_page(operands[0].wrapping_add(1));
+                let base = (hi as u16) << 8 | lo as u16;
+                let address = base.wrapping_add(registers.y as u16);
+                let read = memory.bytes[address as usize];
+                registers.set_accumulator(read);
+            }
             _ => unimplemented!("Addressing mode {:?} not implemented for LDA", instruction.mode),
         },
         _ => unimplemented!("Instruction {:?} not implemented yet", instruction.instruction),
@@ -53,15 +69,11 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::cpu::instructions::{AddressingMode, Instruction, InstructionInfo};
-    use crate::cpu::registers::{NEGATIVE_FLAG_BITMASK, Registers, ZERO_FLAG_BITMASK};
-
-    const LDA_IMMEDIATE: InstructionInfo = InstructionInfo {
-        opcode: 0xA9,
-        instruction: Instruction::LDA,
-        mode: AddressingMode::Immediate,
-        cycles: 2,
+    use crate::cpu::instructions::{
+        LDA_ABSOLUTE, LDA_ABSOLUTE_X, LDA_ABSOLUTE_Y, LDA_IMMEDIATE, LDA_INDEXED_INDIRECT, LDA_INDIRECT_INDEXED,
+        LDA_ZERO_PAGE, LDA_ZERO_PAGE_X,
     };
+    use crate::cpu::registers::{NEGATIVE_FLAG_BITMASK, Registers, ZERO_FLAG_BITMASK};
 
     #[fixture]
     fn registers() -> Registers {
@@ -86,6 +98,166 @@ mod tests {
         #[case] negative: bool,
     ) {
         execute_instruction(&mut registers, &mut memory, &LDA_IMMEDIATE, &[value]);
+        assert_eq!(registers.a, value);
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x10, 0x42, false, false)]
+    #[case(0x20, 0x00, true, false)]
+    #[case(0x30, 0x80, false, true)]
+    fn test_lda_zero_page(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] address: u8,
+        #[case] value: u8,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        memory.bytes[address as usize] = value;
+        execute_instruction(&mut registers, &mut memory, &LDA_ZERO_PAGE, &[address]);
+        assert_eq!(registers.a, value);
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x10, 0x05, 0x42, false, false)]
+    #[case(0x20, 0x03, 0x00, true, false)]
+    #[case(0x30, 0x02, 0x80, false, true)]
+    fn test_lda_zero_page_x(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] base: u8,
+        #[case] x: u8,
+        #[case] value: u8,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        registers.x = x;
+        memory.bytes[base.wrapping_add(x) as usize] = value;
+        execute_instruction(&mut registers, &mut memory, &LDA_ZERO_PAGE_X, &[base]);
+        assert_eq!(registers.a, value);
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x02, 0x00, 0x42, false, false)]
+    #[case(0x03, 0x00, 0x00, true, false)]
+    #[case(0x04, 0x00, 0x80, false, true)]
+    fn test_lda_absolute(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] lo: u8,
+        #[case] hi: u8,
+        #[case] value: u8,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        let address = (hi as u16) << 8 | lo as u16;
+        memory.bytes[address as usize] = value;
+        execute_instruction(&mut registers, &mut memory, &LDA_ABSOLUTE, &[lo, hi]);
+        assert_eq!(registers.a, value);
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x00, 0x02, 0x04, 0x42, false, false)]
+    #[case(0x00, 0x03, 0x02, 0x00, true, false)]
+    #[case(0x00, 0x04, 0x01, 0x80, false, true)]
+    fn test_lda_absolute_x(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] lo: u8,
+        #[case] hi: u8,
+        #[case] x: u8,
+        #[case] value: u8,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        registers.x = x;
+        let address = ((hi as u16) << 8 | lo as u16).wrapping_add(x as u16);
+        memory.bytes[address as usize] = value;
+        execute_instruction(&mut registers, &mut memory, &LDA_ABSOLUTE_X, &[lo, hi]);
+        assert_eq!(registers.a, value);
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x00, 0x02, 0x04, 0x42, false, false)]
+    #[case(0x00, 0x03, 0x02, 0x00, true, false)]
+    #[case(0x00, 0x04, 0x01, 0x80, false, true)]
+    fn test_lda_absolute_y(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] lo: u8,
+        #[case] hi: u8,
+        #[case] y: u8,
+        #[case] value: u8,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        registers.y = y;
+        let address = ((hi as u16) << 8 | lo as u16).wrapping_add(y as u16);
+        memory.bytes[address as usize] = value;
+        execute_instruction(&mut registers, &mut memory, &LDA_ABSOLUTE_Y, &[lo, hi]);
+        assert_eq!(registers.a, value);
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x10, 0x03, 0x05, 0x00, 0x42, false, false)]
+    #[case(0x20, 0x01, 0x06, 0x00, 0x00, true, false)]
+    #[case(0x30, 0x02, 0x07, 0x00, 0x80, false, true)]
+    fn test_lda_indexed_indirect(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] base: u8,
+        #[case] x: u8,
+        #[case] ptr_lo: u8,
+        #[case] ptr_hi: u8,
+        #[case] value: u8,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        registers.x = x;
+        let ptr = base.wrapping_add(x);
+        memory.bytes[ptr as usize] = ptr_lo;
+        memory.bytes[ptr.wrapping_add(1) as usize] = ptr_hi;
+        let address = (ptr_hi as u16) << 8 | ptr_lo as u16;
+        memory.bytes[address as usize] = value;
+        execute_instruction(&mut registers, &mut memory, &LDA_INDEXED_INDIRECT, &[base]);
+        assert_eq!(registers.a, value);
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x20, 0x00, 0xC0, 0x03, 0xC003, 0x42, false, false)]
+    #[case(0x20, 0x00, 0xC0, 0x05, 0xC005, 0x00, true, false)]
+    #[case(0x20, 0x00, 0xC0, 0x01, 0xC001, 0x80, false, true)]
+    fn test_lda_indirect_indexed(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] zp_addr: u8,
+        #[case] ptr_lo: u8,
+        #[case] ptr_hi: u8,
+        #[case] y: u8,
+        #[case] address: u16,
+        #[case] value: u8,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        registers.y = y;
+        memory.bytes[zp_addr as usize] = ptr_lo;
+        memory.bytes[zp_addr.wrapping_add(1) as usize] = ptr_hi;
+        memory.bytes[address as usize] = value;
+        execute_instruction(&mut registers, &mut memory, &LDA_INDIRECT_INDEXED, &[zp_addr]);
         assert_eq!(registers.a, value);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");

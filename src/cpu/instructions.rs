@@ -97,6 +97,15 @@ const fn illegal(opcode: u8) -> InstructionInfo {
     info(opcode, Instruction::Illegal, AddressingMode::Implied, 0)
 }
 
+pub const LDA_IMMEDIATE: InstructionInfo = info(0xA9, Instruction::LDA, AddressingMode::Immediate, 2);
+pub const LDA_ZERO_PAGE: InstructionInfo = info(0xA5, Instruction::LDA, AddressingMode::ZeroPage, 3);
+pub const LDA_ZERO_PAGE_X: InstructionInfo = info(0xB5, Instruction::LDA, AddressingMode::ZeroPageX, 4);
+pub const LDA_ABSOLUTE: InstructionInfo = info(0xAD, Instruction::LDA, AddressingMode::Absolute, 4);
+pub const LDA_ABSOLUTE_X: InstructionInfo = info(0xBD, Instruction::LDA, AddressingMode::AbsoluteX, 4);
+pub const LDA_ABSOLUTE_Y: InstructionInfo = info(0xB9, Instruction::LDA, AddressingMode::AbsoluteY, 4);
+pub const LDA_INDEXED_INDIRECT: InstructionInfo = info(0xA1, Instruction::LDA, AddressingMode::IndexedIndirect, 6);
+pub const LDA_INDIRECT_INDEXED: InstructionInfo = info(0xB1, Instruction::LDA, AddressingMode::IndirectIndexed, 5);
+
 // Base cycle counts are provided here. Some instructions (branches/page crossings)
 // can take extra cycles depending on runtime conditions.
 pub const fn decode(opcode: u8) -> InstructionInfo {
@@ -192,27 +201,27 @@ pub const fn decode(opcode: u8) -> InstructionInfo {
         0x9A => info(0x9A, Instruction::TXS, AddressingMode::Implied, 2),
         0x9D => info(0x9D, Instruction::STA, AddressingMode::AbsoluteX, 5),
         0xA0 => info(0xA0, Instruction::LDY, AddressingMode::Immediate, 2),
-        0xA1 => info(0xA1, Instruction::LDA, AddressingMode::IndexedIndirect, 6),
+        0xA1 => LDA_INDEXED_INDIRECT,
         0xA2 => info(0xA2, Instruction::LDX, AddressingMode::Immediate, 2),
         0xA4 => info(0xA4, Instruction::LDY, AddressingMode::ZeroPage, 3),
-        0xA5 => info(0xA5, Instruction::LDA, AddressingMode::ZeroPage, 3),
+        0xA5 => LDA_ZERO_PAGE,
         0xA6 => info(0xA6, Instruction::LDX, AddressingMode::ZeroPage, 3),
         0xA8 => info(0xA8, Instruction::TAY, AddressingMode::Implied, 2),
-        0xA9 => info(0xA9, Instruction::LDA, AddressingMode::Immediate, 2),
+        0xA9 => LDA_IMMEDIATE,
         0xAA => info(0xAA, Instruction::TAX, AddressingMode::Implied, 2),
         0xAC => info(0xAC, Instruction::LDY, AddressingMode::Absolute, 4),
-        0xAD => info(0xAD, Instruction::LDA, AddressingMode::Absolute, 4),
+        0xAD => LDA_ABSOLUTE,
         0xAE => info(0xAE, Instruction::LDX, AddressingMode::Absolute, 4),
         0xB0 => info(0xB0, Instruction::BCS, AddressingMode::Relative, 2),
         0xB1 => info(0xB1, Instruction::LDA, AddressingMode::IndirectIndexed, 5),
         0xB4 => info(0xB4, Instruction::LDY, AddressingMode::ZeroPageX, 4),
-        0xB5 => info(0xB5, Instruction::LDA, AddressingMode::ZeroPageX, 4),
+        0xB5 => LDA_ZERO_PAGE_X,
         0xB6 => info(0xB6, Instruction::LDX, AddressingMode::ZeroPageY, 4),
         0xB8 => info(0xB8, Instruction::CLV, AddressingMode::Implied, 2),
-        0xB9 => info(0xB9, Instruction::LDA, AddressingMode::AbsoluteY, 4),
+        0xB9 => LDA_ABSOLUTE_Y,
         0xBA => info(0xBA, Instruction::TSX, AddressingMode::Implied, 2),
         0xBC => info(0xBC, Instruction::LDY, AddressingMode::AbsoluteX, 4),
-        0xBD => info(0xBD, Instruction::LDA, AddressingMode::AbsoluteX, 4),
+        0xBD => LDA_ABSOLUTE_X,
         0xBE => info(0xBE, Instruction::LDX, AddressingMode::AbsoluteY, 4),
         0xC0 => info(0xC0, Instruction::CPY, AddressingMode::Immediate, 2),
         0xC1 => info(0xC1, Instruction::CMP, AddressingMode::IndexedIndirect, 6),
