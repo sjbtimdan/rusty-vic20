@@ -1,6 +1,6 @@
 use crate::{
     cpu::{
-        instructions::{Instruction, InstructionInfo},
+        instructions::{Instruction, InstructionInfoOps},
         registers::Registers,
     },
     memory::Memory,
@@ -9,20 +9,21 @@ use crate::{
 pub fn execute_instruction(
     registers: &mut Registers,
     memory: &mut Memory,
-    instruction: &InstructionInfo,
+    instruction_info: &impl InstructionInfoOps,
     operands: &[u8],
 ) {
-    match instruction.instruction {
+    let instruction = instruction_info.instruction();
+    match instruction {
         Instruction::LDA => {
-            let value = instruction.mode.resolve_load_operand(registers, memory, operands);
+            let value = instruction_info.resolve_load_operand(registers, memory, operands);
             registers.set_accumulator(value);
         }
         Instruction::LDX => {
-            let value = instruction.mode.resolve_load_operand(registers, memory, operands);
+            let value = instruction_info.resolve_load_operand(registers, memory, operands);
             registers.set_x(value);
         }
         Instruction::LDY => {
-            let value = instruction.mode.resolve_load_operand(registers, memory, operands);
+            let value = instruction_info.resolve_load_operand(registers, memory, operands);
             registers.set_y(value);
         }
         Instruction::DEX => {
@@ -38,30 +39,30 @@ pub fn execute_instruction(
             registers.set_y(registers.y.wrapping_add(1));
         }
         Instruction::INC => {
-            let address = instruction.mode.resolve_store_address(registers, memory, operands);
+            let address = instruction_info.resolve_store_address(registers, memory, operands);
             let value = memory.read_byte(address).wrapping_add(1);
             memory.set_byte(address, value);
             registers.update_zero_and_negative(value);
         }
         Instruction::DEC => {
-            let address = instruction.mode.resolve_store_address(registers, memory, operands);
+            let address = instruction_info.resolve_store_address(registers, memory, operands);
             let value = memory.read_byte(address).wrapping_sub(1);
             memory.set_byte(address, value);
             registers.update_zero_and_negative(value);
         }
         Instruction::STA => {
-            let address = instruction.mode.resolve_store_address(registers, memory, operands);
+            let address = instruction_info.resolve_store_address(registers, memory, operands);
             memory.set_byte(address, registers.a);
         }
         Instruction::STX => {
-            let address = instruction.mode.resolve_store_address(registers, memory, operands);
+            let address = instruction_info.resolve_store_address(registers, memory, operands);
             memory.set_byte(address, registers.x);
         }
         Instruction::STY => {
-            let address = instruction.mode.resolve_store_address(registers, memory, operands);
+            let address = instruction_info.resolve_store_address(registers, memory, operands);
             memory.set_byte(address, registers.y);
         }
-        _ => unimplemented!("Instruction {:?} not implemented yet", instruction.instruction),
+        _ => unimplemented!("Instruction {:?} not implemented yet", instruction),
     }
 }
 
@@ -69,10 +70,14 @@ pub fn execute_instruction(
 mod tests {
     use rstest::fixture;
     use rstest::rstest;
+    use unimock::MockFn;
+    use unimock::matching;
 
     use super::*;
+    use crate::cpu::instructions::InstructionInfoOpsMock;
     use crate::cpu::instructions::*;
     use crate::cpu::registers::*;
+    use unimock::Unimock;
 
     #[fixture]
     fn registers() -> Registers {
@@ -85,276 +90,39 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0x42, false, false)]
-    #[case(0x00, true, false)]
-    #[case(0x80, false, true)]
-    #[case(0x7F, false, false)]
-    fn test_lda_immediate(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] value: u8,
-        #[case] zero: bool,
-        #[case] negative: bool,
-    ) {
-        execute_instruction(&mut registers, &mut memory, &LDA_IMMEDIATE, &[value]);
-        assert_eq!(registers.a, value);
-        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
-        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
-    }
-
-    #[rstest]
-    #[case(0x10, 0x42, false, false)]
-    #[case(0x20, 0x00, true, false)]
-    #[case(0x30, 0x80, false, true)]
-    fn test_lda_zero_page(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] address: u8,
-        #[case] value: u8,
-        #[case] zero: bool,
-        #[case] negative: bool,
-    ) {
-        memory.set_zero_page_byte(address, value);
-        execute_instruction(&mut registers, &mut memory, &LDA_ZERO_PAGE, &[address]);
-        assert_eq!(registers.a, value);
-        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
-        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
-    }
-
-    #[rstest]
-    #[case(0x10, 0x05, 0x15, 0x42, false, false)]
-    #[case(0x20, 0x03, 0x23, 0x00, true, false)]
-    #[case(0x30, 0x02, 0x32, 0x80, false, true)]
-    fn test_lda_zero_page_x(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] base: u8,
-        #[case] x: u8,
-        #[case] address: u8,
-        #[case] value: u8,
-        #[case] zero: bool,
-        #[case] negative: bool,
-    ) {
-        registers.set_x(x);
-        memory.set_zero_page_byte(address, value);
-        execute_instruction(&mut registers, &mut memory, &LDA_ZERO_PAGE_X, &[base]);
-        assert_eq!(registers.a, value);
-        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
-        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
-    }
-
-    #[rstest]
-    #[case(0x02, 0x00, 0x0002, 0x42, false, false)]
-    #[case(0x03, 0x00, 0x0003, 0x00, true, false)]
-    #[case(0x04, 0x00, 0x0004, 0x80, false, true)]
-    fn test_lda_absolute(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] lo: u8,
-        #[case] hi: u8,
-        #[case] address: u16,
-        #[case] value: u8,
-        #[case] zero: bool,
-        #[case] negative: bool,
-    ) {
-        memory.set_byte(address, value);
-        execute_instruction(&mut registers, &mut memory, &LDA_ABSOLUTE, &[lo, hi]);
-        assert_eq!(registers.a, value);
-        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
-        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
-    }
-
-    #[rstest]
-    #[case(0x00, 0x02, 0x04, 0x0204, 0x42, false, false)]
-    #[case(0x00, 0x03, 0x02, 0x0302, 0x00, true, false)]
-    #[case(0x00, 0x04, 0x01, 0x0401, 0x80, false, true)]
-    fn test_lda_absolute_x(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] lo: u8,
-        #[case] hi: u8,
-        #[case] x: u8,
-        #[case] address: u16,
-        #[case] value: u8,
-        #[case] zero: bool,
-        #[case] negative: bool,
-    ) {
-        registers.set_x(x);
-        memory.set_byte(address, value);
-        execute_instruction(&mut registers, &mut memory, &LDA_ABSOLUTE_X, &[lo, hi]);
-        assert_eq!(registers.a, value);
-        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
-        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
-    }
-
-    #[rstest]
-    #[case(0x00, 0x02, 0x04, 0x0204, 0x42, false, false)]
-    #[case(0x00, 0x03, 0x02, 0x0302, 0x00, true, false)]
-    #[case(0x00, 0x04, 0x01, 0x0401, 0x80, false, true)]
-    fn test_lda_absolute_y(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] lo: u8,
-        #[case] hi: u8,
-        #[case] y: u8,
-        #[case] address: u16,
-        #[case] value: u8,
-        #[case] zero: bool,
-        #[case] negative: bool,
-    ) {
-        registers.set_y(y);
-        memory.set_byte(address, value);
-        execute_instruction(&mut registers, &mut memory, &LDA_ABSOLUTE_Y, &[lo, hi]);
-        assert_eq!(registers.a, value);
-        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
-        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
-    }
-
-    #[rstest]
-    #[case(0x10, 0x03, 0x13, 0x0005, 0x42, false, false)]
-    #[case(0x20, 0x01, 0x21, 0x0006, 0x00, true, false)]
-    #[case(0x30, 0x02, 0x32, 0x0007, 0x80, false, true)]
-    fn test_lda_indexed_indirect(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] base: u8,
-        #[case] x: u8,
-        #[case] ptr: u8,
-        #[case] address: u16,
-        #[case] value: u8,
-        #[case] zero: bool,
-        #[case] negative: bool,
-    ) {
-        registers.set_x(x);
-        memory.set_zero_page_word(ptr, address);
-        memory.set_byte(address, value);
-        execute_instruction(&mut registers, &mut memory, &LDA_INDEXED_INDIRECT, &[base]);
-        assert_eq!(registers.a, value);
-        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
-        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
-    }
-
-    #[rstest]
-    #[case(0x20, 0x03, 0xC003, 0x42, false, false)]
-    #[case(0x20, 0x05, 0xC005, 0x00, true, false)]
-    #[case(0x20, 0x01, 0xC001, 0x80, false, true)]
-    fn test_lda_indirect_indexed(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] zp_addr: u8,
-        #[case] y: u8,
-        #[case] address: u16,
-        #[case] value: u8,
-        #[case] zero: bool,
-        #[case] negative: bool,
-    ) {
-        registers.set_y(y);
-        let base = address.wrapping_sub(y as u16);
-        memory.set_zero_page_word(zp_addr, base);
-        memory.set_byte(address, value);
-        execute_instruction(&mut registers, &mut memory, &LDA_INDIRECT_INDEXED, &[zp_addr]);
-        assert_eq!(registers.a, value);
-        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
-        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    fn test_lda(mut registers: Registers, mut memory: Memory) {
+        let lda_instruction_info = Unimock::new((
+            InstructionInfoOpsMock::instruction
+                .each_call(matching!())
+                .returns(Instruction::LDA),
+            InstructionInfoOpsMock::resolve_load_operand
+                .each_call(matching!(_, _, [0x42]))
+                .returns(0x42),
+        ));
+        execute_instruction(&mut registers, &mut memory, &lda_instruction_info, &[0x42]);
+        assert_eq!(registers.a, 0x42);
     }
 
     #[rstest]
     #[case(0x42, false, false)]
     #[case(0x00, true, false)]
     #[case(0x80, false, true)]
-    fn test_ldx_immediate(
+    fn test_ldx(
         mut registers: Registers,
         mut memory: Memory,
         #[case] value: u8,
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
-        execute_instruction(&mut registers, &mut memory, &LDX_IMMEDIATE, &[value]);
-        assert_eq!(registers.x, value);
-        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
-        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
-    }
-
-    #[rstest]
-    #[case(0x10, 0x42, false, false)]
-    #[case(0x20, 0x00, true, false)]
-    #[case(0x30, 0x80, false, true)]
-    fn test_ldx_zero_page(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] address: u8,
-        #[case] value: u8,
-        #[case] zero: bool,
-        #[case] negative: bool,
-    ) {
-        memory.set_zero_page_byte(address, value);
-        execute_instruction(&mut registers, &mut memory, &LDX_ZERO_PAGE, &[address]);
-        assert_eq!(registers.x, value);
-        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
-        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
-    }
-
-    #[rstest]
-    #[case(0x10, 0x05, 0x15, 0x42, false, false)]
-    #[case(0x20, 0x03, 0x23, 0x00, true, false)]
-    #[case(0x30, 0x02, 0x32, 0x80, false, true)]
-    fn test_ldx_zero_page_y(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] base: u8,
-        #[case] y: u8,
-        #[case] address: u8,
-        #[case] value: u8,
-        #[case] zero: bool,
-        #[case] negative: bool,
-    ) {
-        registers.set_y(y);
-        memory.set_zero_page_byte(address, value);
-        execute_instruction(&mut registers, &mut memory, &LDX_ZERO_PAGE_Y, &[base]);
-        assert_eq!(registers.x, value);
-        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
-        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
-    }
-
-    #[rstest]
-    #[case(0x02, 0x00, 0x0002, 0x42, false, false)]
-    #[case(0x03, 0x00, 0x0003, 0x00, true, false)]
-    #[case(0x04, 0x00, 0x0004, 0x80, false, true)]
-    fn test_ldx_absolute(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] lo: u8,
-        #[case] hi: u8,
-        #[case] address: u16,
-        #[case] value: u8,
-        #[case] zero: bool,
-        #[case] negative: bool,
-    ) {
-        memory.set_byte(address, value);
-        execute_instruction(&mut registers, &mut memory, &LDX_ABSOLUTE, &[lo, hi]);
-        assert_eq!(registers.x, value);
-        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
-        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
-    }
-
-    #[rstest]
-    #[case(0x00, 0x02, 0x04, 0x0204, 0x42, false, false)]
-    #[case(0x00, 0x03, 0x02, 0x0302, 0x00, true, false)]
-    #[case(0x00, 0x04, 0x01, 0x0401, 0x80, false, true)]
-    fn test_ldx_absolute_y(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] lo: u8,
-        #[case] hi: u8,
-        #[case] y: u8,
-        #[case] address: u16,
-        #[case] value: u8,
-        #[case] zero: bool,
-        #[case] negative: bool,
-    ) {
-        registers.set_y(y);
-        memory.set_byte(address, value);
-        execute_instruction(&mut registers, &mut memory, &LDX_ABSOLUTE_Y, &[lo, hi]);
+        let mock = Unimock::new((
+            InstructionInfoOpsMock::instruction
+                .each_call(matching!())
+                .returns(Instruction::LDX),
+            InstructionInfoOpsMock::resolve_load_operand
+                .each_call(matching!(_, _, _))
+                .returns(value),
+        ));
+        execute_instruction(&mut registers, &mut memory, &mock, &[value]);
         assert_eq!(registers.x, value);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
@@ -364,99 +132,22 @@ mod tests {
     #[case(0x42, false, false)]
     #[case(0x00, true, false)]
     #[case(0x80, false, true)]
-    fn test_ldy_immediate(
+    fn test_ldy(
         mut registers: Registers,
         mut memory: Memory,
         #[case] value: u8,
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
-        execute_instruction(&mut registers, &mut memory, &LDY_IMMEDIATE, &[value]);
-        assert_eq!(registers.y, value);
-        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
-        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
-    }
-
-    #[rstest]
-    #[case(0x10, 0x42, false, false)]
-    #[case(0x20, 0x00, true, false)]
-    #[case(0x30, 0x80, false, true)]
-    fn test_ldy_zero_page(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] address: u8,
-        #[case] value: u8,
-        #[case] zero: bool,
-        #[case] negative: bool,
-    ) {
-        memory.set_zero_page_byte(address, value);
-        execute_instruction(&mut registers, &mut memory, &LDY_ZERO_PAGE, &[address]);
-        assert_eq!(registers.y, value);
-        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
-        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
-    }
-
-    #[rstest]
-    #[case(0x10, 0x05, 0x15, 0x42, false, false)]
-    #[case(0x20, 0x03, 0x23, 0x00, true, false)]
-    #[case(0x30, 0x02, 0x32, 0x80, false, true)]
-    fn test_ldy_zero_page_x(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] base: u8,
-        #[case] x: u8,
-        #[case] address: u8,
-        #[case] value: u8,
-        #[case] zero: bool,
-        #[case] negative: bool,
-    ) {
-        registers.set_x(x);
-        memory.set_zero_page_byte(address, value);
-        execute_instruction(&mut registers, &mut memory, &LDY_ZERO_PAGE_X, &[base]);
-        assert_eq!(registers.y, value);
-        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
-        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
-    }
-
-    #[rstest]
-    #[case(0x02, 0x00, 0x0002, 0x42, false, false)]
-    #[case(0x03, 0x00, 0x0003, 0x00, true, false)]
-    #[case(0x04, 0x00, 0x0004, 0x80, false, true)]
-    fn test_ldy_absolute(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] lo: u8,
-        #[case] hi: u8,
-        #[case] address: u16,
-        #[case] value: u8,
-        #[case] zero: bool,
-        #[case] negative: bool,
-    ) {
-        memory.set_byte(address, value);
-        execute_instruction(&mut registers, &mut memory, &LDY_ABSOLUTE, &[lo, hi]);
-        assert_eq!(registers.y, value);
-        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
-        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
-    }
-
-    #[rstest]
-    #[case(0x00, 0x02, 0x04, 0x0204, 0x42, false, false)]
-    #[case(0x00, 0x03, 0x02, 0x0302, 0x00, true, false)]
-    #[case(0x00, 0x04, 0x01, 0x0401, 0x80, false, true)]
-    fn test_ldy_absolute_x(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] lo: u8,
-        #[case] hi: u8,
-        #[case] x: u8,
-        #[case] address: u16,
-        #[case] value: u8,
-        #[case] zero: bool,
-        #[case] negative: bool,
-    ) {
-        registers.set_x(x);
-        memory.set_byte(address, value);
-        execute_instruction(&mut registers, &mut memory, &LDY_ABSOLUTE_X, &[lo, hi]);
+        let mock = Unimock::new((
+            InstructionInfoOpsMock::instruction
+                .each_call(matching!())
+                .returns(Instruction::LDY),
+            InstructionInfoOpsMock::resolve_load_operand
+                .each_call(matching!(_, _, _))
+                .returns(value),
+        ));
+        execute_instruction(&mut registers, &mut memory, &mock, &[value]);
         assert_eq!(registers.y, value);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
@@ -539,367 +230,103 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0x10, 0x41, 0x42, false, false)]
-    #[case(0x10, 0xFF, 0x00, true, false)]
-    #[case(0x10, 0x7F, 0x80, false, true)]
-    fn test_inc_zero_page(
+    #[case(0x0200u16, 0x41, 0x42, false, false)]
+    #[case(0x0200u16, 0xFF, 0x00, true, false)]
+    #[case(0x0200u16, 0x7F, 0x80, false, true)]
+    fn test_inc(
         mut registers: Registers,
         mut memory: Memory,
-        #[case] address: u8,
-        #[case] initial: u8,
-        #[case] expected: u8,
-        #[case] zero: bool,
-        #[case] negative: bool,
-    ) {
-        memory.set_zero_page_byte(address, initial);
-        execute_instruction(&mut registers, &mut memory, &INC_ZERO_PAGE, &[address]);
-        assert_eq!(memory.read_zero_page_byte(address), expected);
-        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
-        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
-    }
-
-    #[rstest]
-    #[case(0x10, 0x03, 0x13, 0x41, 0x42, false, false)]
-    #[case(0x10, 0x03, 0x13, 0xFF, 0x00, true, false)]
-    #[case(0x10, 0x03, 0x13, 0x7F, 0x80, false, true)]
-    fn test_inc_zero_page_x(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] base: u8,
-        #[case] x: u8,
-        #[case] address: u8,
-        #[case] initial: u8,
-        #[case] expected: u8,
-        #[case] zero: bool,
-        #[case] negative: bool,
-    ) {
-        registers.x = x;
-        memory.set_zero_page_byte(address, initial);
-        execute_instruction(&mut registers, &mut memory, &INC_ZERO_PAGE_X, &[base]);
-        assert_eq!(memory.read_zero_page_byte(address), expected);
-        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
-        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
-    }
-
-    #[rstest]
-    #[case(0x00, 0x02, 0x0200, 0x41, 0x42, false, false)]
-    #[case(0x00, 0x02, 0x0200, 0xFF, 0x00, true, false)]
-    #[case(0x00, 0x02, 0x0200, 0x7F, 0x80, false, true)]
-    fn test_inc_absolute(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] lo: u8,
-        #[case] hi: u8,
         #[case] address: u16,
         #[case] initial: u8,
         #[case] expected: u8,
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
+        let mock = Unimock::new((
+            InstructionInfoOpsMock::instruction
+                .each_call(matching!())
+                .returns(Instruction::INC),
+            InstructionInfoOpsMock::resolve_store_address
+                .each_call(matching!(_, _, _))
+                .returns(address),
+        ));
         memory.set_byte(address, initial);
-        execute_instruction(&mut registers, &mut memory, &INC_ABSOLUTE, &[lo, hi]);
+        execute_instruction(&mut registers, &mut memory, &mock, &[]);
         assert_eq!(memory.read_byte(address), expected);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
     }
 
     #[rstest]
-    #[case(0x00, 0x02, 0x04, 0x0204, 0x41, 0x42, false, false)]
-    #[case(0x00, 0x02, 0x04, 0x0204, 0xFF, 0x00, true, false)]
-    #[case(0x00, 0x02, 0x04, 0x0204, 0x7F, 0x80, false, true)]
-    fn test_inc_absolute_x(
+    #[case(0x0200u16, 0x42, 0x41, false, false)]
+    #[case(0x0200u16, 0x00, 0xFF, false, true)]
+    #[case(0x0200u16, 0x01, 0x00, true, false)]
+    fn test_dec(
         mut registers: Registers,
         mut memory: Memory,
-        #[case] lo: u8,
-        #[case] hi: u8,
-        #[case] x: u8,
         #[case] address: u16,
         #[case] initial: u8,
         #[case] expected: u8,
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
-        registers.x = x;
+        let mock = Unimock::new((
+            InstructionInfoOpsMock::instruction
+                .each_call(matching!())
+                .returns(Instruction::DEC),
+            InstructionInfoOpsMock::resolve_store_address
+                .each_call(matching!(_, _, _))
+                .returns(address),
+        ));
         memory.set_byte(address, initial);
-        execute_instruction(&mut registers, &mut memory, &INC_ABSOLUTE_X, &[lo, hi]);
+        execute_instruction(&mut registers, &mut memory, &mock, &[]);
         assert_eq!(memory.read_byte(address), expected);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
     }
 
     #[rstest]
-    #[case(0x10, 0x42, 0x41, false, false)]
-    #[case(0x10, 0x00, 0xFF, false, true)]
-    #[case(0x10, 0x01, 0x00, true, false)]
-    fn test_dec_zero_page(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] address: u8,
-        #[case] initial: u8,
-        #[case] expected: u8,
-        #[case] zero: bool,
-        #[case] negative: bool,
-    ) {
-        memory.set_zero_page_byte(address, initial);
-        execute_instruction(&mut registers, &mut memory, &DEC_ZERO_PAGE, &[address]);
-        assert_eq!(memory.read_zero_page_byte(address), expected);
-        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
-        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    fn test_sta(mut registers: Registers, mut memory: Memory) {
+        let mock = Unimock::new((
+            InstructionInfoOpsMock::instruction
+                .each_call(matching!())
+                .returns(Instruction::STA),
+            InstructionInfoOpsMock::resolve_store_address
+                .each_call(matching!(_, _, _))
+                .returns(0x0200u16),
+        ));
+        registers.a = 0x42;
+        execute_instruction(&mut registers, &mut memory, &mock, &[]);
+        assert_eq!(memory.read_byte(0x0200), 0x42);
     }
 
     #[rstest]
-    #[case(0x10, 0x03, 0x13, 0x42, 0x41, false, false)]
-    #[case(0x10, 0x03, 0x13, 0x00, 0xFF, false, true)]
-    #[case(0x10, 0x03, 0x13, 0x01, 0x00, true, false)]
-    fn test_dec_zero_page_x(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] base: u8,
-        #[case] x: u8,
-        #[case] address: u8,
-        #[case] initial: u8,
-        #[case] expected: u8,
-        #[case] zero: bool,
-        #[case] negative: bool,
-    ) {
-        registers.x = x;
-        memory.set_zero_page_byte(address, initial);
-        execute_instruction(&mut registers, &mut memory, &DEC_ZERO_PAGE_X, &[base]);
-        assert_eq!(memory.read_zero_page_byte(address), expected);
-        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
-        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    fn test_stx(mut registers: Registers, mut memory: Memory) {
+        let mock = Unimock::new((
+            InstructionInfoOpsMock::instruction
+                .each_call(matching!())
+                .returns(Instruction::STX),
+            InstructionInfoOpsMock::resolve_store_address
+                .each_call(matching!(_, _, _))
+                .returns(0x0200u16),
+        ));
+        registers.x = 0x42;
+        execute_instruction(&mut registers, &mut memory, &mock, &[]);
+        assert_eq!(memory.read_byte(0x0200), 0x42);
     }
 
     #[rstest]
-    #[case(0x00, 0x02, 0x0200, 0x42, 0x41, false, false)]
-    #[case(0x00, 0x02, 0x0200, 0x00, 0xFF, false, true)]
-    #[case(0x00, 0x02, 0x0200, 0x01, 0x00, true, false)]
-    fn test_dec_absolute(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] lo: u8,
-        #[case] hi: u8,
-        #[case] address: u16,
-        #[case] initial: u8,
-        #[case] expected: u8,
-        #[case] zero: bool,
-        #[case] negative: bool,
-    ) {
-        memory.set_byte(address, initial);
-        execute_instruction(&mut registers, &mut memory, &DEC_ABSOLUTE, &[lo, hi]);
-        assert_eq!(memory.read_byte(address), expected);
-        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
-        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
-    }
-
-    #[rstest]
-    #[case(0x00, 0x02, 0x04, 0x0204, 0x42, 0x41, false, false)]
-    #[case(0x00, 0x02, 0x04, 0x0204, 0x00, 0xFF, false, true)]
-    #[case(0x00, 0x02, 0x04, 0x0204, 0x01, 0x00, true, false)]
-    fn test_dec_absolute_x(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] lo: u8,
-        #[case] hi: u8,
-        #[case] x: u8,
-        #[case] address: u16,
-        #[case] initial: u8,
-        #[case] expected: u8,
-        #[case] zero: bool,
-        #[case] negative: bool,
-    ) {
-        registers.x = x;
-        memory.set_byte(address, initial);
-        execute_instruction(&mut registers, &mut memory, &DEC_ABSOLUTE_X, &[lo, hi]);
-        assert_eq!(memory.read_byte(address), expected);
-        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
-        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
-    }
-
-    #[rstest]
-    #[case(0x10, 0x42)]
-    fn test_sta_zero_page(mut registers: Registers, mut memory: Memory, #[case] address: u8, #[case] value: u8) {
-        registers.a = value;
-        execute_instruction(&mut registers, &mut memory, &STA_ZERO_PAGE, &[address]);
-        assert_eq!(memory.read_zero_page_byte(address), value);
-    }
-
-    #[rstest]
-    #[case(0x10, 0x03, 0x13, 0x42)]
-    fn test_sta_zero_page_x(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] base: u8,
-        #[case] x: u8,
-        #[case] address: u8,
-        #[case] value: u8,
-    ) {
-        registers.a = value;
-        registers.x = x;
-        execute_instruction(&mut registers, &mut memory, &STA_ZERO_PAGE_X, &[base]);
-        assert_eq!(memory.read_zero_page_byte(address), value);
-    }
-
-    #[rstest]
-    #[case(0x00, 0x02, 0x0200, 0x42)]
-    fn test_sta_absolute(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] lo: u8,
-        #[case] hi: u8,
-        #[case] address: u16,
-        #[case] value: u8,
-    ) {
-        registers.a = value;
-        execute_instruction(&mut registers, &mut memory, &STA_ABSOLUTE, &[lo, hi]);
-        assert_eq!(memory.read_byte(address), value);
-    }
-
-    #[rstest]
-    #[case(0x00, 0x02, 0x04, 0x0204, 0x42)]
-    fn test_sta_absolute_x(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] lo: u8,
-        #[case] hi: u8,
-        #[case] x: u8,
-        #[case] address: u16,
-        #[case] value: u8,
-    ) {
-        registers.a = value;
-        registers.x = x;
-        execute_instruction(&mut registers, &mut memory, &STA_ABSOLUTE_X, &[lo, hi]);
-        assert_eq!(memory.read_byte(address), value);
-    }
-
-    #[rstest]
-    #[case(0x00, 0x02, 0x04, 0x0204, 0x42)]
-    fn test_sta_absolute_y(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] lo: u8,
-        #[case] hi: u8,
-        #[case] y: u8,
-        #[case] address: u16,
-        #[case] value: u8,
-    ) {
-        registers.a = value;
-        registers.y = y;
-        execute_instruction(&mut registers, &mut memory, &STA_ABSOLUTE_Y, &[lo, hi]);
-        assert_eq!(memory.read_byte(address), value);
-    }
-
-    #[rstest]
-    #[case(0x10, 0x03, 0x13, 0x0200, 0x42)]
-    fn test_sta_indexed_indirect(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] base: u8,
-        #[case] x: u8,
-        #[case] ptr: u8,
-        #[case] address: u16,
-        #[case] value: u8,
-    ) {
-        registers.a = value;
-        registers.x = x;
-        memory.set_zero_page_word(ptr, address);
-        execute_instruction(&mut registers, &mut memory, &STA_INDEXED_INDIRECT, &[base]);
-        assert_eq!(memory.read_byte(address), value);
-    }
-
-    #[rstest]
-    #[case(0x20, 0x03, 0xC003, 0x42)]
-    fn test_sta_indirect_indexed(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] zp_addr: u8,
-        #[case] y: u8,
-        #[case] address: u16,
-        #[case] value: u8,
-    ) {
-        registers.a = value;
-        registers.y = y;
-        let base = address.wrapping_sub(y as u16);
-        memory.set_zero_page_word(zp_addr, base);
-        execute_instruction(&mut registers, &mut memory, &STA_INDIRECT_INDEXED, &[zp_addr]);
-        assert_eq!(memory.read_byte(address), value);
-    }
-
-    #[rstest]
-    #[case(0x10, 0x42)]
-    fn test_stx_zero_page(mut registers: Registers, mut memory: Memory, #[case] address: u8, #[case] value: u8) {
-        registers.x = value;
-        execute_instruction(&mut registers, &mut memory, &STX_ZERO_PAGE, &[address]);
-        assert_eq!(memory.read_zero_page_byte(address), value);
-    }
-
-    #[rstest]
-    #[case(0x10, 0x03, 0x13, 0x42)]
-    fn test_stx_zero_page_y(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] base: u8,
-        #[case] y: u8,
-        #[case] address: u8,
-        #[case] value: u8,
-    ) {
-        registers.x = value;
-        registers.y = y;
-        execute_instruction(&mut registers, &mut memory, &STX_ZERO_PAGE_Y, &[base]);
-        assert_eq!(memory.read_zero_page_byte(address), value);
-    }
-
-    #[rstest]
-    #[case(0x00, 0x02, 0x0200, 0x42)]
-    fn test_stx_absolute(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] lo: u8,
-        #[case] hi: u8,
-        #[case] address: u16,
-        #[case] value: u8,
-    ) {
-        registers.x = value;
-        execute_instruction(&mut registers, &mut memory, &STX_ABSOLUTE, &[lo, hi]);
-        assert_eq!(memory.read_byte(address), value);
-    }
-
-    #[rstest]
-    #[case(0x10, 0x42)]
-    fn test_sty_zero_page(mut registers: Registers, mut memory: Memory, #[case] address: u8, #[case] value: u8) {
-        registers.y = value;
-        execute_instruction(&mut registers, &mut memory, &STY_ZERO_PAGE, &[address]);
-        assert_eq!(memory.read_zero_page_byte(address), value);
-    }
-
-    #[rstest]
-    #[case(0x10, 0x03, 0x13, 0x42)]
-    fn test_sty_zero_page_x(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] base: u8,
-        #[case] x: u8,
-        #[case] address: u8,
-        #[case] value: u8,
-    ) {
-        registers.y = value;
-        registers.x = x;
-        execute_instruction(&mut registers, &mut memory, &STY_ZERO_PAGE_X, &[base]);
-        assert_eq!(memory.read_zero_page_byte(address), value);
-    }
-
-    #[rstest]
-    #[case(0x00, 0x02, 0x0200, 0x42)]
-    fn test_sty_absolute(
-        mut registers: Registers,
-        mut memory: Memory,
-        #[case] lo: u8,
-        #[case] hi: u8,
-        #[case] address: u16,
-        #[case] value: u8,
-    ) {
-        registers.y = value;
-        execute_instruction(&mut registers, &mut memory, &STY_ABSOLUTE, &[lo, hi]);
-        assert_eq!(memory.read_byte(address), value);
+    fn test_sty(mut registers: Registers, mut memory: Memory) {
+        let mock = Unimock::new((
+            InstructionInfoOpsMock::instruction
+                .each_call(matching!())
+                .returns(Instruction::STY),
+            InstructionInfoOpsMock::resolve_store_address
+                .each_call(matching!(_, _, _))
+                .returns(0x0200u16),
+        ));
+        registers.y = 0x42;
+        execute_instruction(&mut registers, &mut memory, &mock, &[]);
+        assert_eq!(memory.read_byte(0x0200), 0x42);
     }
 }

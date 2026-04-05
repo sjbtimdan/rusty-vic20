@@ -1,3 +1,6 @@
+use super::registers::Registers;
+use crate::memory::Memory;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Instruction {
     ADC,
@@ -67,6 +70,27 @@ pub struct InstructionInfo {
     pub instruction: Instruction,
     pub mode: AddressingMode,
     pub cycles: u8,
+}
+
+#[cfg_attr(test, unimock::unimock(api=InstructionInfoOpsMock))]
+pub trait InstructionInfoOps {
+    fn instruction(&self) -> Instruction;
+    fn resolve_load_operand(&self, registers: &Registers, memory: &Memory, operands: &[u8]) -> u8;
+    fn resolve_store_address(&self, registers: &Registers, memory: &Memory, operands: &[u8]) -> u16;
+}
+
+impl InstructionInfoOps for InstructionInfo {
+    fn instruction(&self) -> Instruction {
+        self.instruction
+    }
+
+    fn resolve_load_operand(&self, registers: &Registers, memory: &Memory, operands: &[u8]) -> u8 {
+        self.mode.resolve_load_operand(registers, memory, operands)
+    }
+
+    fn resolve_store_address(&self, registers: &Registers, memory: &Memory, operands: &[u8]) -> u16 {
+        self.mode.resolve_store_address(registers, memory, operands)
+    }
 }
 
 const fn info(opcode: u8, instruction: Instruction, mode: AddressingMode, cycles: u8) -> InstructionInfo {
