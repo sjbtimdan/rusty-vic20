@@ -44,7 +44,7 @@ impl Registers {
         self.update_zero_and_negative(value);
     }
 
-    fn update_zero_and_negative(&mut self, value: u8) {
+    pub fn update_zero_and_negative(&mut self, value: u8) {
         self.set_flag(ZERO_FLAG_BITMASK, value == 0);
         self.set_flag(NEGATIVE_FLAG_BITMASK, value & 0x80 != 0);
     }
