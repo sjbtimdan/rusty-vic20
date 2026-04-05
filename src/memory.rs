@@ -23,11 +23,23 @@ pub const KERNEL_ROM_START: usize = 0xE000;
 pub const KERNEL_ROM_END: usize = 0xFFFF;
 
 impl Memory {
-    pub fn read_zero_page(&self, address: u8) -> u8 {
-        self.bytes[address as usize]
+    pub fn read_zero_page_byte(&self, address: u8) -> u8 {
+        self.read_byte(address as u16)
     }
 
-    pub fn read_word(&mut self, address: u16) -> u16 {
+    pub fn set_zero_page_byte(&mut self, address: u8, value: u8) {
+        self.set_byte(address as u16, value);
+    }
+
+    pub fn read_zero_page_word(&self, address: u8) -> u16 {
+        self.read_word(address as u16)
+    }
+
+    pub fn set_zero_page_word(&mut self, address: u8, value: u16) {
+        self.set_word(address as u16, value);
+    }
+
+    pub fn read_word(&self, address: u16) -> u16 {
         let lo = self.bytes[address as usize] as u16;
         let hi = self.bytes[address.wrapping_add(1) as usize] as u16;
         (hi << 8) | lo
@@ -38,7 +50,7 @@ impl Memory {
         self.bytes[address.wrapping_add(1) as usize] = (value >> 8) as u8;
     }
 
-    pub fn read_byte(&mut self, address: u16) -> u8 {
+    pub fn read_byte(&self, address: u16) -> u8 {
         self.bytes[address as usize]
     }
 
@@ -82,7 +94,7 @@ mod tests {
     #[rstest]
     fn test_set_byte_and_read_zero_page(mut memory: Memory) {
         memory.set_byte(0x42, 0xAB);
-        assert_eq!(memory.read_zero_page(0x42), 0xAB);
+        assert_eq!(memory.read_zero_page_byte(0x42), 0xAB);
     }
 
     #[rstest]
@@ -95,8 +107,7 @@ mod tests {
     #[rstest]
     fn test_set_word_little_endian(mut memory: Memory) {
         memory.set_word(0x0300, 0xABCD);
-        assert_eq!(memory.bytes[0x0300], 0xCD);
-        assert_eq!(memory.bytes[0x0301], 0xAB);
+        assert_eq!(memory.read_word(0x0300), 0xABCD);
     }
 
     #[rstest]

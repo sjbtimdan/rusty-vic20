@@ -18,43 +18,39 @@ pub fn execute_instruction(
                 registers.set_accumulator(operands[0]);
             }
             AddressingMode::ZeroPage => {
-                let read = memory.read_zero_page(operands[0]);
+                let read = memory.read_zero_page_byte(operands[0]);
                 registers.set_accumulator(read);
             }
             AddressingMode::ZeroPageX => {
                 let address = operands[0].wrapping_add(registers.x);
-                let read = memory.read_zero_page(address);
+                let read = memory.read_zero_page_byte(address);
                 registers.set_accumulator(read);
             }
             AddressingMode::Absolute => {
                 let address = (operands[1] as u16) << 8 | operands[0] as u16;
-                let read = memory.bytes[address as usize];
+                let read = memory.read_byte(address);
                 registers.set_accumulator(read);
             }
             AddressingMode::AbsoluteX => {
                 let address = ((operands[1] as u16) << 8 | operands[0] as u16).wrapping_add(registers.x as u16);
-                let read = memory.bytes[address as usize];
+                let read = memory.read_byte(address);
                 registers.set_accumulator(read);
             }
             AddressingMode::AbsoluteY => {
                 let address = ((operands[1] as u16) << 8 | operands[0] as u16).wrapping_add(registers.y as u16);
-                let read = memory.bytes[address as usize];
+                let read = memory.read_byte(address);
                 registers.set_accumulator(read);
             }
             AddressingMode::IndexedIndirect => {
                 let ptr = operands[0].wrapping_add(registers.x);
-                let lo = memory.read_zero_page(ptr);
-                let hi = memory.read_zero_page(ptr.wrapping_add(1));
-                let address = (hi as u16) << 8 | lo as u16;
-                let read = memory.bytes[address as usize];
+                let address = memory.read_zero_page_word(ptr);
+                let read = memory.read_byte(address);
                 registers.set_accumulator(read);
             }
             AddressingMode::IndirectIndexed => {
-                let lo = memory.read_zero_page(operands[0]);
-                let hi = memory.read_zero_page(operands[0].wrapping_add(1));
-                let base = (hi as u16) << 8 | lo as u16;
+                let base = memory.read_zero_page_word(operands[0]);
                 let address = base.wrapping_add(registers.y as u16);
-                let read = memory.bytes[address as usize];
+                let read = memory.read_byte(address);
                 registers.set_accumulator(read);
             }
             _ => unimplemented!("Addressing mode {:?} not implemented for LDA", instruction.mode),
@@ -115,7 +111,7 @@ mod tests {
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
-        memory.bytes[address as usize] = value;
+        memory.set_zero_page_byte(address, value);
         execute_instruction(&mut registers, &mut memory, &LDA_ZERO_PAGE, &[address]);
         assert_eq!(registers.a, value);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
@@ -137,7 +133,7 @@ mod tests {
         #[case] negative: bool,
     ) {
         registers.x = x;
-        memory.bytes[address as usize] = value;
+        memory.set_zero_page_byte(address, value);
         execute_instruction(&mut registers, &mut memory, &LDA_ZERO_PAGE_X, &[base]);
         assert_eq!(registers.a, value);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
@@ -180,8 +176,8 @@ mod tests {
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
-        registers.x = x;
-        memory.bytes[address as usize] = value;
+        registers.set_x(x);
+        memory.set_byte(address, value);
         execute_instruction(&mut registers, &mut memory, &LDA_ABSOLUTE_X, &[lo, hi]);
         assert_eq!(registers.a, value);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
@@ -203,8 +199,8 @@ mod tests {
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
-        registers.y = y;
-        memory.bytes[address as usize] = value;
+        registers.set_y(y);
+        memory.set_byte(address, value);
         execute_instruction(&mut registers, &mut memory, &LDA_ABSOLUTE_Y, &[lo, hi]);
         assert_eq!(registers.a, value);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
@@ -212,27 +208,23 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0x10, 0x03, 0x13, 0x14, 0x05, 0x00, 0x0005, 0x42, false, false)]
-    #[case(0x20, 0x01, 0x21, 0x22, 0x06, 0x00, 0x0006, 0x00, true, false)]
-    #[case(0x30, 0x02, 0x32, 0x33, 0x07, 0x00, 0x0007, 0x80, false, true)]
+    #[case(0x10, 0x03, 0x13, 0x0005, 0x42, false, false)]
+    #[case(0x20, 0x01, 0x21, 0x0006, 0x00, true, false)]
+    #[case(0x30, 0x02, 0x32, 0x0007, 0x80, false, true)]
     fn test_lda_indexed_indirect(
         mut registers: Registers,
         mut memory: Memory,
         #[case] base: u8,
         #[case] x: u8,
         #[case] ptr: u8,
-        #[case] ptr_next: u8,
-        #[case] ptr_lo: u8,
-        #[case] ptr_hi: u8,
         #[case] address: u16,
         #[case] value: u8,
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
         registers.x = x;
-        memory.bytes[ptr as usize] = ptr_lo;
-        memory.bytes[ptr_next as usize] = ptr_hi;
-        memory.bytes[address as usize] = value;
+        memory.set_zero_page_word(ptr, address);
+        memory.set_byte(address, value);
         execute_instruction(&mut registers, &mut memory, &LDA_INDEXED_INDIRECT, &[base]);
         assert_eq!(registers.a, value);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
@@ -240,15 +232,13 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0x20, 0x00, 0xC0, 0x03, 0xC003, 0x42, false, false)]
-    #[case(0x20, 0x00, 0xC0, 0x05, 0xC005, 0x00, true, false)]
-    #[case(0x20, 0x00, 0xC0, 0x01, 0xC001, 0x80, false, true)]
+    #[case(0x20, 0x03, 0xC003, 0x42, false, false)]
+    #[case(0x20, 0x05, 0xC005, 0x00, true, false)]
+    #[case(0x20, 0x01, 0xC001, 0x80, false, true)]
     fn test_lda_indirect_indexed(
         mut registers: Registers,
         mut memory: Memory,
         #[case] zp_addr: u8,
-        #[case] ptr_lo: u8,
-        #[case] ptr_hi: u8,
         #[case] y: u8,
         #[case] address: u16,
         #[case] value: u8,
@@ -256,9 +246,9 @@ mod tests {
         #[case] negative: bool,
     ) {
         registers.y = y;
-        memory.bytes[zp_addr as usize] = ptr_lo;
-        memory.bytes[zp_addr.wrapping_add(1) as usize] = ptr_hi;
-        memory.bytes[address as usize] = value;
+        let base = address.wrapping_sub(y as u16);
+        memory.set_zero_page_word(zp_addr, base);
+        memory.set_byte(address, value);
         execute_instruction(&mut registers, &mut memory, &LDA_INDIRECT_INDEXED, &[zp_addr]);
         assert_eq!(registers.a, value);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
