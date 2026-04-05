@@ -62,6 +62,10 @@ pub fn execute_instruction(
             let address = instruction_info.resolve_store_address(registers, memory, operands);
             memory.set_byte(address, registers.y);
         }
+        Instruction::ORA => {
+            let value = instruction_info.resolve_load_operand(registers, memory, operands);
+            registers.set_accumulator(registers.a | value);
+        }
         _ => unimplemented!("Instruction {:?} not implemented yet", instruction),
     }
 }
@@ -165,8 +169,13 @@ mod tests {
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
+        let inx_instruction = Unimock::new(
+            InstructionInfoOpsMock::instruction
+                .each_call(matching!())
+                .returns(Instruction::INX),
+        );
         registers.set_x(initial);
-        execute_instruction(&mut registers, &mut memory, &INX_IMPLIED, &[]);
+        execute_instruction(&mut registers, &mut memory, &inx_instruction, &[]);
         assert_eq!(registers.x, expected);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
@@ -184,8 +193,13 @@ mod tests {
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
+        let iny_instruction = Unimock::new(
+            InstructionInfoOpsMock::instruction
+                .each_call(matching!())
+                .returns(Instruction::INY),
+        );
         registers.set_y(initial);
-        execute_instruction(&mut registers, &mut memory, &INY_IMPLIED, &[]);
+        execute_instruction(&mut registers, &mut memory, &iny_instruction, &[]);
         assert_eq!(registers.y, expected);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
@@ -203,8 +217,13 @@ mod tests {
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
+        let dex_instruction = Unimock::new(
+            InstructionInfoOpsMock::instruction
+                .each_call(matching!())
+                .returns(Instruction::DEX),
+        );
         registers.set_x(initial);
-        execute_instruction(&mut registers, &mut memory, &DEX_IMPLIED, &[]);
+        execute_instruction(&mut registers, &mut memory, &dex_instruction, &[]);
         assert_eq!(registers.x, expected);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
@@ -222,8 +241,13 @@ mod tests {
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
+        let dey_instruction = Unimock::new(
+            InstructionInfoOpsMock::instruction
+                .each_call(matching!())
+                .returns(Instruction::DEY),
+        );
         registers.set_y(initial);
-        execute_instruction(&mut registers, &mut memory, &DEY_IMPLIED, &[]);
+        execute_instruction(&mut registers, &mut memory, &dey_instruction, &[]);
         assert_eq!(registers.y, expected);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
@@ -328,5 +352,33 @@ mod tests {
         registers.y = 0x42;
         execute_instruction(&mut registers, &mut memory, &mock, &[]);
         assert_eq!(memory.read_byte(0x0200), 0x42);
+    }
+
+    #[rstest]
+    #[case(0x0F, 0xF0, 0xFF, false, true)]
+    #[case(0x00, 0x00, 0x00, true, false)]
+    #[case(0x42, 0x15, 0x57, false, false)]
+    fn test_ora(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] accumulator: u8,
+        #[case] operand: u8,
+        #[case] expected: u8,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        let mock = Unimock::new((
+            InstructionInfoOpsMock::instruction
+                .each_call(matching!())
+                .returns(Instruction::ORA),
+            InstructionInfoOpsMock::resolve_load_operand
+                .each_call(matching!(_, _, _))
+                .returns(operand),
+        ));
+        registers.set_accumulator(accumulator);
+        execute_instruction(&mut registers, &mut memory, &mock, &[operand]);
+        assert_eq!(registers.a, expected);
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
     }
 }

@@ -106,58 +106,6 @@ const fn illegal(opcode: u8) -> InstructionInfo {
     info(opcode, Instruction::Illegal, AddressingMode::Implied, 0)
 }
 
-pub const LDA_IMMEDIATE: InstructionInfo = info(0xA9, Instruction::LDA, AddressingMode::Immediate, 2);
-pub const LDA_ZERO_PAGE: InstructionInfo = info(0xA5, Instruction::LDA, AddressingMode::ZeroPage, 3);
-pub const LDA_ZERO_PAGE_X: InstructionInfo = info(0xB5, Instruction::LDA, AddressingMode::ZeroPageX, 4);
-pub const LDA_ABSOLUTE: InstructionInfo = info(0xAD, Instruction::LDA, AddressingMode::Absolute, 4);
-pub const LDA_ABSOLUTE_X: InstructionInfo = info(0xBD, Instruction::LDA, AddressingMode::AbsoluteX, 4);
-pub const LDA_ABSOLUTE_Y: InstructionInfo = info(0xB9, Instruction::LDA, AddressingMode::AbsoluteY, 4);
-pub const LDA_INDEXED_INDIRECT: InstructionInfo = info(0xA1, Instruction::LDA, AddressingMode::IndexedIndirect, 6);
-pub const LDA_INDIRECT_INDEXED: InstructionInfo = info(0xB1, Instruction::LDA, AddressingMode::IndirectIndexed, 5);
-
-pub const LDX_IMMEDIATE: InstructionInfo = info(0xA2, Instruction::LDX, AddressingMode::Immediate, 2);
-pub const LDX_ZERO_PAGE: InstructionInfo = info(0xA6, Instruction::LDX, AddressingMode::ZeroPage, 3);
-pub const LDX_ZERO_PAGE_Y: InstructionInfo = info(0xB6, Instruction::LDX, AddressingMode::ZeroPageY, 4);
-pub const LDX_ABSOLUTE: InstructionInfo = info(0xAE, Instruction::LDX, AddressingMode::Absolute, 4);
-pub const LDX_ABSOLUTE_Y: InstructionInfo = info(0xBE, Instruction::LDX, AddressingMode::AbsoluteY, 4);
-
-pub const DEX_IMPLIED: InstructionInfo = info(0xCA, Instruction::DEX, AddressingMode::Implied, 2);
-pub const DEY_IMPLIED: InstructionInfo = info(0x88, Instruction::DEY, AddressingMode::Implied, 2);
-pub const INX_IMPLIED: InstructionInfo = info(0xE8, Instruction::INX, AddressingMode::Implied, 2);
-pub const INY_IMPLIED: InstructionInfo = info(0xC8, Instruction::INY, AddressingMode::Implied, 2);
-
-pub const INC_ZERO_PAGE: InstructionInfo = info(0xE6, Instruction::INC, AddressingMode::ZeroPage, 5);
-pub const INC_ZERO_PAGE_X: InstructionInfo = info(0xF6, Instruction::INC, AddressingMode::ZeroPageX, 6);
-pub const INC_ABSOLUTE: InstructionInfo = info(0xEE, Instruction::INC, AddressingMode::Absolute, 6);
-pub const INC_ABSOLUTE_X: InstructionInfo = info(0xFE, Instruction::INC, AddressingMode::AbsoluteX, 7);
-
-pub const DEC_ZERO_PAGE: InstructionInfo = info(0xC6, Instruction::DEC, AddressingMode::ZeroPage, 5);
-pub const DEC_ZERO_PAGE_X: InstructionInfo = info(0xD6, Instruction::DEC, AddressingMode::ZeroPageX, 6);
-pub const DEC_ABSOLUTE: InstructionInfo = info(0xCE, Instruction::DEC, AddressingMode::Absolute, 6);
-pub const DEC_ABSOLUTE_X: InstructionInfo = info(0xDE, Instruction::DEC, AddressingMode::AbsoluteX, 7);
-
-pub const STA_ZERO_PAGE: InstructionInfo = info(0x85, Instruction::STA, AddressingMode::ZeroPage, 3);
-pub const STA_ZERO_PAGE_X: InstructionInfo = info(0x95, Instruction::STA, AddressingMode::ZeroPageX, 4);
-pub const STA_ABSOLUTE: InstructionInfo = info(0x8D, Instruction::STA, AddressingMode::Absolute, 4);
-pub const STA_ABSOLUTE_X: InstructionInfo = info(0x9D, Instruction::STA, AddressingMode::AbsoluteX, 5);
-pub const STA_ABSOLUTE_Y: InstructionInfo = info(0x99, Instruction::STA, AddressingMode::AbsoluteY, 5);
-pub const STA_INDEXED_INDIRECT: InstructionInfo = info(0x81, Instruction::STA, AddressingMode::IndexedIndirect, 6);
-pub const STA_INDIRECT_INDEXED: InstructionInfo = info(0x91, Instruction::STA, AddressingMode::IndirectIndexed, 6);
-
-pub const STX_ZERO_PAGE: InstructionInfo = info(0x86, Instruction::STX, AddressingMode::ZeroPage, 3);
-pub const STX_ZERO_PAGE_Y: InstructionInfo = info(0x96, Instruction::STX, AddressingMode::ZeroPageY, 4);
-pub const STX_ABSOLUTE: InstructionInfo = info(0x8E, Instruction::STX, AddressingMode::Absolute, 4);
-
-pub const STY_ZERO_PAGE: InstructionInfo = info(0x84, Instruction::STY, AddressingMode::ZeroPage, 3);
-pub const STY_ZERO_PAGE_X: InstructionInfo = info(0x94, Instruction::STY, AddressingMode::ZeroPageX, 4);
-pub const STY_ABSOLUTE: InstructionInfo = info(0x8C, Instruction::STY, AddressingMode::Absolute, 4);
-
-pub const LDY_IMMEDIATE: InstructionInfo = info(0xA0, Instruction::LDY, AddressingMode::Immediate, 2);
-pub const LDY_ZERO_PAGE: InstructionInfo = info(0xA4, Instruction::LDY, AddressingMode::ZeroPage, 3);
-pub const LDY_ZERO_PAGE_X: InstructionInfo = info(0xB4, Instruction::LDY, AddressingMode::ZeroPageX, 4);
-pub const LDY_ABSOLUTE: InstructionInfo = info(0xAC, Instruction::LDY, AddressingMode::Absolute, 4);
-pub const LDY_ABSOLUTE_X: InstructionInfo = info(0xBC, Instruction::LDY, AddressingMode::AbsoluteX, 4);
-
 // Base cycle counts are provided here. Some instructions (branches/page crossings)
 // can take extra cycles depending on runtime conditions.
 pub const fn decode(opcode: u8) -> InstructionInfo {
@@ -234,85 +182,85 @@ pub const fn decode(opcode: u8) -> InstructionInfo {
         0x79 => info(0x79, Instruction::ADC, AddressingMode::AbsoluteY, 4),
         0x7D => info(0x7D, Instruction::ADC, AddressingMode::AbsoluteX, 4),
         0x7E => info(0x7E, Instruction::ROR, AddressingMode::AbsoluteX, 7),
-        0x81 => STA_INDEXED_INDIRECT,
-        0x84 => STY_ZERO_PAGE,
-        0x85 => STA_ZERO_PAGE,
-        0x86 => STX_ZERO_PAGE,
-        0x88 => DEY_IMPLIED,
+        0x81 => info(0x81, Instruction::STA, AddressingMode::IndexedIndirect, 6),
+        0x84 => info(0x84, Instruction::STY, AddressingMode::ZeroPage, 3),
+        0x85 => info(0x85, Instruction::STA, AddressingMode::ZeroPage, 3),
+        0x86 => info(0x86, Instruction::STX, AddressingMode::ZeroPage, 3),
+        0x88 => info(0x88, Instruction::DEY, AddressingMode::Implied, 2),
         0x8A => info(0x8A, Instruction::TXA, AddressingMode::Implied, 2),
-        0x8C => STY_ABSOLUTE,
-        0x8D => STA_ABSOLUTE,
-        0x8E => STX_ABSOLUTE,
+        0x8C => info(0x8C, Instruction::STY, AddressingMode::Absolute, 4),
+        0x8D => info(0x8D, Instruction::STA, AddressingMode::Absolute, 4),
+        0x8E => info(0x8E, Instruction::STX, AddressingMode::Absolute, 4),
         0x90 => info(0x90, Instruction::BCC, AddressingMode::Relative, 2),
-        0x91 => STA_INDIRECT_INDEXED,
-        0x94 => STY_ZERO_PAGE_X,
-        0x95 => STA_ZERO_PAGE_X,
-        0x96 => STX_ZERO_PAGE_Y,
+        0x91 => info(0x91, Instruction::STA, AddressingMode::IndirectIndexed, 6),
+        0x94 => info(0x94, Instruction::STY, AddressingMode::ZeroPageX, 4),
+        0x95 => info(0x95, Instruction::STA, AddressingMode::ZeroPageX, 4),
+        0x96 => info(0x96, Instruction::STX, AddressingMode::ZeroPageY, 4),
         0x98 => info(0x98, Instruction::TYA, AddressingMode::Implied, 2),
-        0x99 => STA_ABSOLUTE_Y,
+        0x99 => info(0x99, Instruction::STA, AddressingMode::AbsoluteY, 5),
         0x9A => info(0x9A, Instruction::TXS, AddressingMode::Implied, 2),
-        0x9D => STA_ABSOLUTE_X,
-        0xA0 => LDY_IMMEDIATE,
-        0xA1 => LDA_INDEXED_INDIRECT,
-        0xA2 => LDX_IMMEDIATE,
-        0xA4 => LDY_ZERO_PAGE,
-        0xA5 => LDA_ZERO_PAGE,
-        0xA6 => LDX_ZERO_PAGE,
+        0x9D => info(0x9D, Instruction::STA, AddressingMode::AbsoluteX, 5),
+        0xA0 => info(0xA0, Instruction::LDY, AddressingMode::Immediate, 2),
+        0xA1 => info(0xA1, Instruction::LDA, AddressingMode::IndexedIndirect, 6),
+        0xA2 => info(0xA2, Instruction::LDX, AddressingMode::Immediate, 2),
+        0xA4 => info(0xA4, Instruction::LDY, AddressingMode::ZeroPage, 3),
+        0xA5 => info(0xA5, Instruction::LDA, AddressingMode::ZeroPage, 3),
+        0xA6 => info(0xA6, Instruction::LDX, AddressingMode::ZeroPage, 3),
         0xA8 => info(0xA8, Instruction::TAY, AddressingMode::Implied, 2),
-        0xA9 => LDA_IMMEDIATE,
+        0xA9 => info(0xA9, Instruction::LDA, AddressingMode::Immediate, 2),
         0xAA => info(0xAA, Instruction::TAX, AddressingMode::Implied, 2),
-        0xAC => LDY_ABSOLUTE,
-        0xAD => LDA_ABSOLUTE,
-        0xAE => LDX_ABSOLUTE,
+        0xAC => info(0xAC, Instruction::LDY, AddressingMode::Absolute, 4),
+        0xAD => info(0xAD, Instruction::LDA, AddressingMode::Absolute, 4),
+        0xAE => info(0xAE, Instruction::LDX, AddressingMode::Absolute, 4),
         0xB0 => info(0xB0, Instruction::BCS, AddressingMode::Relative, 2),
         0xB1 => info(0xB1, Instruction::LDA, AddressingMode::IndirectIndexed, 5),
-        0xB4 => LDY_ZERO_PAGE_X,
-        0xB5 => LDA_ZERO_PAGE_X,
-        0xB6 => LDX_ZERO_PAGE_Y,
+        0xB4 => info(0xB4, Instruction::LDY, AddressingMode::ZeroPageX, 4),
+        0xB5 => info(0xB5, Instruction::LDA, AddressingMode::ZeroPageX, 4),
+        0xB6 => info(0xB6, Instruction::LDX, AddressingMode::ZeroPageY, 4),
         0xB8 => info(0xB8, Instruction::CLV, AddressingMode::Implied, 2),
-        0xB9 => LDA_ABSOLUTE_Y,
+        0xB9 => info(0xB9, Instruction::LDA, AddressingMode::AbsoluteY, 4),
         0xBA => info(0xBA, Instruction::TSX, AddressingMode::Implied, 2),
-        0xBC => LDY_ABSOLUTE_X,
-        0xBD => LDA_ABSOLUTE_X,
-        0xBE => LDX_ABSOLUTE_Y,
+        0xBC => info(0xBC, Instruction::LDY, AddressingMode::AbsoluteX, 4),
+        0xBD => info(0xBD, Instruction::LDA, AddressingMode::AbsoluteX, 4),
+        0xBE => info(0xBE, Instruction::LDX, AddressingMode::AbsoluteY, 4),
         0xC0 => info(0xC0, Instruction::CPY, AddressingMode::Immediate, 2),
         0xC1 => info(0xC1, Instruction::CMP, AddressingMode::IndexedIndirect, 6),
         0xC4 => info(0xC4, Instruction::CPY, AddressingMode::ZeroPage, 3),
         0xC5 => info(0xC5, Instruction::CMP, AddressingMode::ZeroPage, 3),
-        0xC6 => DEC_ZERO_PAGE,
-        0xC8 => INY_IMPLIED,
+        0xC6 => info(0xC6, Instruction::DEC, AddressingMode::ZeroPage, 5),
+        0xC8 => info(0xC8, Instruction::INY, AddressingMode::Implied, 2),
         0xC9 => info(0xC9, Instruction::CMP, AddressingMode::Immediate, 2),
-        0xCA => DEX_IMPLIED,
+        0xCA => info(0xCA, Instruction::DEX, AddressingMode::Implied, 2),
         0xCC => info(0xCC, Instruction::CPY, AddressingMode::Absolute, 4),
         0xCD => info(0xCD, Instruction::CMP, AddressingMode::Absolute, 4),
-        0xCE => DEC_ABSOLUTE,
+        0xCE => info(0xCE, Instruction::DEC, AddressingMode::Absolute, 6),
         0xD0 => info(0xD0, Instruction::BNE, AddressingMode::Relative, 2),
         0xD1 => info(0xD1, Instruction::CMP, AddressingMode::IndirectIndexed, 5),
         0xD5 => info(0xD5, Instruction::CMP, AddressingMode::ZeroPageX, 4),
-        0xD6 => DEC_ZERO_PAGE_X,
+        0xD6 => info(0xD6, Instruction::DEC, AddressingMode::ZeroPageX, 6),
         0xD8 => info(0xD8, Instruction::CLD, AddressingMode::Implied, 2),
         0xD9 => info(0xD9, Instruction::CMP, AddressingMode::AbsoluteY, 4),
         0xDD => info(0xDD, Instruction::CMP, AddressingMode::AbsoluteX, 4),
-        0xDE => DEC_ABSOLUTE_X,
+        0xDE => info(0xDE, Instruction::DEC, AddressingMode::AbsoluteX, 7),
         0xE0 => info(0xE0, Instruction::CPX, AddressingMode::Immediate, 2),
         0xE1 => info(0xE1, Instruction::SBC, AddressingMode::IndexedIndirect, 6),
         0xE4 => info(0xE4, Instruction::CPX, AddressingMode::ZeroPage, 3),
         0xE5 => info(0xE5, Instruction::SBC, AddressingMode::ZeroPage, 3),
-        0xE6 => INC_ZERO_PAGE,
-        0xE8 => INX_IMPLIED,
+        0xE6 => info(0xE6, Instruction::INC, AddressingMode::ZeroPage, 5),
+        0xE8 => info(0xE8, Instruction::INX, AddressingMode::Implied, 2),
         0xE9 => info(0xE9, Instruction::SBC, AddressingMode::Immediate, 2),
         0xEA => info(0xEA, Instruction::NOP, AddressingMode::Implied, 2),
         0xEC => info(0xEC, Instruction::CPX, AddressingMode::Absolute, 4),
         0xED => info(0xED, Instruction::SBC, AddressingMode::Absolute, 4),
-        0xEE => INC_ABSOLUTE,
+        0xEE => info(0xEE, Instruction::INC, AddressingMode::Absolute, 6),
         0xF0 => info(0xF0, Instruction::BEQ, AddressingMode::Relative, 2),
         0xF1 => info(0xF1, Instruction::SBC, AddressingMode::IndirectIndexed, 5),
         0xF5 => info(0xF5, Instruction::SBC, AddressingMode::ZeroPageX, 4),
-        0xF6 => INC_ZERO_PAGE_X,
+        0xF6 => info(0xF6, Instruction::INC, AddressingMode::ZeroPageX, 6),
         0xF8 => info(0xF8, Instruction::SED, AddressingMode::Implied, 2),
         0xF9 => info(0xF9, Instruction::SBC, AddressingMode::AbsoluteY, 4),
         0xFD => info(0xFD, Instruction::SBC, AddressingMode::AbsoluteX, 4),
-        0xFE => INC_ABSOLUTE_X,
+        0xFE => info(0xFE, Instruction::INC, AddressingMode::AbsoluteX, 7),
         _ => illegal(opcode),
     }
 }
