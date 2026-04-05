@@ -1,6 +1,6 @@
 use crate::{
     cpu::{
-        instructions::{AddressingMode, Instruction, InstructionInfo},
+        instructions::{Instruction, InstructionInfo},
         registers::Registers,
     },
     memory::Memory,
@@ -14,15 +14,15 @@ pub fn execute_instruction(
 ) {
     match instruction.instruction {
         Instruction::LDA => {
-            let value = resolve_load_operand(registers, memory, instruction.mode, operands);
+            let value = instruction.mode.resolve_load_operand(registers, memory, operands);
             registers.set_accumulator(value);
         }
         Instruction::LDX => {
-            let value = resolve_load_operand(registers, memory, instruction.mode, operands);
+            let value = instruction.mode.resolve_load_operand(registers, memory, operands);
             registers.set_x(value);
         }
         Instruction::LDY => {
-            let value = resolve_load_operand(registers, memory, instruction.mode, operands);
+            let value = instruction.mode.resolve_load_operand(registers, memory, operands);
             registers.set_y(value);
         }
         Instruction::DEX => {
@@ -38,82 +38,30 @@ pub fn execute_instruction(
             registers.set_y(registers.y.wrapping_add(1));
         }
         Instruction::INC => {
-            let address = resolve_store_address(registers, memory, instruction.mode, operands);
+            let address = instruction.mode.resolve_store_address(registers, memory, operands);
             let value = memory.read_byte(address).wrapping_add(1);
             memory.set_byte(address, value);
             registers.update_zero_and_negative(value);
         }
         Instruction::DEC => {
-            let address = resolve_store_address(registers, memory, instruction.mode, operands);
+            let address = instruction.mode.resolve_store_address(registers, memory, operands);
             let value = memory.read_byte(address).wrapping_sub(1);
             memory.set_byte(address, value);
             registers.update_zero_and_negative(value);
         }
         Instruction::STA => {
-            let address = resolve_store_address(registers, memory, instruction.mode, operands);
+            let address = instruction.mode.resolve_store_address(registers, memory, operands);
             memory.set_byte(address, registers.a);
         }
         Instruction::STX => {
-            let address = resolve_store_address(registers, memory, instruction.mode, operands);
+            let address = instruction.mode.resolve_store_address(registers, memory, operands);
             memory.set_byte(address, registers.x);
         }
         Instruction::STY => {
-            let address = resolve_store_address(registers, memory, instruction.mode, operands);
+            let address = instruction.mode.resolve_store_address(registers, memory, operands);
             memory.set_byte(address, registers.y);
         }
         _ => unimplemented!("Instruction {:?} not implemented yet", instruction.instruction),
-    }
-}
-
-fn resolve_store_address(registers: &Registers, memory: &Memory, mode: AddressingMode, operands: &[u8]) -> u16 {
-    match mode {
-        AddressingMode::ZeroPage => operands[0] as u16,
-        AddressingMode::ZeroPageX => operands[0].wrapping_add(registers.x) as u16,
-        AddressingMode::ZeroPageY => operands[0].wrapping_add(registers.y) as u16,
-        AddressingMode::Absolute => (operands[1] as u16) << 8 | operands[0] as u16,
-        AddressingMode::AbsoluteX => ((operands[1] as u16) << 8 | operands[0] as u16).wrapping_add(registers.x as u16),
-        AddressingMode::AbsoluteY => ((operands[1] as u16) << 8 | operands[0] as u16).wrapping_add(registers.y as u16),
-        AddressingMode::IndexedIndirect => {
-            let ptr = operands[0].wrapping_add(registers.x);
-            memory.read_zero_page_word(ptr)
-        }
-        AddressingMode::IndirectIndexed => {
-            let base = memory.read_zero_page_word(operands[0]);
-            base.wrapping_add(registers.y as u16)
-        }
-        _ => unimplemented!("Addressing mode {:?} not implemented for store", mode),
-    }
-}
-
-fn resolve_load_operand(registers: &Registers, memory: &Memory, mode: AddressingMode, operands: &[u8]) -> u8 {
-    match mode {
-        AddressingMode::Immediate => operands[0],
-        AddressingMode::ZeroPage => memory.read_zero_page_byte(operands[0]),
-        AddressingMode::ZeroPageX => memory.read_zero_page_byte(operands[0].wrapping_add(registers.x)),
-        AddressingMode::ZeroPageY => memory.read_zero_page_byte(operands[0].wrapping_add(registers.y)),
-        AddressingMode::Absolute => {
-            let address = (operands[1] as u16) << 8 | operands[0] as u16;
-            memory.read_byte(address)
-        }
-        AddressingMode::AbsoluteX => {
-            let address = ((operands[1] as u16) << 8 | operands[0] as u16).wrapping_add(registers.x as u16);
-            memory.read_byte(address)
-        }
-        AddressingMode::AbsoluteY => {
-            let address = ((operands[1] as u16) << 8 | operands[0] as u16).wrapping_add(registers.y as u16);
-            memory.read_byte(address)
-        }
-        AddressingMode::IndexedIndirect => {
-            let ptr = operands[0].wrapping_add(registers.x);
-            let address = memory.read_zero_page_word(ptr);
-            memory.read_byte(address)
-        }
-        AddressingMode::IndirectIndexed => {
-            let base = memory.read_zero_page_word(operands[0]);
-            let address = base.wrapping_add(registers.y as u16);
-            memory.read_byte(address)
-        }
-        _ => unimplemented!("Addressing mode {:?} not implemented for load", mode),
     }
 }
 

@@ -1,0 +1,259 @@
+use crate::{cpu::registers::Registers, memory::Memory};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AddressingMode {
+    Implied,
+    Accumulator,
+    Immediate,
+    ZeroPage,
+    ZeroPageX,
+    ZeroPageY,
+    Relative,
+    Absolute,
+    AbsoluteX,
+    AbsoluteY,
+    Indirect,
+    IndexedIndirect,
+    IndirectIndexed,
+}
+
+impl AddressingMode {
+    pub fn resolve_load_operand(&self, registers: &Registers, memory: &Memory, operands: &[u8]) -> u8 {
+        match self {
+            AddressingMode::Immediate => operands[0],
+            AddressingMode::ZeroPage => memory.read_zero_page_byte(operands[0]),
+            AddressingMode::ZeroPageX => memory.read_zero_page_byte(operands[0].wrapping_add(registers.x)),
+            AddressingMode::ZeroPageY => memory.read_zero_page_byte(operands[0].wrapping_add(registers.y)),
+            AddressingMode::Absolute => {
+                let address = (operands[1] as u16) << 8 | operands[0] as u16;
+                memory.read_byte(address)
+            }
+            AddressingMode::AbsoluteX => {
+                let address = ((operands[1] as u16) << 8 | operands[0] as u16).wrapping_add(registers.x as u16);
+                memory.read_byte(address)
+            }
+            AddressingMode::AbsoluteY => {
+                let address = ((operands[1] as u16) << 8 | operands[0] as u16).wrapping_add(registers.y as u16);
+                memory.read_byte(address)
+            }
+            AddressingMode::IndexedIndirect => {
+                let ptr = operands[0].wrapping_add(registers.x);
+                let address = memory.read_zero_page_word(ptr);
+                memory.read_byte(address)
+            }
+            AddressingMode::IndirectIndexed => {
+                let base = memory.read_zero_page_word(operands[0]);
+                let address = base.wrapping_add(registers.y as u16);
+                memory.read_byte(address)
+            }
+            _ => unimplemented!("Addressing mode {:?} not implemented for load", self),
+        }
+    }
+
+    pub fn resolve_store_address(self, registers: &Registers, memory: &Memory, operands: &[u8]) -> u16 {
+        match self {
+            AddressingMode::ZeroPage => operands[0] as u16,
+            AddressingMode::ZeroPageX => operands[0].wrapping_add(registers.x) as u16,
+            AddressingMode::ZeroPageY => operands[0].wrapping_add(registers.y) as u16,
+            AddressingMode::Absolute => (operands[1] as u16) << 8 | operands[0] as u16,
+            AddressingMode::AbsoluteX => {
+                ((operands[1] as u16) << 8 | operands[0] as u16).wrapping_add(registers.x as u16)
+            }
+            AddressingMode::AbsoluteY => {
+                ((operands[1] as u16) << 8 | operands[0] as u16).wrapping_add(registers.y as u16)
+            }
+            AddressingMode::IndexedIndirect => {
+                let ptr = operands[0].wrapping_add(registers.x);
+                memory.read_zero_page_word(ptr)
+            }
+            AddressingMode::IndirectIndexed => {
+                let base = memory.read_zero_page_word(operands[0]);
+                base.wrapping_add(registers.y as u16)
+            }
+            _ => unimplemented!("Addressing mode {:?} not implemented for store", self),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::fixture;
+    use rstest::rstest;
+
+    use super::*;
+    use crate::{cpu::registers::Registers, memory::Memory};
+
+    #[fixture]
+    fn registers() -> Registers {
+        Registers::default()
+    }
+
+    #[fixture]
+    fn memory() -> Memory {
+        Memory::default()
+    }
+
+    // resolve_load_operand
+
+    #[rstest]
+    fn test_load_immediate(registers: Registers, memory: Memory) {
+        assert_eq!(
+            AddressingMode::Immediate.resolve_load_operand(&registers, &memory, &[0x42]),
+            0x42
+        );
+    }
+
+    #[rstest]
+    fn test_load_zero_page(registers: Registers, mut memory: Memory) {
+        memory.set_zero_page_byte(0x10, 0x42);
+        assert_eq!(
+            AddressingMode::ZeroPage.resolve_load_operand(&registers, &memory, &[0x10]),
+            0x42
+        );
+    }
+
+    #[rstest]
+    fn test_load_zero_page_x(mut registers: Registers, mut memory: Memory) {
+        registers.set_x(0x05);
+        memory.set_zero_page_byte(0x15, 0x42);
+        assert_eq!(
+            AddressingMode::ZeroPageX.resolve_load_operand(&registers, &memory, &[0x10]),
+            0x42
+        );
+    }
+
+    #[rstest]
+    fn test_load_zero_page_y(mut registers: Registers, mut memory: Memory) {
+        registers.set_y(0x05);
+        memory.set_zero_page_byte(0x15, 0x42);
+        assert_eq!(
+            AddressingMode::ZeroPageY.resolve_load_operand(&registers, &memory, &[0x10]),
+            0x42
+        );
+    }
+
+    #[rstest]
+    fn test_load_absolute(registers: Registers, mut memory: Memory) {
+        memory.set_byte(0x0200, 0x42);
+        assert_eq!(
+            AddressingMode::Absolute.resolve_load_operand(&registers, &memory, &[0x00, 0x02]),
+            0x42
+        );
+    }
+
+    #[rstest]
+    fn test_load_absolute_x(mut registers: Registers, mut memory: Memory) {
+        registers.set_x(0x04);
+        memory.set_byte(0x0204, 0x42);
+        assert_eq!(
+            AddressingMode::AbsoluteX.resolve_load_operand(&registers, &memory, &[0x00, 0x02]),
+            0x42
+        );
+    }
+
+    #[rstest]
+    fn test_load_absolute_y(mut registers: Registers, mut memory: Memory) {
+        registers.set_y(0x04);
+        memory.set_byte(0x0204, 0x42);
+        assert_eq!(
+            AddressingMode::AbsoluteY.resolve_load_operand(&registers, &memory, &[0x00, 0x02]),
+            0x42
+        );
+    }
+
+    #[rstest]
+    fn test_load_indexed_indirect(mut registers: Registers, mut memory: Memory) {
+        registers.set_x(0x03);
+        memory.set_zero_page_word(0x13, 0x0200);
+        memory.set_byte(0x0200, 0x42);
+        assert_eq!(
+            AddressingMode::IndexedIndirect.resolve_load_operand(&registers, &memory, &[0x10]),
+            0x42
+        );
+    }
+
+    #[rstest]
+    fn test_load_indirect_indexed(mut registers: Registers, mut memory: Memory) {
+        registers.set_y(0x03);
+        memory.set_zero_page_word(0x10, 0x01FD);
+        memory.set_byte(0x0200, 0x42);
+        assert_eq!(
+            AddressingMode::IndirectIndexed.resolve_load_operand(&registers, &memory, &[0x10]),
+            0x42
+        );
+    }
+
+    // resolve_store_address
+
+    #[rstest]
+    fn test_store_zero_page(registers: Registers, memory: Memory) {
+        assert_eq!(
+            AddressingMode::ZeroPage.resolve_store_address(&registers, &memory, &[0x10]),
+            0x0010
+        );
+    }
+
+    #[rstest]
+    fn test_store_zero_page_x(mut registers: Registers, memory: Memory) {
+        registers.set_x(0x05);
+        assert_eq!(
+            AddressingMode::ZeroPageX.resolve_store_address(&registers, &memory, &[0x10]),
+            0x0015
+        );
+    }
+
+    #[rstest]
+    fn test_store_zero_page_y(mut registers: Registers, memory: Memory) {
+        registers.set_y(0x05);
+        assert_eq!(
+            AddressingMode::ZeroPageY.resolve_store_address(&registers, &memory, &[0x10]),
+            0x0015
+        );
+    }
+
+    #[rstest]
+    fn test_store_absolute(registers: Registers, memory: Memory) {
+        assert_eq!(
+            AddressingMode::Absolute.resolve_store_address(&registers, &memory, &[0x00, 0x02]),
+            0x0200
+        );
+    }
+
+    #[rstest]
+    fn test_store_absolute_x(mut registers: Registers, memory: Memory) {
+        registers.set_x(0x04);
+        assert_eq!(
+            AddressingMode::AbsoluteX.resolve_store_address(&registers, &memory, &[0x00, 0x02]),
+            0x0204
+        );
+    }
+
+    #[rstest]
+    fn test_store_absolute_y(mut registers: Registers, memory: Memory) {
+        registers.set_y(0x04);
+        assert_eq!(
+            AddressingMode::AbsoluteY.resolve_store_address(&registers, &memory, &[0x00, 0x02]),
+            0x0204
+        );
+    }
+
+    #[rstest]
+    fn test_store_indexed_indirect(mut registers: Registers, mut memory: Memory) {
+        registers.set_x(0x03);
+        memory.set_zero_page_word(0x13, 0x0200);
+        assert_eq!(
+            AddressingMode::IndexedIndirect.resolve_store_address(&registers, &memory, &[0x10]),
+            0x0200
+        );
+    }
+
+    #[rstest]
+    fn test_store_indirect_indexed(mut registers: Registers, mut memory: Memory) {
+        registers.set_y(0x03);
+        memory.set_zero_page_word(0x10, 0x01FD);
+        assert_eq!(
+            AddressingMode::IndirectIndexed.resolve_store_address(&registers, &memory, &[0x10]),
+            0x0200
+        );
+    }
+}

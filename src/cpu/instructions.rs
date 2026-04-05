@@ -59,22 +59,7 @@ pub enum Instruction {
     Illegal,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AddressingMode {
-    Implied,
-    Accumulator,
-    Immediate,
-    ZeroPage,
-    ZeroPageX,
-    ZeroPageY,
-    Relative,
-    Absolute,
-    AbsoluteX,
-    AbsoluteY,
-    Indirect,
-    IndexedIndirect,
-    IndirectIndexed,
-}
+pub use super::addressing_mode::AddressingMode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InstructionInfo {
