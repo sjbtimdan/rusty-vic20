@@ -112,6 +112,11 @@ pub const LDX_ZERO_PAGE_Y: InstructionInfo = info(0xB6, Instruction::LDX, Addres
 pub const LDX_ABSOLUTE: InstructionInfo = info(0xAE, Instruction::LDX, AddressingMode::Absolute, 4);
 pub const LDX_ABSOLUTE_Y: InstructionInfo = info(0xBE, Instruction::LDX, AddressingMode::AbsoluteY, 4);
 
+pub const DEX_IMPLIED: InstructionInfo = info(0xCA, Instruction::DEX, AddressingMode::Implied, 2);
+pub const DEY_IMPLIED: InstructionInfo = info(0x88, Instruction::DEY, AddressingMode::Implied, 2);
+pub const INX_IMPLIED: InstructionInfo = info(0xE8, Instruction::INX, AddressingMode::Implied, 2);
+pub const INY_IMPLIED: InstructionInfo = info(0xC8, Instruction::INY, AddressingMode::Implied, 2);
+
 pub const LDY_IMMEDIATE: InstructionInfo = info(0xA0, Instruction::LDY, AddressingMode::Immediate, 2);
 pub const LDY_ZERO_PAGE: InstructionInfo = info(0xA4, Instruction::LDY, AddressingMode::ZeroPage, 3);
 pub const LDY_ZERO_PAGE_X: InstructionInfo = info(0xB4, Instruction::LDY, AddressingMode::ZeroPageX, 4);
@@ -198,7 +203,7 @@ pub const fn decode(opcode: u8) -> InstructionInfo {
         0x84 => info(0x84, Instruction::STY, AddressingMode::ZeroPage, 3),
         0x85 => info(0x85, Instruction::STA, AddressingMode::ZeroPage, 3),
         0x86 => info(0x86, Instruction::STX, AddressingMode::ZeroPage, 3),
-        0x88 => info(0x88, Instruction::DEY, AddressingMode::Implied, 2),
+        0x88 => DEY_IMPLIED,
         0x8A => info(0x8A, Instruction::TXA, AddressingMode::Implied, 2),
         0x8C => info(0x8C, Instruction::STY, AddressingMode::Absolute, 4),
         0x8D => info(0x8D, Instruction::STA, AddressingMode::Absolute, 4),
@@ -240,9 +245,9 @@ pub const fn decode(opcode: u8) -> InstructionInfo {
         0xC4 => info(0xC4, Instruction::CPY, AddressingMode::ZeroPage, 3),
         0xC5 => info(0xC5, Instruction::CMP, AddressingMode::ZeroPage, 3),
         0xC6 => info(0xC6, Instruction::DEC, AddressingMode::ZeroPage, 5),
-        0xC8 => info(0xC8, Instruction::INY, AddressingMode::Implied, 2),
+        0xC8 => INY_IMPLIED,
         0xC9 => info(0xC9, Instruction::CMP, AddressingMode::Immediate, 2),
-        0xCA => info(0xCA, Instruction::DEX, AddressingMode::Implied, 2),
+        0xCA => DEX_IMPLIED,
         0xCC => info(0xCC, Instruction::CPY, AddressingMode::Absolute, 4),
         0xCD => info(0xCD, Instruction::CMP, AddressingMode::Absolute, 4),
         0xCE => info(0xCE, Instruction::DEC, AddressingMode::Absolute, 6),
@@ -259,7 +264,7 @@ pub const fn decode(opcode: u8) -> InstructionInfo {
         0xE4 => info(0xE4, Instruction::CPX, AddressingMode::ZeroPage, 3),
         0xE5 => info(0xE5, Instruction::SBC, AddressingMode::ZeroPage, 3),
         0xE6 => info(0xE6, Instruction::INC, AddressingMode::ZeroPage, 5),
-        0xE8 => info(0xE8, Instruction::INX, AddressingMode::Implied, 2),
+        0xE8 => INX_IMPLIED,
         0xE9 => info(0xE9, Instruction::SBC, AddressingMode::Immediate, 2),
         0xEA => info(0xEA, Instruction::NOP, AddressingMode::Implied, 2),
         0xEC => info(0xEC, Instruction::CPX, AddressingMode::Absolute, 4),

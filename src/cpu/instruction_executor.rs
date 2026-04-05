@@ -13,99 +13,63 @@ pub fn execute_instruction(
     operands: &[u8],
 ) {
     match instruction.instruction {
-        Instruction::LDA => match instruction.mode {
-            AddressingMode::Immediate => {
-                registers.set_accumulator(operands[0]);
-            }
-            AddressingMode::ZeroPage => {
-                let read = memory.read_zero_page_byte(operands[0]);
-                registers.set_accumulator(read);
-            }
-            AddressingMode::ZeroPageX => {
-                let address = operands[0].wrapping_add(registers.x);
-                let read = memory.read_zero_page_byte(address);
-                registers.set_accumulator(read);
-            }
-            AddressingMode::Absolute => {
-                let address = (operands[1] as u16) << 8 | operands[0] as u16;
-                let read = memory.read_byte(address);
-                registers.set_accumulator(read);
-            }
-            AddressingMode::AbsoluteX => {
-                let address = ((operands[1] as u16) << 8 | operands[0] as u16).wrapping_add(registers.x as u16);
-                let read = memory.read_byte(address);
-                registers.set_accumulator(read);
-            }
-            AddressingMode::AbsoluteY => {
-                let address = ((operands[1] as u16) << 8 | operands[0] as u16).wrapping_add(registers.y as u16);
-                let read = memory.read_byte(address);
-                registers.set_accumulator(read);
-            }
-            AddressingMode::IndexedIndirect => {
-                let ptr = operands[0].wrapping_add(registers.x);
-                let address = memory.read_zero_page_word(ptr);
-                let read = memory.read_byte(address);
-                registers.set_accumulator(read);
-            }
-            AddressingMode::IndirectIndexed => {
-                let base = memory.read_zero_page_word(operands[0]);
-                let address = base.wrapping_add(registers.y as u16);
-                let read = memory.read_byte(address);
-                registers.set_accumulator(read);
-            }
-            _ => unimplemented!("Addressing mode {:?} not implemented for LDA", instruction.mode),
-        },
-        Instruction::LDX => match instruction.mode {
-            AddressingMode::Immediate => {
-                registers.set_x(operands[0]);
-            }
-            AddressingMode::ZeroPage => {
-                let read = memory.read_zero_page_byte(operands[0]);
-                registers.set_x(read);
-            }
-            AddressingMode::ZeroPageY => {
-                let address = operands[0].wrapping_add(registers.y);
-                let read = memory.read_zero_page_byte(address);
-                registers.set_x(read);
-            }
-            AddressingMode::Absolute => {
-                let address = (operands[1] as u16) << 8 | operands[0] as u16;
-                let read = memory.read_byte(address);
-                registers.set_x(read);
-            }
-            AddressingMode::AbsoluteY => {
-                let address = ((operands[1] as u16) << 8 | operands[0] as u16).wrapping_add(registers.y as u16);
-                let read = memory.read_byte(address);
-                registers.set_x(read);
-            }
-            _ => unimplemented!("Addressing mode {:?} not implemented for LDX", instruction.mode),
-        },
-        Instruction::LDY => match instruction.mode {
-            AddressingMode::Immediate => {
-                registers.set_y(operands[0]);
-            }
-            AddressingMode::ZeroPage => {
-                let read = memory.read_zero_page_byte(operands[0]);
-                registers.set_y(read);
-            }
-            AddressingMode::ZeroPageX => {
-                let address = operands[0].wrapping_add(registers.x);
-                let read = memory.read_zero_page_byte(address);
-                registers.set_y(read);
-            }
-            AddressingMode::Absolute => {
-                let address = (operands[1] as u16) << 8 | operands[0] as u16;
-                let read = memory.read_byte(address);
-                registers.set_y(read);
-            }
-            AddressingMode::AbsoluteX => {
-                let address = ((operands[1] as u16) << 8 | operands[0] as u16).wrapping_add(registers.x as u16);
-                let read = memory.read_byte(address);
-                registers.set_y(read);
-            }
-            _ => unimplemented!("Addressing mode {:?} not implemented for LDY", instruction.mode),
-        },
+        Instruction::LDA => {
+            let value = resolve_load_operand(registers, memory, instruction.mode, operands);
+            registers.set_accumulator(value);
+        }
+        Instruction::LDX => {
+            let value = resolve_load_operand(registers, memory, instruction.mode, operands);
+            registers.set_x(value);
+        }
+        Instruction::LDY => {
+            let value = resolve_load_operand(registers, memory, instruction.mode, operands);
+            registers.set_y(value);
+        }
+        Instruction::DEX => {
+            registers.set_x(registers.x.wrapping_sub(1));
+        }
+        Instruction::DEY => {
+            registers.set_y(registers.y.wrapping_sub(1));
+        }
+        Instruction::INX => {
+            registers.set_x(registers.x.wrapping_add(1));
+        }
+        Instruction::INY => {
+            registers.set_y(registers.y.wrapping_add(1));
+        }
         _ => unimplemented!("Instruction {:?} not implemented yet", instruction.instruction),
+    }
+}
+
+fn resolve_load_operand(registers: &Registers, memory: &Memory, mode: AddressingMode, operands: &[u8]) -> u8 {
+    match mode {
+        AddressingMode::Immediate => operands[0],
+        AddressingMode::ZeroPage => memory.read_zero_page_byte(operands[0]),
+        AddressingMode::ZeroPageX => memory.read_zero_page_byte(operands[0].wrapping_add(registers.x)),
+        AddressingMode::ZeroPageY => memory.read_zero_page_byte(operands[0].wrapping_add(registers.y)),
+        AddressingMode::Absolute => {
+            let address = (operands[1] as u16) << 8 | operands[0] as u16;
+            memory.read_byte(address)
+        }
+        AddressingMode::AbsoluteX => {
+            let address = ((operands[1] as u16) << 8 | operands[0] as u16).wrapping_add(registers.x as u16);
+            memory.read_byte(address)
+        }
+        AddressingMode::AbsoluteY => {
+            let address = ((operands[1] as u16) << 8 | operands[0] as u16).wrapping_add(registers.y as u16);
+            memory.read_byte(address)
+        }
+        AddressingMode::IndexedIndirect => {
+            let ptr = operands[0].wrapping_add(registers.x);
+            let address = memory.read_zero_page_word(ptr);
+            memory.read_byte(address)
+        }
+        AddressingMode::IndirectIndexed => {
+            let base = memory.read_zero_page_word(operands[0]);
+            let address = base.wrapping_add(registers.y as u16);
+            memory.read_byte(address)
+        }
+        _ => unimplemented!("Addressing mode {:?} not implemented for load", mode),
     }
 }
 
@@ -115,12 +79,8 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::cpu::instructions::{
-        LDA_ABSOLUTE, LDA_ABSOLUTE_X, LDA_ABSOLUTE_Y, LDA_IMMEDIATE, LDA_INDEXED_INDIRECT, LDA_INDIRECT_INDEXED,
-        LDA_ZERO_PAGE, LDA_ZERO_PAGE_X, LDX_ABSOLUTE, LDX_ABSOLUTE_Y, LDX_IMMEDIATE, LDX_ZERO_PAGE, LDX_ZERO_PAGE_Y,
-        LDY_ABSOLUTE, LDY_ABSOLUTE_X, LDY_IMMEDIATE, LDY_ZERO_PAGE, LDY_ZERO_PAGE_X,
-    };
-    use crate::cpu::registers::{NEGATIVE_FLAG_BITMASK, Registers, ZERO_FLAG_BITMASK};
+    use crate::cpu::instructions::*;
+    use crate::cpu::registers::*;
 
     #[fixture]
     fn registers() -> Registers {
@@ -183,7 +143,7 @@ mod tests {
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
-        registers.x = x;
+        registers.set_x(x);
         memory.set_zero_page_byte(address, value);
         execute_instruction(&mut registers, &mut memory, &LDA_ZERO_PAGE_X, &[base]);
         assert_eq!(registers.a, value);
@@ -273,7 +233,7 @@ mod tests {
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
-        registers.x = x;
+        registers.set_x(x);
         memory.set_zero_page_word(ptr, address);
         memory.set_byte(address, value);
         execute_instruction(&mut registers, &mut memory, &LDA_INDEXED_INDIRECT, &[base]);
@@ -296,7 +256,7 @@ mod tests {
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
-        registers.y = y;
+        registers.set_y(y);
         let base = address.wrapping_sub(y as u16);
         memory.set_zero_page_word(zp_addr, base);
         memory.set_byte(address, value);
@@ -356,7 +316,7 @@ mod tests {
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
-        registers.y = y;
+        registers.set_y(y);
         memory.set_zero_page_byte(address, value);
         execute_instruction(&mut registers, &mut memory, &LDX_ZERO_PAGE_Y, &[base]);
         assert_eq!(registers.x, value);
@@ -458,7 +418,7 @@ mod tests {
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
-        registers.x = x;
+        registers.set_x(x);
         memory.set_zero_page_byte(address, value);
         execute_instruction(&mut registers, &mut memory, &LDY_ZERO_PAGE_X, &[base]);
         assert_eq!(registers.y, value);
@@ -506,6 +466,82 @@ mod tests {
         memory.set_byte(address, value);
         execute_instruction(&mut registers, &mut memory, &LDY_ABSOLUTE_X, &[lo, hi]);
         assert_eq!(registers.y, value);
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x01, 0x02, false, false)]
+    #[case(0xFF, 0x00, true, false)]
+    #[case(0x7F, 0x80, false, true)]
+    fn test_inx(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] initial: u8,
+        #[case] expected: u8,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        registers.set_x(initial);
+        execute_instruction(&mut registers, &mut memory, &INX_IMPLIED, &[]);
+        assert_eq!(registers.x, expected);
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x01, 0x02, false, false)]
+    #[case(0xFF, 0x00, true, false)]
+    #[case(0x7F, 0x80, false, true)]
+    fn test_iny(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] initial: u8,
+        #[case] expected: u8,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        registers.set_y(initial);
+        execute_instruction(&mut registers, &mut memory, &INY_IMPLIED, &[]);
+        assert_eq!(registers.y, expected);
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x02, 0x01, false, false)]
+    #[case(0x01, 0x00, true, false)]
+    #[case(0x00, 0xFF, false, true)]
+    fn test_dex(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] initial: u8,
+        #[case] expected: u8,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        registers.set_x(initial);
+        execute_instruction(&mut registers, &mut memory, &DEX_IMPLIED, &[]);
+        assert_eq!(registers.x, expected);
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x02, 0x01, false, false)]
+    #[case(0x01, 0x00, true, false)]
+    #[case(0x00, 0xFF, false, true)]
+    fn test_dey(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] initial: u8,
+        #[case] expected: u8,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        registers.set_y(initial);
+        execute_instruction(&mut registers, &mut memory, &DEY_IMPLIED, &[]);
+        assert_eq!(registers.y, expected);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
     }
