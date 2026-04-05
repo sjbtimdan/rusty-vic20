@@ -70,6 +70,10 @@ impl AddressingMode {
                 let base = memory.read_zero_page_word(operands[0]);
                 base.wrapping_add(registers.y as u16)
             }
+            AddressingMode::Indirect => {
+                let ptr = (operands[1] as u16) << 8 | operands[0] as u16;
+                memory.read_word(ptr)
+            }
             _ => unimplemented!("Addressing mode {:?} not implemented for store", self),
         }
     }
