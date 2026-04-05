@@ -17,8 +17,14 @@ pub enum AddressingMode {
     IndirectIndexed,
 }
 
-impl AddressingMode {
-    pub fn resolve_load_operand(&self, registers: &Registers, memory: &Memory, operands: &[u8]) -> u8 {
+#[cfg_attr(test, unimock::unimock(api=OperandResolutionMock))]
+pub trait OperandResolution {
+    fn resolve_load_operand(&self, registers: &Registers, memory: &Memory, operands: &[u8]) -> u8;
+    fn resolve_store_address(&self, registers: &Registers, memory: &Memory, operands: &[u8]) -> u16;
+}
+
+impl OperandResolution for AddressingMode {
+    fn resolve_load_operand(&self, registers: &Registers, memory: &Memory, operands: &[u8]) -> u8 {
         match self {
             AddressingMode::Immediate => operands[0],
             AddressingMode::ZeroPage => memory.read_zero_page_byte(operands[0]),
@@ -50,7 +56,7 @@ impl AddressingMode {
         }
     }
 
-    pub fn resolve_store_address(self, registers: &Registers, memory: &Memory, operands: &[u8]) -> u16 {
+    fn resolve_store_address(&self, registers: &Registers, memory: &Memory, operands: &[u8]) -> u16 {
         match self {
             AddressingMode::ZeroPage => operands[0] as u16,
             AddressingMode::ZeroPageX => operands[0].wrapping_add(registers.x) as u16,
