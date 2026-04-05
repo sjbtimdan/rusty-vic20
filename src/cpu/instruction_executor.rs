@@ -38,28 +38,50 @@ pub fn execute_instruction(
             registers.set_y(registers.y.wrapping_add(1));
         }
         Instruction::INC => {
-            let address = resolve_rmw_address(registers, instruction.mode, operands);
+            let address = resolve_store_address(registers, memory, instruction.mode, operands);
             let value = memory.read_byte(address).wrapping_add(1);
             memory.set_byte(address, value);
             registers.update_zero_and_negative(value);
         }
         Instruction::DEC => {
-            let address = resolve_rmw_address(registers, instruction.mode, operands);
+            let address = resolve_store_address(registers, memory, instruction.mode, operands);
             let value = memory.read_byte(address).wrapping_sub(1);
             memory.set_byte(address, value);
             registers.update_zero_and_negative(value);
+        }
+        Instruction::STA => {
+            let address = resolve_store_address(registers, memory, instruction.mode, operands);
+            memory.set_byte(address, registers.a);
+        }
+        Instruction::STX => {
+            let address = resolve_store_address(registers, memory, instruction.mode, operands);
+            memory.set_byte(address, registers.x);
+        }
+        Instruction::STY => {
+            let address = resolve_store_address(registers, memory, instruction.mode, operands);
+            memory.set_byte(address, registers.y);
         }
         _ => unimplemented!("Instruction {:?} not implemented yet", instruction.instruction),
     }
 }
 
-fn resolve_rmw_address(registers: &Registers, mode: AddressingMode, operands: &[u8]) -> u16 {
+fn resolve_store_address(registers: &Registers, memory: &Memory, mode: AddressingMode, operands: &[u8]) -> u16 {
     match mode {
         AddressingMode::ZeroPage => operands[0] as u16,
         AddressingMode::ZeroPageX => operands[0].wrapping_add(registers.x) as u16,
+        AddressingMode::ZeroPageY => operands[0].wrapping_add(registers.y) as u16,
         AddressingMode::Absolute => (operands[1] as u16) << 8 | operands[0] as u16,
         AddressingMode::AbsoluteX => ((operands[1] as u16) << 8 | operands[0] as u16).wrapping_add(registers.x as u16),
-        _ => unimplemented!("Addressing mode {:?} not implemented for RMW", mode),
+        AddressingMode::AbsoluteY => ((operands[1] as u16) << 8 | operands[0] as u16).wrapping_add(registers.y as u16),
+        AddressingMode::IndexedIndirect => {
+            let ptr = operands[0].wrapping_add(registers.x);
+            memory.read_zero_page_word(ptr)
+        }
+        AddressingMode::IndirectIndexed => {
+            let base = memory.read_zero_page_word(operands[0]);
+            base.wrapping_add(registers.y as u16)
+        }
+        _ => unimplemented!("Addressing mode {:?} not implemented for store", mode),
     }
 }
 
@@ -744,5 +766,192 @@ mod tests {
         assert_eq!(memory.read_byte(address), expected);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x10, 0x42)]
+    fn test_sta_zero_page(mut registers: Registers, mut memory: Memory, #[case] address: u8, #[case] value: u8) {
+        registers.a = value;
+        execute_instruction(&mut registers, &mut memory, &STA_ZERO_PAGE, &[address]);
+        assert_eq!(memory.read_zero_page_byte(address), value);
+    }
+
+    #[rstest]
+    #[case(0x10, 0x03, 0x13, 0x42)]
+    fn test_sta_zero_page_x(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] base: u8,
+        #[case] x: u8,
+        #[case] address: u8,
+        #[case] value: u8,
+    ) {
+        registers.a = value;
+        registers.x = x;
+        execute_instruction(&mut registers, &mut memory, &STA_ZERO_PAGE_X, &[base]);
+        assert_eq!(memory.read_zero_page_byte(address), value);
+    }
+
+    #[rstest]
+    #[case(0x00, 0x02, 0x0200, 0x42)]
+    fn test_sta_absolute(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] lo: u8,
+        #[case] hi: u8,
+        #[case] address: u16,
+        #[case] value: u8,
+    ) {
+        registers.a = value;
+        execute_instruction(&mut registers, &mut memory, &STA_ABSOLUTE, &[lo, hi]);
+        assert_eq!(memory.read_byte(address), value);
+    }
+
+    #[rstest]
+    #[case(0x00, 0x02, 0x04, 0x0204, 0x42)]
+    fn test_sta_absolute_x(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] lo: u8,
+        #[case] hi: u8,
+        #[case] x: u8,
+        #[case] address: u16,
+        #[case] value: u8,
+    ) {
+        registers.a = value;
+        registers.x = x;
+        execute_instruction(&mut registers, &mut memory, &STA_ABSOLUTE_X, &[lo, hi]);
+        assert_eq!(memory.read_byte(address), value);
+    }
+
+    #[rstest]
+    #[case(0x00, 0x02, 0x04, 0x0204, 0x42)]
+    fn test_sta_absolute_y(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] lo: u8,
+        #[case] hi: u8,
+        #[case] y: u8,
+        #[case] address: u16,
+        #[case] value: u8,
+    ) {
+        registers.a = value;
+        registers.y = y;
+        execute_instruction(&mut registers, &mut memory, &STA_ABSOLUTE_Y, &[lo, hi]);
+        assert_eq!(memory.read_byte(address), value);
+    }
+
+    #[rstest]
+    #[case(0x10, 0x03, 0x13, 0x0200, 0x42)]
+    fn test_sta_indexed_indirect(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] base: u8,
+        #[case] x: u8,
+        #[case] ptr: u8,
+        #[case] address: u16,
+        #[case] value: u8,
+    ) {
+        registers.a = value;
+        registers.x = x;
+        memory.set_zero_page_word(ptr, address);
+        execute_instruction(&mut registers, &mut memory, &STA_INDEXED_INDIRECT, &[base]);
+        assert_eq!(memory.read_byte(address), value);
+    }
+
+    #[rstest]
+    #[case(0x20, 0x03, 0xC003, 0x42)]
+    fn test_sta_indirect_indexed(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] zp_addr: u8,
+        #[case] y: u8,
+        #[case] address: u16,
+        #[case] value: u8,
+    ) {
+        registers.a = value;
+        registers.y = y;
+        let base = address.wrapping_sub(y as u16);
+        memory.set_zero_page_word(zp_addr, base);
+        execute_instruction(&mut registers, &mut memory, &STA_INDIRECT_INDEXED, &[zp_addr]);
+        assert_eq!(memory.read_byte(address), value);
+    }
+
+    #[rstest]
+    #[case(0x10, 0x42)]
+    fn test_stx_zero_page(mut registers: Registers, mut memory: Memory, #[case] address: u8, #[case] value: u8) {
+        registers.x = value;
+        execute_instruction(&mut registers, &mut memory, &STX_ZERO_PAGE, &[address]);
+        assert_eq!(memory.read_zero_page_byte(address), value);
+    }
+
+    #[rstest]
+    #[case(0x10, 0x03, 0x13, 0x42)]
+    fn test_stx_zero_page_y(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] base: u8,
+        #[case] y: u8,
+        #[case] address: u8,
+        #[case] value: u8,
+    ) {
+        registers.x = value;
+        registers.y = y;
+        execute_instruction(&mut registers, &mut memory, &STX_ZERO_PAGE_Y, &[base]);
+        assert_eq!(memory.read_zero_page_byte(address), value);
+    }
+
+    #[rstest]
+    #[case(0x00, 0x02, 0x0200, 0x42)]
+    fn test_stx_absolute(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] lo: u8,
+        #[case] hi: u8,
+        #[case] address: u16,
+        #[case] value: u8,
+    ) {
+        registers.x = value;
+        execute_instruction(&mut registers, &mut memory, &STX_ABSOLUTE, &[lo, hi]);
+        assert_eq!(memory.read_byte(address), value);
+    }
+
+    #[rstest]
+    #[case(0x10, 0x42)]
+    fn test_sty_zero_page(mut registers: Registers, mut memory: Memory, #[case] address: u8, #[case] value: u8) {
+        registers.y = value;
+        execute_instruction(&mut registers, &mut memory, &STY_ZERO_PAGE, &[address]);
+        assert_eq!(memory.read_zero_page_byte(address), value);
+    }
+
+    #[rstest]
+    #[case(0x10, 0x03, 0x13, 0x42)]
+    fn test_sty_zero_page_x(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] base: u8,
+        #[case] x: u8,
+        #[case] address: u8,
+        #[case] value: u8,
+    ) {
+        registers.y = value;
+        registers.x = x;
+        execute_instruction(&mut registers, &mut memory, &STY_ZERO_PAGE_X, &[base]);
+        assert_eq!(memory.read_zero_page_byte(address), value);
+    }
+
+    #[rstest]
+    #[case(0x00, 0x02, 0x0200, 0x42)]
+    fn test_sty_absolute(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] lo: u8,
+        #[case] hi: u8,
+        #[case] address: u16,
+        #[case] value: u8,
+    ) {
+        registers.y = value;
+        execute_instruction(&mut registers, &mut memory, &STY_ABSOLUTE, &[lo, hi]);
+        assert_eq!(memory.read_byte(address), value);
     }
 }
