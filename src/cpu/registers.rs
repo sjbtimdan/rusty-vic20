@@ -44,6 +44,22 @@ impl Registers {
         self.update_zero_and_negative(value);
     }
 
+    pub fn update_carry_flag(&mut self, condition: bool) {
+        self.set_flag(CARRY_FLAG_BITMASK, condition);
+    }
+
+    pub fn update_decimal_flag(&mut self, condition: bool) {
+        self.set_flag(DECIMAL_FLAG_BITMASK, condition);
+    }
+
+    pub fn update_interrupt_flag(&mut self, condition: bool) {
+        self.set_flag(INTERRUPT_FLAG_BITMASK, condition);
+    }
+
+    pub fn update_overflow_flag(&mut self, condition: bool) {
+        self.set_flag(OVERFLOW_FLAG_BITMASK, condition);
+    }
+
     pub fn update_zero_and_negative(&mut self, value: u8) {
         self.set_flag(ZERO_FLAG_BITMASK, value == 0);
         self.set_flag(NEGATIVE_FLAG_BITMASK, value & 0x80 != 0);

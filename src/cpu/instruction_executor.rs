@@ -75,6 +75,13 @@ pub fn execute_instruction(
             let address = operand_resolution.resolve_address(registers, memory, operands);
             registers.pc = address;
         }
+        Instruction::CLC => registers.update_carry_flag(false),
+        Instruction::CLD => registers.update_decimal_flag(false),
+        Instruction::CLI => registers.update_interrupt_flag(false),
+        Instruction::CLV => registers.update_overflow_flag(false),
+        Instruction::SEC => registers.update_carry_flag(true),
+        Instruction::SED => registers.update_decimal_flag(true),
+        Instruction::SEI => registers.update_interrupt_flag(true),
         _ => unimplemented!("Instruction {:?} not implemented yet", instruction),
     }
 }
@@ -450,5 +457,43 @@ mod tests {
             &[0x34, 0x12],
         );
         assert_eq!(registers.pc, 0x1234);
+    }
+
+    #[rstest]
+    fn test_flag_clearing_and_setting(mut registers: Registers, mut memory: Memory) {
+        let operand_resolution = Unimock::new(());
+
+        // Start with all target flags set
+        registers.status = CARRY_FLAG_BITMASK | DECIMAL_FLAG_BITMASK | INTERRUPT_FLAG_BITMASK | OVERFLOW_FLAG_BITMASK;
+
+        execute_instruction(&mut registers, &mut memory, Instruction::CLC, &operand_resolution, &[]);
+        assert!(!registers.is_flag_set(CARRY_FLAG_BITMASK), "CLC should clear carry");
+
+        execute_instruction(&mut registers, &mut memory, Instruction::CLD, &operand_resolution, &[]);
+        assert!(!registers.is_flag_set(DECIMAL_FLAG_BITMASK), "CLD should clear decimal");
+
+        execute_instruction(&mut registers, &mut memory, Instruction::CLI, &operand_resolution, &[]);
+        assert!(
+            !registers.is_flag_set(INTERRUPT_FLAG_BITMASK),
+            "CLI should clear interrupt"
+        );
+
+        execute_instruction(&mut registers, &mut memory, Instruction::CLV, &operand_resolution, &[]);
+        assert!(
+            !registers.is_flag_set(OVERFLOW_FLAG_BITMASK),
+            "CLV should clear overflow"
+        );
+
+        execute_instruction(&mut registers, &mut memory, Instruction::SEC, &operand_resolution, &[]);
+        assert!(registers.is_flag_set(CARRY_FLAG_BITMASK), "SEC should set carry");
+
+        execute_instruction(&mut registers, &mut memory, Instruction::SED, &operand_resolution, &[]);
+        assert!(registers.is_flag_set(DECIMAL_FLAG_BITMASK), "SED should set decimal");
+
+        execute_instruction(&mut registers, &mut memory, Instruction::SEI, &operand_resolution, &[]);
+        assert!(
+            registers.is_flag_set(INTERRUPT_FLAG_BITMASK),
+            "SEI should set interrupt"
+        );
     }
 }
