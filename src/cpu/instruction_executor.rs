@@ -123,6 +123,12 @@ pub fn execute_instruction(
             let value = operand_resolution.resolve_value(registers, memory, operands);
             sbc(registers, value);
         }
+        Instruction::TAX => registers.set_x(registers.a),
+        Instruction::TAY => registers.set_y(registers.a),
+        Instruction::TXA => registers.set_accumulator(registers.x),
+        Instruction::TYA => registers.set_accumulator(registers.y),
+        Instruction::TSX => registers.set_x(registers.sp),
+        Instruction::TXS => registers.sp = registers.x,
         _ => unimplemented!("Instruction {:?} not implemented yet", instruction),
     }
 }
@@ -397,6 +403,112 @@ mod tests {
     fn test_nop(mut registers: Registers, mut memory: Memory) {
         let operand_resolution = Unimock::new(());
         execute_instruction(&mut registers, &mut memory, Instruction::NOP, &operand_resolution, &[]);
+    }
+
+    // transfer: (instruction, src_value, expected_dest, zero, negative)
+    #[rstest]
+    #[case(0x42, false, false)]
+    #[case(0x00, true, false)]
+    #[case(0x80, false, true)]
+    fn test_tax(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] value: u8,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        let operand_resolution = Unimock::new(());
+        registers.a = value;
+        execute_instruction(&mut registers, &mut memory, Instruction::TAX, &operand_resolution, &[]);
+        assert_eq!(registers.x, value);
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x42, false, false)]
+    #[case(0x00, true, false)]
+    #[case(0x80, false, true)]
+    fn test_tay(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] value: u8,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        let operand_resolution = Unimock::new(());
+        registers.a = value;
+        execute_instruction(&mut registers, &mut memory, Instruction::TAY, &operand_resolution, &[]);
+        assert_eq!(registers.y, value);
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x42, false, false)]
+    #[case(0x00, true, false)]
+    #[case(0x80, false, true)]
+    fn test_txa(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] value: u8,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        let operand_resolution = Unimock::new(());
+        registers.x = value;
+        execute_instruction(&mut registers, &mut memory, Instruction::TXA, &operand_resolution, &[]);
+        assert_eq!(registers.a, value);
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x42, false, false)]
+    #[case(0x00, true, false)]
+    #[case(0x80, false, true)]
+    fn test_tya(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] value: u8,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        let operand_resolution = Unimock::new(());
+        registers.y = value;
+        execute_instruction(&mut registers, &mut memory, Instruction::TYA, &operand_resolution, &[]);
+        assert_eq!(registers.a, value);
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x42, false, false)]
+    #[case(0x00, true, false)]
+    #[case(0x80, false, true)]
+    fn test_tsx(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] value: u8,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        let operand_resolution = Unimock::new(());
+        registers.sp = value;
+        execute_instruction(&mut registers, &mut memory, Instruction::TSX, &operand_resolution, &[]);
+        assert_eq!(registers.x, value);
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    fn test_txs(mut registers: Registers, mut memory: Memory) {
+        let operand_resolution = Unimock::new(());
+        registers.x = 0x42;
+        registers.status = 0x00;
+        execute_instruction(&mut registers, &mut memory, Instruction::TXS, &operand_resolution, &[]);
+        assert_eq!(registers.sp, 0x42);
+        assert_eq!(registers.status, 0x00, "TXS must not change flags");
     }
 
     #[rstest]
