@@ -64,6 +64,10 @@ impl Registers {
         self.set_flag(ZERO_FLAG_BITMASK, value == 0);
         self.set_flag(NEGATIVE_FLAG_BITMASK, value & 0x80 != 0);
     }
+
+    pub fn update_pc(&mut self, value: u16) {
+        self.pc = value;
+    }
 }
 
 #[cfg(test)]

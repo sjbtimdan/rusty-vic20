@@ -2,7 +2,7 @@ use crate::{
     cpu::{
         addressing_mode::OperandResolution,
         instructions::Instruction,
-        registers::{CARRY_FLAG_BITMASK, Registers},
+        registers::{CARRY_FLAG_BITMASK, NEGATIVE_FLAG_BITMASK, OVERFLOW_FLAG_BITMASK, Registers, ZERO_FLAG_BITMASK},
     },
     memory::Memory,
 };
@@ -103,7 +103,22 @@ pub fn execute_instruction(
         Instruction::SEC => registers.update_carry_flag(true),
         Instruction::SED => registers.update_decimal_flag(true),
         Instruction::SEI => registers.update_interrupt_flag(true),
+        Instruction::BPL => branch_if(registers, operands, !registers.is_flag_set(NEGATIVE_FLAG_BITMASK)),
+        Instruction::BMI => branch_if(registers, operands, registers.is_flag_set(NEGATIVE_FLAG_BITMASK)),
+        Instruction::BVC => branch_if(registers, operands, !registers.is_flag_set(OVERFLOW_FLAG_BITMASK)),
+        Instruction::BVS => branch_if(registers, operands, registers.is_flag_set(OVERFLOW_FLAG_BITMASK)),
+        Instruction::BCC => branch_if(registers, operands, !registers.is_flag_set(CARRY_FLAG_BITMASK)),
+        Instruction::BCS => branch_if(registers, operands, registers.is_flag_set(CARRY_FLAG_BITMASK)),
+        Instruction::BNE => branch_if(registers, operands, !registers.is_flag_set(ZERO_FLAG_BITMASK)),
+        Instruction::BEQ => branch_if(registers, operands, registers.is_flag_set(ZERO_FLAG_BITMASK)),
         _ => unimplemented!("Instruction {:?} not implemented yet", instruction),
+    }
+}
+
+fn branch_if(registers: &mut Registers, operands: &[u8], condition: bool) {
+    if condition {
+        let offset = operands[0] as i8;
+        registers.pc = registers.pc.wrapping_add(offset as u16);
     }
 }
 
@@ -688,6 +703,77 @@ mod tests {
         assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    // (instruction, flag_bitmask, flag_value_for_branch_taken)
+    #[rstest]
+    #[case(Instruction::BPL, NEGATIVE_FLAG_BITMASK, false)]
+    #[case(Instruction::BMI, NEGATIVE_FLAG_BITMASK, true)]
+    #[case(Instruction::BVC, OVERFLOW_FLAG_BITMASK, false)]
+    #[case(Instruction::BVS, OVERFLOW_FLAG_BITMASK, true)]
+    #[case(Instruction::BCC, CARRY_FLAG_BITMASK, false)]
+    #[case(Instruction::BCS, CARRY_FLAG_BITMASK, true)]
+    #[case(Instruction::BNE, ZERO_FLAG_BITMASK, false)]
+    #[case(Instruction::BEQ, ZERO_FLAG_BITMASK, true)]
+    fn test_branch_taken_forward(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] instruction: Instruction,
+        #[case] flag: u8,
+        #[case] flag_set: bool,
+    ) {
+        registers.pc = 0x0200;
+        registers.set_flag(flag, flag_set);
+        let operand_resolution = Unimock::new(());
+        execute_instruction(&mut registers, &mut memory, instruction, &operand_resolution, &[0x10]);
+        assert_eq!(registers.pc, 0x0210);
+    }
+
+    #[rstest]
+    #[case(Instruction::BPL, NEGATIVE_FLAG_BITMASK, false)]
+    #[case(Instruction::BMI, NEGATIVE_FLAG_BITMASK, true)]
+    #[case(Instruction::BVC, OVERFLOW_FLAG_BITMASK, false)]
+    #[case(Instruction::BVS, OVERFLOW_FLAG_BITMASK, true)]
+    #[case(Instruction::BCC, CARRY_FLAG_BITMASK, false)]
+    #[case(Instruction::BCS, CARRY_FLAG_BITMASK, true)]
+    #[case(Instruction::BNE, ZERO_FLAG_BITMASK, false)]
+    #[case(Instruction::BEQ, ZERO_FLAG_BITMASK, true)]
+    fn test_branch_taken_backward(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] instruction: Instruction,
+        #[case] flag: u8,
+        #[case] flag_set: bool,
+    ) {
+        registers.pc = 0x0210;
+        registers.set_flag(flag, flag_set);
+        let operand_resolution = Unimock::new(());
+        // 0xF0 = -16i8
+        execute_instruction(&mut registers, &mut memory, instruction, &operand_resolution, &[0xF0]);
+        assert_eq!(registers.pc, 0x0200);
+    }
+
+    #[rstest]
+    #[case(Instruction::BPL, NEGATIVE_FLAG_BITMASK, true)]
+    #[case(Instruction::BMI, NEGATIVE_FLAG_BITMASK, false)]
+    #[case(Instruction::BVC, OVERFLOW_FLAG_BITMASK, true)]
+    #[case(Instruction::BVS, OVERFLOW_FLAG_BITMASK, false)]
+    #[case(Instruction::BCC, CARRY_FLAG_BITMASK, true)]
+    #[case(Instruction::BCS, CARRY_FLAG_BITMASK, false)]
+    #[case(Instruction::BNE, ZERO_FLAG_BITMASK, true)]
+    #[case(Instruction::BEQ, ZERO_FLAG_BITMASK, false)]
+    fn test_branch_not_taken(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] instruction: Instruction,
+        #[case] flag: u8,
+        #[case] flag_set: bool,
+    ) {
+        registers.pc = 0x0200;
+        registers.set_flag(flag, flag_set);
+        let operand_resolution = Unimock::new(());
+        execute_instruction(&mut registers, &mut memory, instruction, &operand_resolution, &[0x10]);
+        assert_eq!(registers.pc, 0x0200);
     }
 
     #[rstest]
