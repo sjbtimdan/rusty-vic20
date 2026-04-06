@@ -2,7 +2,10 @@ use crate::{
     cpu::{
         addressing_mode::OperandResolution,
         instructions::Instruction,
-        registers::{CARRY_FLAG_BITMASK, NEGATIVE_FLAG_BITMASK, OVERFLOW_FLAG_BITMASK, Registers, ZERO_FLAG_BITMASK},
+        registers::{
+            CARRY_FLAG_BITMASK, DECIMAL_FLAG_BITMASK, NEGATIVE_FLAG_BITMASK, OVERFLOW_FLAG_BITMASK, Registers,
+            ZERO_FLAG_BITMASK,
+        },
     },
     memory::Memory,
 };
@@ -112,7 +115,79 @@ pub fn execute_instruction(
         Instruction::BCS => branch_if(registers, operands, registers.is_flag_set(CARRY_FLAG_BITMASK)),
         Instruction::BNE => branch_if(registers, operands, !registers.is_flag_set(ZERO_FLAG_BITMASK)),
         Instruction::BEQ => branch_if(registers, operands, registers.is_flag_set(ZERO_FLAG_BITMASK)),
+        Instruction::ADC => {
+            let value = operand_resolution.resolve_value(registers, memory, operands);
+            adc(registers, value);
+        }
+        Instruction::SBC => {
+            let value = operand_resolution.resolve_value(registers, memory, operands);
+            sbc(registers, value);
+        }
         _ => unimplemented!("Instruction {:?} not implemented yet", instruction),
+    }
+}
+
+fn adc(registers: &mut Registers, value: u8) {
+    let carry_in = registers.is_flag_set(CARRY_FLAG_BITMASK) as u8;
+    if registers.is_flag_set(DECIMAL_FLAG_BITMASK) {
+        // NMOS 6502 quirk: N, V and Z are set from the binary result.
+        let bin_result = (registers.a as u16) + (value as u16) + (carry_in as u16);
+        let bin_byte = bin_result as u8;
+        let overflow = (!(registers.a ^ value) & (registers.a ^ bin_byte) & 0x80) != 0;
+        registers.update_overflow_flag(overflow);
+        registers.update_zero_and_negative(bin_byte);
+
+        let lo = (registers.a & 0x0F) + (value & 0x0F) + carry_in;
+        let lo_carry = if lo >= 10 { 1u8 } else { 0u8 };
+        let lo = if lo >= 10 { lo + 6 } else { lo };
+
+        let hi = (registers.a >> 4) + (value >> 4) + lo_carry;
+        let carry_out = hi >= 10;
+        let hi = if hi >= 10 { hi + 6 } else { hi };
+
+        registers.update_carry_flag(carry_out);
+        registers.a = ((hi & 0x0F) << 4) | (lo & 0x0F);
+    } else {
+        let result = (registers.a as u16) + (value as u16) + (carry_in as u16);
+        let result_byte = result as u8;
+        let overflow = (!(registers.a ^ value) & (registers.a ^ result_byte) & 0x80) != 0;
+        registers.update_overflow_flag(overflow);
+        registers.update_carry_flag(result > 0xFF);
+        registers.set_accumulator(result_byte);
+    }
+}
+
+fn sbc(registers: &mut Registers, value: u8) {
+    let carry_in = registers.is_flag_set(CARRY_FLAG_BITMASK) as u8;
+    if registers.is_flag_set(DECIMAL_FLAG_BITMASK) {
+        // NMOS 6502 quirk: N, V and Z are set from the binary result (using !value).
+        let effective = !value;
+        let bin_result = (registers.a as u16) + (effective as u16) + (carry_in as u16);
+        let bin_byte = bin_result as u8;
+        let overflow = (!(registers.a ^ effective) & (registers.a ^ bin_byte) & 0x80) != 0;
+        registers.update_overflow_flag(overflow);
+        registers.update_zero_and_negative(bin_byte);
+
+        let borrow = 1 - carry_in;
+        let lo = (registers.a & 0x0F) as i16 - (value & 0x0F) as i16 - borrow as i16;
+        let lo_borrow = if lo < 0 { 1i16 } else { 0i16 };
+        let lo = if lo < 0 { lo - 6 } else { lo };
+
+        let hi = (registers.a >> 4) as i16 - (value >> 4) as i16 - lo_borrow;
+        let carry_out = hi >= 0;
+        let hi = if hi < 0 { hi - 6 } else { hi };
+
+        registers.update_carry_flag(carry_out);
+        registers.a = ((hi as u8 & 0x0F) << 4) | (lo as u8 & 0x0F);
+    } else {
+        // Binary SBC: A - operand - borrow = A + !operand + C
+        let effective = !value;
+        let result = (registers.a as u16) + (effective as u16) + (carry_in as u16);
+        let result_byte = result as u8;
+        let overflow = (!(registers.a ^ effective) & (registers.a ^ result_byte) & 0x80) != 0;
+        registers.update_overflow_flag(overflow);
+        registers.update_carry_flag(result > 0xFF);
+        registers.set_accumulator(result_byte);
     }
 }
 
@@ -166,6 +241,156 @@ mod tests {
     #[fixture]
     fn memory() -> Memory {
         Memory::default()
+    }
+
+    // adc_binary: (a, operand, carry_in, expected, carry, overflow, zero, negative)
+    #[rstest]
+    #[case(0x01, 0x01, false, 0x02, false, false, false, false)] // basic
+    #[case(0xFF, 0x01, false, 0x00, true, false, true, false)] // carry out
+    #[case(0x01, 0x01, true, 0x03, false, false, false, false)] // carry in
+    #[case(0x50, 0x50, false, 0xA0, false, true, false, true)] // pos+pos overflow
+    #[case(0xD0, 0x90, false, 0x60, true, true, false, false)] // neg+neg overflow
+    #[case(0x50, 0x10, false, 0x60, false, false, false, false)] // no overflow
+    fn test_adc_binary(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] a: u8,
+        #[case] operand: u8,
+        #[case] carry_in: bool,
+        #[case] expected: u8,
+        #[case] carry: bool,
+        #[case] overflow: bool,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        let operand_resolution = Unimock::new(
+            OperandResolutionMock::resolve_value
+                .each_call(matching!(_, _, _))
+                .returns(operand),
+        );
+        registers.a = a;
+        registers.update_carry_flag(carry_in);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::ADC,
+            &operand_resolution,
+            &[operand],
+        );
+        assert_eq!(registers.a, expected);
+        assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
+        assert_eq!(registers.is_flag_set(OVERFLOW_FLAG_BITMASK), overflow, "overflow flag");
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    // adc_decimal: (a, operand, carry_in, expected_bcd, carry)
+    #[rstest]
+    #[case(0x15, 0x27, false, 0x42, false)] // 15+27=42
+    #[case(0x99, 0x01, false, 0x00, true)] // 99+01=100, carry out
+    #[case(0x19, 0x19, true, 0x39, false)] // 19+19+1=39
+    #[case(0x09, 0x01, false, 0x10, false)] // low nibble BCD adjust
+    #[case(0x58, 0x46, false, 0x04, true)] // 58+46=104, carry out
+    fn test_adc_decimal(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] a: u8,
+        #[case] operand: u8,
+        #[case] carry_in: bool,
+        #[case] expected_bcd: u8,
+        #[case] carry: bool,
+    ) {
+        let operand_resolution = Unimock::new(
+            OperandResolutionMock::resolve_value
+                .each_call(matching!(_, _, _))
+                .returns(operand),
+        );
+        registers.a = a;
+        registers.update_carry_flag(carry_in);
+        registers.update_decimal_flag(true);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::ADC,
+            &operand_resolution,
+            &[operand],
+        );
+        assert_eq!(registers.a, expected_bcd);
+        assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
+    }
+
+    // sbc_binary: (a, operand, carry_in, expected, carry, overflow, zero, negative)
+    // carry_in=1 means no borrow; carry_in=0 means borrow
+    #[rstest]
+    #[case(0x50, 0x30, true, 0x20, true, false, false, false)] // 80-48 = 32
+    #[case(0x50, 0x30, false, 0x1F, true, false, false, false)] // 80-48-1 = 31
+    #[case(0x50, 0xB0, true, 0xA0, false, true, false, true)] // +80-(-80)=+160 overflow
+    #[case(0x00, 0x01, true, 0xFF, false, false, false, true)] // 0-1 borrow
+    #[case(0x80, 0x01, true, 0x7F, true, true, false, false)] // -128-1 = -129 overflow
+    fn test_sbc_binary(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] a: u8,
+        #[case] operand: u8,
+        #[case] carry_in: bool,
+        #[case] expected: u8,
+        #[case] carry: bool,
+        #[case] overflow: bool,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        let operand_resolution = Unimock::new(
+            OperandResolutionMock::resolve_value
+                .each_call(matching!(_, _, _))
+                .returns(operand),
+        );
+        registers.a = a;
+        registers.update_carry_flag(carry_in);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::SBC,
+            &operand_resolution,
+            &[operand],
+        );
+        assert_eq!(registers.a, expected);
+        assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
+        assert_eq!(registers.is_flag_set(OVERFLOW_FLAG_BITMASK), overflow, "overflow flag");
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    // sbc_decimal: (a, operand, carry_in, expected_bcd, carry)
+    #[rstest]
+    #[case(0x42, 0x27, true, 0x15, true)] // 42-27=15
+    #[case(0x40, 0x41, true, 0x99, false)] // 40-41=99 with borrow out
+    #[case(0x20, 0x10, false, 0x09, true)] // 20-10-1=9
+    fn test_sbc_decimal(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] a: u8,
+        #[case] operand: u8,
+        #[case] carry_in: bool,
+        #[case] expected_bcd: u8,
+        #[case] carry: bool,
+    ) {
+        let operand_resolution = Unimock::new(
+            OperandResolutionMock::resolve_value
+                .each_call(matching!(_, _, _))
+                .returns(operand),
+        );
+        registers.a = a;
+        registers.update_carry_flag(carry_in);
+        registers.update_decimal_flag(true);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::SBC,
+            &operand_resolution,
+            &[operand],
+        );
+        assert_eq!(registers.a, expected_bcd);
+        assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
     }
 
     #[rstest]
