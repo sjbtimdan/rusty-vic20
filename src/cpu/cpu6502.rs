@@ -47,7 +47,7 @@ impl<'a> CPU6502<'a> {
             if self.cycle_count == instruction_info.cycles {
                 execute_instruction(
                     &mut self.registers,
-                    &mut self.memory,
+                    self.memory,
                     &instruction_info.mode,
                     &self.operands_buffer,
                 );

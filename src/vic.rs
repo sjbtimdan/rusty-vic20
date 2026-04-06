@@ -53,7 +53,7 @@ impl<'a> VIC<'a> {
     }
 
     fn is_border(&self, x: usize, y: usize) -> bool {
-        x < 16 || x >= 160 || y < 16 || y >= 168
+        !(16..160).contains(&x) || !(16..168).contains(&y)
     }
 
     fn palette(&self, index: u8) -> u32 {

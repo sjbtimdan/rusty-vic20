@@ -246,7 +246,7 @@ pub const fn cycles_for(opcode: u8) -> u8 {
 }
 
 pub const fn length_for(mode: AddressingMode) -> usize {
-    return match mode {
+    match mode {
         AddressingMode::Implied | AddressingMode::Accumulator => 1,
         AddressingMode::Immediate
         | AddressingMode::ZeroPage
@@ -258,5 +258,5 @@ pub const fn length_for(mode: AddressingMode) -> usize {
         AddressingMode::Absolute | AddressingMode::AbsoluteX | AddressingMode::AbsoluteY | AddressingMode::Indirect => {
             3
         }
-    };
+    }
 }
