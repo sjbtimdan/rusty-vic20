@@ -96,6 +96,7 @@ pub fn execute_instruction(
                 ((v >> 1) | (old_carry << 7), v & 0x01 != 0)
             });
         }
+        Instruction::NOP => {}
         Instruction::CLC => registers.update_carry_flag(false),
         Instruction::CLD => registers.update_decimal_flag(false),
         Instruction::CLI => registers.update_interrupt_flag(false),
@@ -165,6 +166,12 @@ mod tests {
     #[fixture]
     fn memory() -> Memory {
         Memory::default()
+    }
+
+    #[rstest]
+    fn test_nop(mut registers: Registers, mut memory: Memory) {
+        let operand_resolution = Unimock::new(());
+        execute_instruction(&mut registers, &mut memory, Instruction::NOP, &operand_resolution, &[]);
     }
 
     #[rstest]
