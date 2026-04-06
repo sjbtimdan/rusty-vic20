@@ -141,6 +141,12 @@ pub fn execute_instruction(
             let value = operand_resolution.resolve_value(registers, memory, operands);
             compare(registers, registers.y, value);
         }
+        Instruction::BIT => {
+            let value = operand_resolution.resolve_value(registers, memory, operands);
+            registers.set_flag(ZERO_FLAG_BITMASK, registers.a & value == 0);
+            registers.set_flag(OVERFLOW_FLAG_BITMASK, value & 0x40 != 0);
+            registers.set_flag(NEGATIVE_FLAG_BITMASK, value & 0x80 != 0);
+        }
         _ => unimplemented!("Instruction {:?} not implemented yet", instruction),
     }
 }
