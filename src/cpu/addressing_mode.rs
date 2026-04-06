@@ -19,11 +19,16 @@ pub enum AddressingMode {
 
 #[cfg_attr(test, unimock::unimock(api=OperandResolutionMock))]
 pub trait OperandResolution {
+    fn is_accumulator(&self) -> bool;
     fn resolve_value(&self, registers: &Registers, memory: &Memory, operands: &[u8]) -> u8;
     fn resolve_address(&self, registers: &Registers, memory: &Memory, operands: &[u8]) -> u16;
 }
 
 impl OperandResolution for AddressingMode {
+    fn is_accumulator(&self) -> bool {
+        matches!(self, AddressingMode::Accumulator)
+    }
+
     fn resolve_value(&self, registers: &Registers, memory: &Memory, operands: &[u8]) -> u8 {
         match self {
             AddressingMode::Immediate => operands[0],

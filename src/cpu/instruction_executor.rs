@@ -1,5 +1,9 @@
 use crate::{
-    cpu::{addressing_mode::OperandResolution, instructions::Instruction, registers::Registers},
+    cpu::{
+        addressing_mode::OperandResolution,
+        instructions::Instruction,
+        registers::{CARRY_FLAG_BITMASK, Registers},
+    },
     memory::Memory,
 };
 
@@ -74,6 +78,51 @@ pub fn execute_instruction(
         Instruction::JMP => {
             let address = operand_resolution.resolve_address(registers, memory, operands);
             registers.pc = address;
+        }
+        Instruction::ASL => {
+            let value = if operand_resolution.is_accumulator() {
+                let value = registers.a;
+                registers.set_accumulator(value << 1);
+                value
+            } else {
+                let address = operand_resolution.resolve_address(registers, memory, operands);
+                let value = memory.read_byte(address);
+                let result = value << 1;
+                memory.set_byte(address, result);
+                registers.update_zero_and_negative(result);
+                value
+            };
+            registers.update_carry_flag(value & 0x80 != 0);
+        }
+        Instruction::ROL => {
+            let old_carry = registers.is_flag_set(CARRY_FLAG_BITMASK) as u8;
+            if operand_resolution.is_accumulator() {
+                let value = registers.a;
+                registers.update_carry_flag(value & 0x80 != 0);
+                registers.set_accumulator((value << 1) | old_carry);
+            } else {
+                let address = operand_resolution.resolve_address(registers, memory, operands);
+                let value = memory.read_byte(address);
+                let result = (value << 1) | old_carry;
+                memory.set_byte(address, result);
+                registers.update_carry_flag(value & 0x80 != 0);
+                registers.update_zero_and_negative(result);
+            }
+        }
+        Instruction::ROR => {
+            let old_carry = registers.is_flag_set(CARRY_FLAG_BITMASK) as u8;
+            if operand_resolution.is_accumulator() {
+                let value = registers.a;
+                registers.update_carry_flag(value & 0x01 != 0);
+                registers.set_accumulator((value >> 1) | (old_carry << 7));
+            } else {
+                let address = operand_resolution.resolve_address(registers, memory, operands);
+                let value = memory.read_byte(address);
+                let result = (value >> 1) | (old_carry << 7);
+                memory.set_byte(address, result);
+                registers.update_carry_flag(value & 0x01 != 0);
+                registers.update_zero_and_negative(result);
+            }
         }
         Instruction::CLC => registers.update_carry_flag(false),
         Instruction::CLD => registers.update_decimal_flag(false),
@@ -495,5 +544,190 @@ mod tests {
             registers.is_flag_set(INTERRUPT_FLAG_BITMASK),
             "SEI should set interrupt"
         );
+    }
+
+    #[rstest]
+    #[case(0x80, 0x00, true, true, false)]
+    #[case(0x01, 0x02, false, false, false)]
+    #[case(0x40, 0x80, false, false, true)]
+    fn test_asl_accumulator(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] initial: u8,
+        #[case] expected: u8,
+        #[case] carry: bool,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        let operand_resolution = Unimock::new(
+            OperandResolutionMock::is_accumulator
+                .each_call(matching!())
+                .returns(true),
+        );
+        registers.a = initial;
+        execute_instruction(&mut registers, &mut memory, Instruction::ASL, &operand_resolution, &[]);
+        assert_eq!(registers.a, expected);
+        assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x80, false, 0x00, true, true, false)]
+    #[case(0x80, true, 0x01, true, false, false)]
+    #[case(0x01, false, 0x02, false, false, false)]
+    #[case(0x40, false, 0x80, false, false, true)]
+    fn test_rol_accumulator(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] initial: u8,
+        #[case] carry_in: bool,
+        #[case] expected: u8,
+        #[case] carry: bool,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        let operand_resolution = Unimock::new(
+            OperandResolutionMock::is_accumulator
+                .each_call(matching!())
+                .returns(true),
+        );
+        registers.a = initial;
+        registers.update_carry_flag(carry_in);
+        execute_instruction(&mut registers, &mut memory, Instruction::ROL, &operand_resolution, &[]);
+        assert_eq!(registers.a, expected);
+        assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x0200u16, 0x80, false, 0x00, true, true, false)]
+    #[case(0x0200u16, 0x80, true, 0x01, true, false, false)]
+    #[case(0x0200u16, 0x01, false, 0x02, false, false, false)]
+    #[case(0x0200u16, 0x40, false, 0x80, false, false, true)]
+    fn test_rol_memory(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] address: u16,
+        #[case] initial: u8,
+        #[case] carry_in: bool,
+        #[case] expected: u8,
+        #[case] carry: bool,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        memory.set_byte(address, initial);
+        registers.update_carry_flag(carry_in);
+        let operand_resolution = Unimock::new((
+            OperandResolutionMock::is_accumulator
+                .each_call(matching!())
+                .returns(false),
+            OperandResolutionMock::resolve_address
+                .each_call(matching!(_, _, _))
+                .returns(address),
+        ));
+        execute_instruction(&mut registers, &mut memory, Instruction::ROL, &operand_resolution, &[]);
+        assert_eq!(memory.read_byte(address), expected);
+        assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x01, false, 0x00, true, true, false)]
+    #[case(0x01, true, 0x80, true, false, true)]
+    #[case(0x02, false, 0x01, false, false, false)]
+    #[case(0x00, true, 0x80, false, false, true)]
+    fn test_ror_accumulator(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] initial: u8,
+        #[case] carry_in: bool,
+        #[case] expected: u8,
+        #[case] carry: bool,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        let operand_resolution = Unimock::new(
+            OperandResolutionMock::is_accumulator
+                .each_call(matching!())
+                .returns(true),
+        );
+        registers.a = initial;
+        registers.update_carry_flag(carry_in);
+        execute_instruction(&mut registers, &mut memory, Instruction::ROR, &operand_resolution, &[]);
+        assert_eq!(registers.a, expected);
+        assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x0200u16, 0x01, false, 0x00, true, true, false)]
+    #[case(0x0200u16, 0x01, true, 0x80, true, false, true)]
+    #[case(0x0200u16, 0x02, false, 0x01, false, false, false)]
+    #[case(0x0200u16, 0x00, true, 0x80, false, false, true)]
+    fn test_ror_memory(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] address: u16,
+        #[case] initial: u8,
+        #[case] carry_in: bool,
+        #[case] expected: u8,
+        #[case] carry: bool,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        memory.set_byte(address, initial);
+        registers.update_carry_flag(carry_in);
+        let operand_resolution = Unimock::new((
+            OperandResolutionMock::is_accumulator
+                .each_call(matching!())
+                .returns(false),
+            OperandResolutionMock::resolve_address
+                .each_call(matching!(_, _, _))
+                .returns(address),
+        ));
+        execute_instruction(&mut registers, &mut memory, Instruction::ROR, &operand_resolution, &[]);
+        assert_eq!(memory.read_byte(address), expected);
+        assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x80, 0x00, true, true, false)]
+    #[case(0x01, 0x02, false, false, false)]
+    #[case(0x40, 0x80, false, false, true)]
+    fn test_asl_memory(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] initial: u8,
+        #[case] expected: u8,
+        #[case] carry: bool,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        memory.set_byte(0x1234, initial);
+        let operand_resolution = Unimock::new((
+            OperandResolutionMock::is_accumulator
+                .each_call(matching!())
+                .returns(false),
+            OperandResolutionMock::resolve_address
+                .each_call(matching!(_, _, _))
+                .returns(0x1234u16),
+        ));
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::ASL,
+            &operand_resolution,
+            &[0x34, 0x12],
+        );
+        assert_eq!(memory.read_byte(0x1234), expected);
+        assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
     }
 }
