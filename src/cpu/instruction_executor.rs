@@ -129,6 +129,18 @@ pub fn execute_instruction(
         Instruction::TYA => registers.set_accumulator(registers.y),
         Instruction::TSX => registers.set_x(registers.sp),
         Instruction::TXS => registers.sp = registers.x,
+        Instruction::CMP => {
+            let value = operand_resolution.resolve_value(registers, memory, operands);
+            compare(registers, registers.a, value);
+        }
+        Instruction::CPX => {
+            let value = operand_resolution.resolve_value(registers, memory, operands);
+            compare(registers, registers.x, value);
+        }
+        Instruction::CPY => {
+            let value = operand_resolution.resolve_value(registers, memory, operands);
+            compare(registers, registers.y, value);
+        }
         _ => unimplemented!("Instruction {:?} not implemented yet", instruction),
     }
 }
@@ -202,6 +214,12 @@ fn branch_if(registers: &mut Registers, operands: &[u8], condition: bool) {
         let offset = operands[0] as i8;
         registers.pc = registers.pc.wrapping_add(offset as u16);
     }
+}
+
+fn compare(registers: &mut Registers, reg: u8, value: u8) {
+    let result = reg.wrapping_sub(value);
+    registers.update_carry_flag(reg >= value);
+    registers.update_zero_and_negative(result);
 }
 
 fn apply_shift(
