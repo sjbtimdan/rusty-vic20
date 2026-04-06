@@ -1,9 +1,10 @@
 ## Development Strategy
-- UI-first: Build a simple window with a framebuffer (using pixels or minifb in Rust, or Avalonia in C#).
-- CPU core: Implement the 6502 instruction set.
-- Video: Start with text mode rendering—map character codes to glyphs.
-- Sound: Add square wave generation later.
-- Input: Hook up keyboard and joystick.
+- [ ] UI-first: Build a simple window with a framebuffer (using pixels or minifb in Rust, or Avalonia in C#).
+- [ ] CPU core: Implement the 6502 instruction set.
+- [ ] Video: Start with text mode rendering—map character codes to glyphs.
+- [ ] Sound: Add square wave generation later.
+- [ ] Input: Hook up keyboard and joystick.
+- [ ] Input: Cassette loader.
 
 ### UI
 
