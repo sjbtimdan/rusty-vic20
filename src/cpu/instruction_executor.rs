@@ -12,15 +12,15 @@ pub fn execute_instruction(
 ) {
     match instruction {
         Instruction::LDA => {
-            let value = operand_resolution.resolve_load_operand(registers, memory, operands);
+            let value = operand_resolution.resolve_value(registers, memory, operands);
             registers.set_accumulator(value);
         }
         Instruction::LDX => {
-            let value = operand_resolution.resolve_load_operand(registers, memory, operands);
+            let value = operand_resolution.resolve_value(registers, memory, operands);
             registers.set_x(value);
         }
         Instruction::LDY => {
-            let value = operand_resolution.resolve_load_operand(registers, memory, operands);
+            let value = operand_resolution.resolve_value(registers, memory, operands);
             registers.set_y(value);
         }
         Instruction::DEX => {
@@ -36,43 +36,43 @@ pub fn execute_instruction(
             registers.set_y(registers.y.wrapping_add(1));
         }
         Instruction::INC => {
-            let address = operand_resolution.resolve_store_address(registers, memory, operands);
+            let address = operand_resolution.resolve_address(registers, memory, operands);
             let value = memory.read_byte(address).wrapping_add(1);
             memory.set_byte(address, value);
             registers.update_zero_and_negative(value);
         }
         Instruction::DEC => {
-            let address = operand_resolution.resolve_store_address(registers, memory, operands);
+            let address = operand_resolution.resolve_address(registers, memory, operands);
             let value = memory.read_byte(address).wrapping_sub(1);
             memory.set_byte(address, value);
             registers.update_zero_and_negative(value);
         }
         Instruction::STA => {
-            let address = operand_resolution.resolve_store_address(registers, memory, operands);
+            let address = operand_resolution.resolve_address(registers, memory, operands);
             memory.set_byte(address, registers.a);
         }
         Instruction::STX => {
-            let address = operand_resolution.resolve_store_address(registers, memory, operands);
+            let address = operand_resolution.resolve_address(registers, memory, operands);
             memory.set_byte(address, registers.x);
         }
         Instruction::STY => {
-            let address = operand_resolution.resolve_store_address(registers, memory, operands);
+            let address = operand_resolution.resolve_address(registers, memory, operands);
             memory.set_byte(address, registers.y);
         }
         Instruction::ORA => {
-            let value = operand_resolution.resolve_load_operand(registers, memory, operands);
+            let value = operand_resolution.resolve_value(registers, memory, operands);
             registers.set_accumulator(registers.a | value);
         }
         Instruction::AND => {
-            let value = operand_resolution.resolve_load_operand(registers, memory, operands);
+            let value = operand_resolution.resolve_value(registers, memory, operands);
             registers.set_accumulator(registers.a & value);
         }
         Instruction::EOR => {
-            let value = operand_resolution.resolve_load_operand(registers, memory, operands);
+            let value = operand_resolution.resolve_value(registers, memory, operands);
             registers.set_accumulator(registers.a ^ value);
         }
         Instruction::JMP => {
-            let address = operand_resolution.resolve_store_address(registers, memory, operands);
+            let address = operand_resolution.resolve_address(registers, memory, operands);
             registers.pc = address;
         }
         _ => unimplemented!("Instruction {:?} not implemented yet", instruction),
@@ -105,7 +105,7 @@ mod tests {
     #[rstest]
     fn test_lda(mut registers: Registers, mut memory: Memory) {
         let operand_resolution = Unimock::new(
-            OperandResolutionMock::resolve_load_operand
+            OperandResolutionMock::resolve_value
                 .each_call(matching!(_, _, [0x42]))
                 .returns(0x42),
         );
@@ -131,7 +131,7 @@ mod tests {
         #[case] negative: bool,
     ) {
         let operand_resolution = Unimock::new(
-            OperandResolutionMock::resolve_load_operand
+            OperandResolutionMock::resolve_value
                 .each_call(matching!(_, _, _))
                 .returns(value),
         );
@@ -159,7 +159,7 @@ mod tests {
         #[case] negative: bool,
     ) {
         let operand_resolution = Unimock::new(
-            OperandResolutionMock::resolve_load_operand
+            OperandResolutionMock::resolve_value
                 .each_call(matching!(_, _, _))
                 .returns(value),
         );
@@ -269,7 +269,7 @@ mod tests {
         #[case] negative: bool,
     ) {
         let operand_resolution = Unimock::new(
-            OperandResolutionMock::resolve_store_address
+            OperandResolutionMock::resolve_address
                 .each_call(matching!(_, _, _))
                 .returns(address),
         );
@@ -294,7 +294,7 @@ mod tests {
         #[case] negative: bool,
     ) {
         let operand_resolution = Unimock::new(
-            OperandResolutionMock::resolve_store_address
+            OperandResolutionMock::resolve_address
                 .each_call(matching!(_, _, _))
                 .returns(address),
         );
@@ -308,7 +308,7 @@ mod tests {
     #[rstest]
     fn test_sta(mut registers: Registers, mut memory: Memory) {
         let operand_resolution = Unimock::new(
-            OperandResolutionMock::resolve_store_address
+            OperandResolutionMock::resolve_address
                 .each_call(matching!(_, _, _))
                 .returns(0x0200u16),
         );
@@ -320,7 +320,7 @@ mod tests {
     #[rstest]
     fn test_stx(mut registers: Registers, mut memory: Memory) {
         let operand_resolution = Unimock::new(
-            OperandResolutionMock::resolve_store_address
+            OperandResolutionMock::resolve_address
                 .each_call(matching!(_, _, _))
                 .returns(0x0200u16),
         );
@@ -332,7 +332,7 @@ mod tests {
     #[rstest]
     fn test_sty(mut registers: Registers, mut memory: Memory) {
         let operand_resolution = Unimock::new(
-            OperandResolutionMock::resolve_store_address
+            OperandResolutionMock::resolve_address
                 .each_call(matching!(_, _, _))
                 .returns(0x0200u16),
         );
@@ -356,7 +356,7 @@ mod tests {
         #[case] negative: bool,
     ) {
         let operand_resolution = Unimock::new(
-            OperandResolutionMock::resolve_load_operand
+            OperandResolutionMock::resolve_value
                 .each_call(matching!(_, _, _))
                 .returns(operand),
         );
@@ -387,7 +387,7 @@ mod tests {
         #[case] negative: bool,
     ) {
         let operand_resolution = Unimock::new(
-            OperandResolutionMock::resolve_load_operand
+            OperandResolutionMock::resolve_value
                 .each_call(matching!(_, _, _))
                 .returns(operand),
         );
@@ -418,7 +418,7 @@ mod tests {
         #[case] negative: bool,
     ) {
         let operand_resolution = Unimock::new(
-            OperandResolutionMock::resolve_load_operand
+            OperandResolutionMock::resolve_value
                 .each_call(matching!(_, _, _))
                 .returns(operand),
         );
@@ -438,7 +438,7 @@ mod tests {
     #[rstest]
     fn test_jmp(mut registers: Registers, mut memory: Memory) {
         let operand_resolution = Unimock::new(
-            OperandResolutionMock::resolve_store_address
+            OperandResolutionMock::resolve_address
                 .each_call(matching!(_, _, _))
                 .returns(0x1234u16),
         );
