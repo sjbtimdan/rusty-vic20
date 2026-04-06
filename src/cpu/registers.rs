@@ -13,6 +13,7 @@ pub const ZERO_FLAG_BITMASK: u8 = 0x02; // Bit 1 - Z
 pub const INTERRUPT_FLAG_BITMASK: u8 = 0x04; // Bit 2 - I
 pub const DECIMAL_FLAG_BITMASK: u8 = 0x08; // Bit 3 - D
 pub const BREAK_FLAG_BITMASK: u8 = 0x10; // Bit 4 - B
+pub const UNUSED_FLAG_BITMASK: u8 = 0x20; // Bit 5 - Unused
 pub const OVERFLOW_FLAG_BITMASK: u8 = 0x40; // Bit 6 - V
 pub const NEGATIVE_FLAG_BITMASK: u8 = 0x80; // Bit 7 - N
 

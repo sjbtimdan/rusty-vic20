@@ -3,8 +3,8 @@ use crate::{
         addressing_mode::OperandResolution,
         instructions::Instruction,
         registers::{
-            CARRY_FLAG_BITMASK, DECIMAL_FLAG_BITMASK, NEGATIVE_FLAG_BITMASK, OVERFLOW_FLAG_BITMASK, Registers,
-            ZERO_FLAG_BITMASK,
+            BREAK_FLAG_BITMASK, CARRY_FLAG_BITMASK, DECIMAL_FLAG_BITMASK, NEGATIVE_FLAG_BITMASK, OVERFLOW_FLAG_BITMASK,
+            Registers, UNUSED_FLAG_BITMASK, ZERO_FLAG_BITMASK,
         },
     },
     memory::Memory,
@@ -147,6 +147,26 @@ pub fn execute_instruction(
             registers.set_flag(OVERFLOW_FLAG_BITMASK, value & 0x40 != 0);
             registers.set_flag(NEGATIVE_FLAG_BITMASK, value & 0x80 != 0);
         }
+        Instruction::PHA => {
+            stack_push(registers, memory, registers.a);
+        }
+        Instruction::PHP => {
+            // Bits 4 (B) and 5 (unused) are always set when pushing via PHP
+            stack_push(
+                registers,
+                memory,
+                registers.status | UNUSED_FLAG_BITMASK | BREAK_FLAG_BITMASK,
+            );
+        }
+        Instruction::PLA => {
+            let value = stack_pull(registers, memory);
+            registers.set_accumulator(value);
+        }
+        Instruction::PLP => {
+            let value = stack_pull(registers, memory);
+            // Bit 5 (unused) is always 1; bit 4 (B) is not a real CPU flag
+            registers.status = (value | UNUSED_FLAG_BITMASK) & !BREAK_FLAG_BITMASK;
+        }
         _ => unimplemented!("Instruction {:?} not implemented yet", instruction),
     }
 }
@@ -226,6 +246,16 @@ fn compare(registers: &mut Registers, reg: u8, value: u8) {
     let result = reg.wrapping_sub(value);
     registers.update_carry_flag(reg >= value);
     registers.update_zero_and_negative(result);
+}
+
+fn stack_push(registers: &mut Registers, memory: &mut Memory, value: u8) {
+    memory.set_byte(0x0100 + registers.sp as u16, value);
+    registers.sp = registers.sp.wrapping_sub(1);
+}
+
+fn stack_pull(registers: &mut Registers, memory: &mut Memory) -> u8 {
+    registers.sp = registers.sp.wrapping_add(1);
+    memory.read_byte(0x0100 + registers.sp as u16)
 }
 
 fn apply_shift(
