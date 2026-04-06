@@ -80,49 +80,21 @@ pub fn execute_instruction(
             registers.pc = address;
         }
         Instruction::ASL => {
-            let value = if operand_resolution.is_accumulator() {
-                let value = registers.a;
-                registers.set_accumulator(value << 1);
-                value
-            } else {
-                let address = operand_resolution.resolve_address(registers, memory, operands);
-                let value = memory.read_byte(address);
-                let result = value << 1;
-                memory.set_byte(address, result);
-                registers.update_zero_and_negative(result);
-                value
-            };
-            registers.update_carry_flag(value & 0x80 != 0);
+            apply_shift(registers, memory, operand_resolution, operands, |v| {
+                (v << 1, v & 0x80 != 0)
+            });
         }
         Instruction::ROL => {
             let old_carry = registers.is_flag_set(CARRY_FLAG_BITMASK) as u8;
-            if operand_resolution.is_accumulator() {
-                let value = registers.a;
-                registers.update_carry_flag(value & 0x80 != 0);
-                registers.set_accumulator((value << 1) | old_carry);
-            } else {
-                let address = operand_resolution.resolve_address(registers, memory, operands);
-                let value = memory.read_byte(address);
-                let result = (value << 1) | old_carry;
-                memory.set_byte(address, result);
-                registers.update_carry_flag(value & 0x80 != 0);
-                registers.update_zero_and_negative(result);
-            }
+            apply_shift(registers, memory, operand_resolution, operands, |v| {
+                ((v << 1) | old_carry, v & 0x80 != 0)
+            });
         }
         Instruction::ROR => {
             let old_carry = registers.is_flag_set(CARRY_FLAG_BITMASK) as u8;
-            if operand_resolution.is_accumulator() {
-                let value = registers.a;
-                registers.update_carry_flag(value & 0x01 != 0);
-                registers.set_accumulator((value >> 1) | (old_carry << 7));
-            } else {
-                let address = operand_resolution.resolve_address(registers, memory, operands);
-                let value = memory.read_byte(address);
-                let result = (value >> 1) | (old_carry << 7);
-                memory.set_byte(address, result);
-                registers.update_carry_flag(value & 0x01 != 0);
-                registers.update_zero_and_negative(result);
-            }
+            apply_shift(registers, memory, operand_resolution, operands, |v| {
+                ((v >> 1) | (old_carry << 7), v & 0x01 != 0)
+            });
         }
         Instruction::CLC => registers.update_carry_flag(false),
         Instruction::CLD => registers.update_decimal_flag(false),
@@ -132,6 +104,28 @@ pub fn execute_instruction(
         Instruction::SED => registers.update_decimal_flag(true),
         Instruction::SEI => registers.update_interrupt_flag(true),
         _ => unimplemented!("Instruction {:?} not implemented yet", instruction),
+    }
+}
+
+fn apply_shift(
+    registers: &mut Registers,
+    memory: &mut Memory,
+    operand_resolution: &impl OperandResolution,
+    operands: &[u8],
+    compute: impl Fn(u8) -> (u8, bool),
+) {
+    if operand_resolution.is_accumulator() {
+        let value = registers.a;
+        let (result, new_carry) = compute(value);
+        registers.update_carry_flag(new_carry);
+        registers.set_accumulator(result);
+    } else {
+        let address = operand_resolution.resolve_address(registers, memory, operands);
+        let value = memory.read_byte(address);
+        let (result, new_carry) = compute(value);
+        memory.set_byte(address, result);
+        registers.update_carry_flag(new_carry);
+        registers.update_zero_and_negative(result);
     }
 }
 
