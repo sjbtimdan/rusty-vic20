@@ -24,6 +24,25 @@ pub trait OperandResolution {
     fn resolve_address(&self, registers: &Registers, memory: &Memory, operands: &[u8]) -> u16;
 }
 
+impl AddressingMode {
+    pub fn operand_count(&self) -> usize {
+        match self {
+            AddressingMode::Implied | AddressingMode::Accumulator => 0,
+            AddressingMode::Immediate
+            | AddressingMode::ZeroPage
+            | AddressingMode::ZeroPageX
+            | AddressingMode::ZeroPageY
+            | AddressingMode::Relative
+            | AddressingMode::IndexedIndirect
+            | AddressingMode::IndirectIndexed => 1,
+            AddressingMode::Absolute
+            | AddressingMode::AbsoluteX
+            | AddressingMode::AbsoluteY
+            | AddressingMode::Indirect => 2,
+        }
+    }
+}
+
 impl OperandResolution for AddressingMode {
     fn is_accumulator(&self) -> bool {
         matches!(self, AddressingMode::Accumulator)
