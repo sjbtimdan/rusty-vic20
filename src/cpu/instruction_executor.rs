@@ -167,6 +167,11 @@ pub fn execute_instruction(
             // Bit 5 (unused) is always 1; bit 4 (B) is not a real CPU flag
             registers.status = (value | UNUSED_FLAG_BITMASK) & !BREAK_FLAG_BITMASK;
         }
+        Instruction::JSR => {
+            let target = operand_resolution.resolve_address(registers, memory, operands);
+            stack_push_u16(registers, memory, registers.pc.wrapping_add(2));
+            registers.pc = target;
+        }
         _ => unimplemented!("Instruction {:?} not implemented yet", instruction),
     }
 }
@@ -251,6 +256,11 @@ fn compare(registers: &mut Registers, reg: u8, value: u8) {
 fn stack_push(registers: &mut Registers, memory: &mut Memory, value: u8) {
     memory.set_byte(0x0100 + registers.sp as u16, value);
     registers.sp = registers.sp.wrapping_sub(1);
+}
+
+fn stack_push_u16(registers: &mut Registers, memory: &mut Memory, value: u16) {
+    stack_push(registers, memory, (value >> 8) as u8);
+    stack_push(registers, memory, value as u8);
 }
 
 fn stack_pull(registers: &mut Registers, memory: &mut Memory) -> u8 {
@@ -913,6 +923,28 @@ mod tests {
             &[0x34, 0x12],
         );
         assert_eq!(registers.pc, 0x1234);
+    }
+
+    #[rstest]
+    fn test_jsr(mut registers: Registers, mut memory: Memory) {
+        registers.pc = 0x1200;
+        registers.sp = 0xFF;
+        let operand_resolution = Unimock::new(
+            OperandResolutionMock::resolve_address
+                .each_call(matching!(_, _, _))
+                .returns(0xC000u16),
+        );
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::JSR,
+            &operand_resolution,
+            &[0x00, 0xC0],
+        );
+        assert_eq!(registers.pc, 0xC000, "pc should jump to target");
+        assert_eq!(registers.sp, 0xFD, "sp should decrease by 2");
+        assert_eq!(memory.read_byte(0x01FF), 0x12, "high byte of return address on stack");
+        assert_eq!(memory.read_byte(0x01FE), 0x02, "low byte of return address on stack");
     }
 
     #[rstest]
