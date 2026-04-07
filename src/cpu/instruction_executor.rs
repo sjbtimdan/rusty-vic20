@@ -4,16 +4,12 @@ use crate::{
         instructions::Instruction,
         interrupt_handler::InterruptHandler,
         registers::{
-            BREAK_FLAG_BITMASK, CARRY_FLAG_BITMASK, DECIMAL_FLAG_BITMASK, NEGATIVE_FLAG_BITMASK, OVERFLOW_FLAG_BITMASK,
-            Registers, UNUSED_FLAG_BITMASK, ZERO_FLAG_BITMASK,
+            BREAK_FLAG_BITMASK, CARRY_FLAG_BITMASK, DECIMAL_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK,
+            NEGATIVE_FLAG_BITMASK, OVERFLOW_FLAG_BITMASK, Registers, UNUSED_FLAG_BITMASK, ZERO_FLAG_BITMASK,
         },
     },
     memory::Memory,
 };
-
-pub trait InstructionExecutor {
-    fn execute_instruction(&mut self, instruction: Instruction, operands: &[u8]);
-}
 
 pub fn execute_instruction(
     registers: &mut Registers,
@@ -21,7 +17,7 @@ pub fn execute_instruction(
     instruction: Instruction,
     operand_resolution: &dyn OperandResolution,
     operands: &[u8],
-    #[allow(unused_variables)] interrupt_handler: &dyn InterruptHandler,
+    interrupt_handler: &dyn InterruptHandler,
 ) {
     match instruction {
         Instruction::ADC => {
@@ -40,6 +36,17 @@ pub fn execute_instruction(
         Instruction::BCC => branch_if(registers, operands, !registers.is_flag_set(CARRY_FLAG_BITMASK)),
         Instruction::BCS => branch_if(registers, operands, registers.is_flag_set(CARRY_FLAG_BITMASK)),
         Instruction::BEQ => branch_if(registers, operands, registers.is_flag_set(ZERO_FLAG_BITMASK)),
+        Instruction::BRK => {
+            // Push return address (PC+2, skipping the signature byte)
+            stack_push_u16(registers, memory, registers.pc.wrapping_add(2));
+            // Push status with B and unused flags set (not stored in live status)
+            let status_to_push = registers.status | BREAK_FLAG_BITMASK | UNUSED_FLAG_BITMASK;
+            stack_push(registers, memory, status_to_push);
+            // Set interrupt disable flag
+            registers.set_flag(INTERRUPT_FLAG_BITMASK, true);
+            // Dispatch to IRQ/BRK vector
+            interrupt_handler.handle_interrupt(registers, memory);
+        }
         Instruction::BIT => {
             let value = operand_resolution.resolve_value(registers, memory, operands);
             registers.set_flag(ZERO_FLAG_BITMASK, registers.a & value == 0);
@@ -306,7 +313,7 @@ mod tests {
     use super::*;
     use crate::cpu::addressing_mode::OperandResolutionMock;
     use crate::cpu::instructions::*;
-    use crate::cpu::interrupt_handler::InterruptHandler;
+    use crate::cpu::interrupt_handler::{InterruptHandler, InterruptHandlerMock};
     use crate::cpu::registers::*;
     use unimock::Unimock;
 
@@ -322,7 +329,7 @@ mod tests {
 
     struct NoOpInterruptHandler;
     impl InterruptHandler for NoOpInterruptHandler {
-        fn handle_interrupt(&mut self, _registers: &mut Registers, _memory: &mut Memory, _maskable: bool) {}
+        fn handle_interrupt(&self, _registers: &mut Registers, _memory: &mut Memory) {}
     }
 
     // adc_binary: (a, operand, carry_in, expected, carry, overflow, zero, negative)
@@ -1081,6 +1088,41 @@ mod tests {
         assert_eq!(registers.sp, 0xFD, "sp should decrease by 2");
         assert_eq!(memory.read_byte(0x01FF), 0x12, "high byte of return address on stack");
         assert_eq!(memory.read_byte(0x01FE), 0x02, "low byte of return address on stack");
+    }
+
+    #[rstest]
+    fn test_brk(mut registers: Registers, mut memory: Memory) {
+        registers.pc = 0x1200;
+        registers.sp = 0xFF;
+        registers.status = CARRY_FLAG_BITMASK | ZERO_FLAG_BITMASK; // some initial status
+        let operand_resolution = Unimock::new(());
+        let interrupt_handler = Unimock::new(
+            InterruptHandlerMock::handle_interrupt
+                .each_call(matching!(_, _))
+                .returns(()),
+        );
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::BRK,
+            &operand_resolution,
+            &[],
+            &interrupt_handler,
+        );
+        // Return address PC+2 on stack (high byte first)
+        assert_eq!(memory.read_byte(0x01FF), 0x12, "high byte of return address");
+        assert_eq!(memory.read_byte(0x01FE), 0x02, "low byte of return address");
+        // Status pushed with B (0x10) and unused (0x20) set
+        assert_eq!(
+            memory.read_byte(0x01FD),
+            CARRY_FLAG_BITMASK | ZERO_FLAG_BITMASK | BREAK_FLAG_BITMASK | UNUSED_FLAG_BITMASK,
+            "pushed status must have B and unused flags set"
+        );
+        assert_eq!(registers.sp, 0xFC, "SP should decrease by 3");
+        assert!(
+            registers.is_flag_set(INTERRUPT_FLAG_BITMASK),
+            "I flag should be set after BRK"
+        );
     }
 
     #[rstest]
