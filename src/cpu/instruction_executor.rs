@@ -2,6 +2,7 @@ use crate::{
     cpu::{
         addressing_mode::OperandResolution,
         instructions::Instruction,
+        interrupt_handler::InterruptHandler,
         registers::{
             BREAK_FLAG_BITMASK, CARRY_FLAG_BITMASK, DECIMAL_FLAG_BITMASK, NEGATIVE_FLAG_BITMASK, OVERFLOW_FLAG_BITMASK,
             Registers, UNUSED_FLAG_BITMASK, ZERO_FLAG_BITMASK,
@@ -10,12 +11,17 @@ use crate::{
     memory::Memory,
 };
 
+pub trait InstructionExecutor {
+    fn execute_instruction(&mut self, instruction: Instruction, operands: &[u8]);
+}
+
 pub fn execute_instruction(
     registers: &mut Registers,
     memory: &mut Memory,
     instruction: Instruction,
-    operand_resolution: &impl OperandResolution,
+    operand_resolution: &dyn OperandResolution,
     operands: &[u8],
+    #[allow(unused_variables)] interrupt_handler: &dyn InterruptHandler,
 ) {
     match instruction {
         Instruction::ADC => {
@@ -271,7 +277,7 @@ fn stack_pull(registers: &mut Registers, memory: &mut Memory) -> u8 {
 fn apply_shift(
     registers: &mut Registers,
     memory: &mut Memory,
-    operand_resolution: &impl OperandResolution,
+    operand_resolution: &dyn OperandResolution,
     operands: &[u8],
     compute: impl Fn(u8) -> (u8, bool),
 ) {
@@ -300,6 +306,7 @@ mod tests {
     use super::*;
     use crate::cpu::addressing_mode::OperandResolutionMock;
     use crate::cpu::instructions::*;
+    use crate::cpu::interrupt_handler::InterruptHandler;
     use crate::cpu::registers::*;
     use unimock::Unimock;
 
@@ -311,6 +318,11 @@ mod tests {
     #[fixture]
     fn memory() -> Memory {
         Memory::default()
+    }
+
+    struct NoOpInterruptHandler;
+    impl InterruptHandler for NoOpInterruptHandler {
+        fn handle_interrupt(&mut self, _registers: &mut Registers, _memory: &mut Memory, _maskable: bool) {}
     }
 
     // adc_binary: (a, operand, carry_in, expected, carry, overflow, zero, negative)
@@ -346,6 +358,7 @@ mod tests {
             Instruction::ADC,
             &operand_resolution,
             &[operand],
+            &NoOpInterruptHandler,
         );
         assert_eq!(registers.a, expected);
         assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
@@ -384,6 +397,7 @@ mod tests {
             Instruction::ADC,
             &operand_resolution,
             &[operand],
+            &NoOpInterruptHandler,
         );
         assert_eq!(registers.a, expected_bcd);
         assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
@@ -422,6 +436,7 @@ mod tests {
             Instruction::SBC,
             &operand_resolution,
             &[operand],
+            &NoOpInterruptHandler,
         );
         assert_eq!(registers.a, expected);
         assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
@@ -458,6 +473,7 @@ mod tests {
             Instruction::SBC,
             &operand_resolution,
             &[operand],
+            &NoOpInterruptHandler,
         );
         assert_eq!(registers.a, expected_bcd);
         assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
@@ -466,7 +482,14 @@ mod tests {
     #[rstest]
     fn test_nop(mut registers: Registers, mut memory: Memory) {
         let operand_resolution = Unimock::new(());
-        execute_instruction(&mut registers, &mut memory, Instruction::NOP, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::NOP,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
     }
 
     // transfer: (instruction, src_value, expected_dest, zero, negative)
@@ -483,7 +506,14 @@ mod tests {
     ) {
         let operand_resolution = Unimock::new(());
         registers.a = value;
-        execute_instruction(&mut registers, &mut memory, Instruction::TAX, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::TAX,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(registers.x, value);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
@@ -502,7 +532,14 @@ mod tests {
     ) {
         let operand_resolution = Unimock::new(());
         registers.a = value;
-        execute_instruction(&mut registers, &mut memory, Instruction::TAY, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::TAY,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(registers.y, value);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
@@ -521,7 +558,14 @@ mod tests {
     ) {
         let operand_resolution = Unimock::new(());
         registers.x = value;
-        execute_instruction(&mut registers, &mut memory, Instruction::TXA, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::TXA,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(registers.a, value);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
@@ -540,7 +584,14 @@ mod tests {
     ) {
         let operand_resolution = Unimock::new(());
         registers.y = value;
-        execute_instruction(&mut registers, &mut memory, Instruction::TYA, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::TYA,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(registers.a, value);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
@@ -559,7 +610,14 @@ mod tests {
     ) {
         let operand_resolution = Unimock::new(());
         registers.sp = value;
-        execute_instruction(&mut registers, &mut memory, Instruction::TSX, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::TSX,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(registers.x, value);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
@@ -570,7 +628,14 @@ mod tests {
         let operand_resolution = Unimock::new(());
         registers.x = 0x42;
         registers.status = 0x00;
-        execute_instruction(&mut registers, &mut memory, Instruction::TXS, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::TXS,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(registers.sp, 0x42);
         assert_eq!(registers.status, 0x00, "TXS must not change flags");
     }
@@ -588,6 +653,7 @@ mod tests {
             Instruction::LDA,
             &operand_resolution,
             &[0x42],
+            &NoOpInterruptHandler,
         );
         assert_eq!(registers.a, 0x42);
     }
@@ -614,6 +680,7 @@ mod tests {
             Instruction::LDX,
             &operand_resolution,
             &[value],
+            &NoOpInterruptHandler,
         );
         assert_eq!(registers.x, value);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
@@ -642,6 +709,7 @@ mod tests {
             Instruction::LDY,
             &operand_resolution,
             &[value],
+            &NoOpInterruptHandler,
         );
         assert_eq!(registers.y, value);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
@@ -662,7 +730,14 @@ mod tests {
     ) {
         let operand_resolution = Unimock::new(());
         registers.set_x(initial);
-        execute_instruction(&mut registers, &mut memory, Instruction::INX, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::INX,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(registers.x, expected);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
@@ -682,7 +757,14 @@ mod tests {
     ) {
         let operand_resolution = Unimock::new(());
         registers.set_y(initial);
-        execute_instruction(&mut registers, &mut memory, Instruction::INY, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::INY,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(registers.y, expected);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
@@ -702,7 +784,14 @@ mod tests {
     ) {
         let operand_resolution = Unimock::new(());
         registers.set_x(initial);
-        execute_instruction(&mut registers, &mut memory, Instruction::DEX, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::DEX,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(registers.x, expected);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
@@ -722,7 +811,14 @@ mod tests {
     ) {
         let operand_resolution = Unimock::new(());
         registers.set_y(initial);
-        execute_instruction(&mut registers, &mut memory, Instruction::DEY, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::DEY,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(registers.y, expected);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
@@ -747,7 +843,14 @@ mod tests {
                 .returns(address),
         );
         memory.set_byte(address, initial);
-        execute_instruction(&mut registers, &mut memory, Instruction::INC, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::INC,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(memory.read_byte(address), expected);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
@@ -772,7 +875,14 @@ mod tests {
                 .returns(address),
         );
         memory.set_byte(address, initial);
-        execute_instruction(&mut registers, &mut memory, Instruction::DEC, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::DEC,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(memory.read_byte(address), expected);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
@@ -786,7 +896,14 @@ mod tests {
                 .returns(0x0200u16),
         );
         registers.a = 0x42;
-        execute_instruction(&mut registers, &mut memory, Instruction::STA, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::STA,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(memory.read_byte(0x0200), 0x42);
     }
 
@@ -798,7 +915,14 @@ mod tests {
                 .returns(0x0200u16),
         );
         registers.x = 0x42;
-        execute_instruction(&mut registers, &mut memory, Instruction::STX, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::STX,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(memory.read_byte(0x0200), 0x42);
     }
 
@@ -810,7 +934,14 @@ mod tests {
                 .returns(0x0200u16),
         );
         registers.y = 0x42;
-        execute_instruction(&mut registers, &mut memory, Instruction::STY, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::STY,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(memory.read_byte(0x0200), 0x42);
     }
 
@@ -840,6 +971,7 @@ mod tests {
             Instruction::EOR,
             &operand_resolution,
             &[operand],
+            &NoOpInterruptHandler,
         );
         assert_eq!(registers.a, expected);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
@@ -871,6 +1003,7 @@ mod tests {
             Instruction::AND,
             &operand_resolution,
             &[operand],
+            &NoOpInterruptHandler,
         );
         assert_eq!(registers.a, expected);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
@@ -902,6 +1035,7 @@ mod tests {
             Instruction::ORA,
             &operand_resolution,
             &[operand],
+            &NoOpInterruptHandler,
         );
         assert_eq!(registers.a, expected);
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
@@ -921,6 +1055,7 @@ mod tests {
             Instruction::JMP,
             &operand_resolution,
             &[0x34, 0x12],
+            &NoOpInterruptHandler,
         );
         assert_eq!(registers.pc, 0x1234);
     }
@@ -940,6 +1075,7 @@ mod tests {
             Instruction::JSR,
             &operand_resolution,
             &[0x00, 0xC0],
+            &NoOpInterruptHandler,
         );
         assert_eq!(registers.pc, 0xC000, "pc should jump to target");
         assert_eq!(registers.sp, 0xFD, "sp should decrease by 2");
@@ -954,31 +1090,80 @@ mod tests {
         // Start with all target flags set
         registers.status = CARRY_FLAG_BITMASK | DECIMAL_FLAG_BITMASK | INTERRUPT_FLAG_BITMASK | OVERFLOW_FLAG_BITMASK;
 
-        execute_instruction(&mut registers, &mut memory, Instruction::CLC, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::CLC,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert!(!registers.is_flag_set(CARRY_FLAG_BITMASK), "CLC should clear carry");
 
-        execute_instruction(&mut registers, &mut memory, Instruction::CLD, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::CLD,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert!(!registers.is_flag_set(DECIMAL_FLAG_BITMASK), "CLD should clear decimal");
 
-        execute_instruction(&mut registers, &mut memory, Instruction::CLI, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::CLI,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert!(
             !registers.is_flag_set(INTERRUPT_FLAG_BITMASK),
             "CLI should clear interrupt"
         );
 
-        execute_instruction(&mut registers, &mut memory, Instruction::CLV, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::CLV,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert!(
             !registers.is_flag_set(OVERFLOW_FLAG_BITMASK),
             "CLV should clear overflow"
         );
 
-        execute_instruction(&mut registers, &mut memory, Instruction::SEC, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::SEC,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert!(registers.is_flag_set(CARRY_FLAG_BITMASK), "SEC should set carry");
 
-        execute_instruction(&mut registers, &mut memory, Instruction::SED, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::SED,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert!(registers.is_flag_set(DECIMAL_FLAG_BITMASK), "SED should set decimal");
 
-        execute_instruction(&mut registers, &mut memory, Instruction::SEI, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::SEI,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert!(
             registers.is_flag_set(INTERRUPT_FLAG_BITMASK),
             "SEI should set interrupt"
@@ -1004,7 +1189,14 @@ mod tests {
                 .returns(true),
         );
         registers.a = initial;
-        execute_instruction(&mut registers, &mut memory, Instruction::ASL, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::ASL,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(registers.a, expected);
         assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
@@ -1033,7 +1225,14 @@ mod tests {
         );
         registers.a = initial;
         registers.update_carry_flag(carry_in);
-        execute_instruction(&mut registers, &mut memory, Instruction::ROL, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::ROL,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(registers.a, expected);
         assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
@@ -1066,7 +1265,14 @@ mod tests {
                 .each_call(matching!(_, _, _))
                 .returns(address),
         ));
-        execute_instruction(&mut registers, &mut memory, Instruction::ROL, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::ROL,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(memory.read_byte(address), expected);
         assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
@@ -1095,7 +1301,14 @@ mod tests {
         );
         registers.a = initial;
         registers.update_carry_flag(carry_in);
-        execute_instruction(&mut registers, &mut memory, Instruction::ROR, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::ROR,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(registers.a, expected);
         assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
@@ -1128,7 +1341,14 @@ mod tests {
                 .each_call(matching!(_, _, _))
                 .returns(address),
         ));
-        execute_instruction(&mut registers, &mut memory, Instruction::ROR, &operand_resolution, &[]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::ROR,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(memory.read_byte(address), expected);
         assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
@@ -1155,7 +1375,14 @@ mod tests {
         registers.pc = 0x0200;
         registers.set_flag(flag, flag_set);
         let operand_resolution = Unimock::new(());
-        execute_instruction(&mut registers, &mut memory, instruction, &operand_resolution, &[0x10]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            instruction,
+            &operand_resolution,
+            &[0x10],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(registers.pc, 0x0210);
     }
 
@@ -1179,7 +1406,14 @@ mod tests {
         registers.set_flag(flag, flag_set);
         let operand_resolution = Unimock::new(());
         // 0xF0 = -16i8
-        execute_instruction(&mut registers, &mut memory, instruction, &operand_resolution, &[0xF0]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            instruction,
+            &operand_resolution,
+            &[0xF0],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(registers.pc, 0x0200);
     }
 
@@ -1202,7 +1436,14 @@ mod tests {
         registers.pc = 0x0200;
         registers.set_flag(flag, flag_set);
         let operand_resolution = Unimock::new(());
-        execute_instruction(&mut registers, &mut memory, instruction, &operand_resolution, &[0x10]);
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            instruction,
+            &operand_resolution,
+            &[0x10],
+            &NoOpInterruptHandler,
+        );
         assert_eq!(registers.pc, 0x0200);
     }
 
@@ -1234,6 +1475,7 @@ mod tests {
             Instruction::ASL,
             &operand_resolution,
             &[0x34, 0x12],
+            &NoOpInterruptHandler,
         );
         assert_eq!(memory.read_byte(0x1234), expected);
         assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
