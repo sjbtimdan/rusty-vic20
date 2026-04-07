@@ -160,6 +160,11 @@ pub fn execute_instruction(
                 ((v >> 1) | (old_carry << 7), v & 0x01 != 0)
             });
         }
+        Instruction::RTS => {
+            let lo = stack_pull(registers, memory);
+            let hi = stack_pull(registers, memory);
+            registers.pc = ((hi as u16) << 8 | lo as u16).wrapping_add(1);
+        }
         Instruction::SBC => {
             let value = operand_resolution.resolve_value(registers, memory, operands);
             sbc(registers, value);
@@ -1088,6 +1093,24 @@ mod tests {
         assert_eq!(registers.sp, 0xFD, "sp should decrease by 2");
         assert_eq!(memory.read_byte(0x01FF), 0x12, "high byte of return address on stack");
         assert_eq!(memory.read_byte(0x01FE), 0x02, "low byte of return address on stack");
+    }
+
+    #[rstest]
+    fn test_rts(mut registers: Registers, mut memory: Memory) {
+        // Push return address 0x1202 (as JSR would), then RTS should land at 0x1203
+        registers.sp = 0xFF;
+        stack_push_u16(&mut registers, &mut memory, 0x1202);
+        let operand_resolution = Unimock::new(());
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::RTS,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
+        assert_eq!(registers.pc, 0x1203, "RTS should restore PC to return address + 1");
+        assert_eq!(registers.sp, 0xFF, "SP should be restored to original value");
     }
 
     #[rstest]
