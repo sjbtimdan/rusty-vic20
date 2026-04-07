@@ -1,6 +1,11 @@
-use crate::cpu::{addressing_mode::AddressingMode, instructions::InstructionInfo};
+use crate::cpu::{
+    addressing_mode::AddressingMode,
+    instructions::{InstructionInfo, decode},
+};
 
+#[cfg_attr(test, unimock::unimock(api=DisassemblerMock))]
 pub trait Disassembler {
+    fn parse_instruction(&self, data: &[u8]) -> (usize, InstructionInfo);
     fn disassemble_instruction(&self, instruction_info: &InstructionInfo, operands: &[u8]) -> String;
 }
 
@@ -15,6 +20,12 @@ impl DefaultDisassembler {
 }
 
 impl Disassembler for DefaultDisassembler {
+    fn parse_instruction(&self, data: &[u8]) -> (usize, InstructionInfo) {
+        let operand = data[0];
+        let instruction_info = decode(operand);
+        (1 + instruction_info.mode.operand_count(), instruction_info)
+    }
+
     fn disassemble_instruction(&self, instruction_info: &InstructionInfo, operands: &[u8]) -> String {
         let name = format!("{:?}", instruction_info.instruction);
         let operand_str = match instruction_info.mode {
@@ -36,6 +47,24 @@ impl Disassembler for DefaultDisassembler {
     }
 }
 
+pub fn disassemble_bytes(data: &[u8], disassembler: &impl Disassembler) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut index = 0;
+    let data_len = data.len();
+    while index < data_len {
+        let (instruction_length, instruction_info) = disassembler.parse_instruction(&data[index..]);
+        let end_next_instruction = index + instruction_length;
+        if end_next_instruction > data_len {
+            break;
+        }
+        let instruction_str =
+            disassembler.disassemble_instruction(&instruction_info, &data[index + 1..end_next_instruction]);
+        result.push(instruction_str);
+        index += instruction_length;
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -47,6 +76,24 @@ mod tests {
         DefaultDisassembler {
             separator: "\t".to_string(),
         }
+    }
+
+    #[test]
+    fn test_disassemble_bytes() {
+        use unimock::{MockFn, Unimock, matching};
+
+        let mock = Unimock::new((
+            DisassemblerMock::parse_instruction
+                .each_call(matching!(_))
+                .returns((2_usize, LDA_IMMEDIATE)),
+            DisassemblerMock::disassemble_instruction
+                .each_call(matching!(_, _))
+                .returns("LDA\t#$45".to_string()),
+        ));
+
+        let result = disassemble_bytes(&[0xA9, 0x45], &mock);
+
+        assert_eq!(result, vec!["LDA\t#$45"]);
     }
 
     #[rstest]
