@@ -1,13 +1,17 @@
 use crate::cpu::{addressing_mode::AddressingMode, instructions::InstructionInfo};
 
-#[allow(dead_code)]
-trait Disassembler {
+pub trait Disassembler {
     fn disassemble_instruction(&self, instruction_info: &InstructionInfo, operands: &[u8]) -> String;
 }
 
-#[allow(dead_code)]
-struct DefaultDisassembler {
+pub struct DefaultDisassembler {
     separator: String,
+}
+
+impl DefaultDisassembler {
+    pub fn new(separator: String) -> Self {
+        Self { separator }
+    }
 }
 
 impl Disassembler for DefaultDisassembler {

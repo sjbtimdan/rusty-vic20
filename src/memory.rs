@@ -59,9 +59,11 @@ impl Memory {
     }
 
     pub fn load_standard_roms_from_data_dir(&mut self) {
-        let basic_rom = fs::read("data/basic.901486-01.bin").expect("Missing basic_rom");
-        let characters_rom = fs::read("data/characters.901460-03.bin").expect("Missing characters_rom");
-        let kernal_rom = fs::read("data/kernal.901486-07.bin").expect("Missing kernal_rom");
+        let data_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/data");
+        let basic_rom = fs::read(format!("{}/basic.901486-01.bin", data_dir)).expect("Missing basic_rom");
+        let characters_rom =
+            fs::read(format!("{}/characters.901460-03.bin", data_dir)).expect("Missing characters_rom");
+        let kernal_rom = fs::read(format!("{}/kernal.901486-07.bin", data_dir)).expect("Missing kernal_rom");
 
         self.load_rom(&basic_rom, "BASIC", BASIC_ROM_START, BASIC_ROM_END);
         self.load_rom(&characters_rom, "CHARACTER", CHARACTER_ROM_START, CHARACTER_ROM_END);
