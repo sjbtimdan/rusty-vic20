@@ -18,117 +18,37 @@ pub fn execute_instruction(
     operands: &[u8],
 ) {
     match instruction {
-        Instruction::LDA => {
+        Instruction::ADC => {
             let value = operand_resolution.resolve_value(registers, memory, operands);
-            registers.set_accumulator(value);
-        }
-        Instruction::LDX => {
-            let value = operand_resolution.resolve_value(registers, memory, operands);
-            registers.set_x(value);
-        }
-        Instruction::LDY => {
-            let value = operand_resolution.resolve_value(registers, memory, operands);
-            registers.set_y(value);
-        }
-        Instruction::DEX => {
-            registers.set_x(registers.x.wrapping_sub(1));
-        }
-        Instruction::DEY => {
-            registers.set_y(registers.y.wrapping_sub(1));
-        }
-        Instruction::INX => {
-            registers.set_x(registers.x.wrapping_add(1));
-        }
-        Instruction::INY => {
-            registers.set_y(registers.y.wrapping_add(1));
-        }
-        Instruction::INC => {
-            let address = operand_resolution.resolve_address(registers, memory, operands);
-            let value = memory.read_byte(address).wrapping_add(1);
-            memory.set_byte(address, value);
-            registers.update_zero_and_negative(value);
-        }
-        Instruction::DEC => {
-            let address = operand_resolution.resolve_address(registers, memory, operands);
-            let value = memory.read_byte(address).wrapping_sub(1);
-            memory.set_byte(address, value);
-            registers.update_zero_and_negative(value);
-        }
-        Instruction::STA => {
-            let address = operand_resolution.resolve_address(registers, memory, operands);
-            memory.set_byte(address, registers.a);
-        }
-        Instruction::STX => {
-            let address = operand_resolution.resolve_address(registers, memory, operands);
-            memory.set_byte(address, registers.x);
-        }
-        Instruction::STY => {
-            let address = operand_resolution.resolve_address(registers, memory, operands);
-            memory.set_byte(address, registers.y);
-        }
-        Instruction::ORA => {
-            let value = operand_resolution.resolve_value(registers, memory, operands);
-            registers.set_accumulator(registers.a | value);
+            adc(registers, value);
         }
         Instruction::AND => {
             let value = operand_resolution.resolve_value(registers, memory, operands);
             registers.set_accumulator(registers.a & value);
-        }
-        Instruction::EOR => {
-            let value = operand_resolution.resolve_value(registers, memory, operands);
-            registers.set_accumulator(registers.a ^ value);
-        }
-        Instruction::JMP => {
-            let address = operand_resolution.resolve_address(registers, memory, operands);
-            registers.pc = address;
         }
         Instruction::ASL => {
             apply_shift(registers, memory, operand_resolution, operands, |v| {
                 (v << 1, v & 0x80 != 0)
             });
         }
-        Instruction::ROL => {
-            let old_carry = registers.is_flag_set(CARRY_FLAG_BITMASK) as u8;
-            apply_shift(registers, memory, operand_resolution, operands, |v| {
-                ((v << 1) | old_carry, v & 0x80 != 0)
-            });
+        Instruction::BCC => branch_if(registers, operands, !registers.is_flag_set(CARRY_FLAG_BITMASK)),
+        Instruction::BCS => branch_if(registers, operands, registers.is_flag_set(CARRY_FLAG_BITMASK)),
+        Instruction::BEQ => branch_if(registers, operands, registers.is_flag_set(ZERO_FLAG_BITMASK)),
+        Instruction::BIT => {
+            let value = operand_resolution.resolve_value(registers, memory, operands);
+            registers.set_flag(ZERO_FLAG_BITMASK, registers.a & value == 0);
+            registers.set_flag(OVERFLOW_FLAG_BITMASK, value & 0x40 != 0);
+            registers.set_flag(NEGATIVE_FLAG_BITMASK, value & 0x80 != 0);
         }
-        Instruction::ROR => {
-            let old_carry = registers.is_flag_set(CARRY_FLAG_BITMASK) as u8;
-            apply_shift(registers, memory, operand_resolution, operands, |v| {
-                ((v >> 1) | (old_carry << 7), v & 0x01 != 0)
-            });
-        }
-        Instruction::NOP => {}
+        Instruction::BMI => branch_if(registers, operands, registers.is_flag_set(NEGATIVE_FLAG_BITMASK)),
+        Instruction::BNE => branch_if(registers, operands, !registers.is_flag_set(ZERO_FLAG_BITMASK)),
+        Instruction::BPL => branch_if(registers, operands, !registers.is_flag_set(NEGATIVE_FLAG_BITMASK)),
+        Instruction::BVC => branch_if(registers, operands, !registers.is_flag_set(OVERFLOW_FLAG_BITMASK)),
+        Instruction::BVS => branch_if(registers, operands, registers.is_flag_set(OVERFLOW_FLAG_BITMASK)),
         Instruction::CLC => registers.update_carry_flag(false),
         Instruction::CLD => registers.update_decimal_flag(false),
         Instruction::CLI => registers.update_interrupt_flag(false),
         Instruction::CLV => registers.update_overflow_flag(false),
-        Instruction::SEC => registers.update_carry_flag(true),
-        Instruction::SED => registers.update_decimal_flag(true),
-        Instruction::SEI => registers.update_interrupt_flag(true),
-        Instruction::BPL => branch_if(registers, operands, !registers.is_flag_set(NEGATIVE_FLAG_BITMASK)),
-        Instruction::BMI => branch_if(registers, operands, registers.is_flag_set(NEGATIVE_FLAG_BITMASK)),
-        Instruction::BVC => branch_if(registers, operands, !registers.is_flag_set(OVERFLOW_FLAG_BITMASK)),
-        Instruction::BVS => branch_if(registers, operands, registers.is_flag_set(OVERFLOW_FLAG_BITMASK)),
-        Instruction::BCC => branch_if(registers, operands, !registers.is_flag_set(CARRY_FLAG_BITMASK)),
-        Instruction::BCS => branch_if(registers, operands, registers.is_flag_set(CARRY_FLAG_BITMASK)),
-        Instruction::BNE => branch_if(registers, operands, !registers.is_flag_set(ZERO_FLAG_BITMASK)),
-        Instruction::BEQ => branch_if(registers, operands, registers.is_flag_set(ZERO_FLAG_BITMASK)),
-        Instruction::ADC => {
-            let value = operand_resolution.resolve_value(registers, memory, operands);
-            adc(registers, value);
-        }
-        Instruction::SBC => {
-            let value = operand_resolution.resolve_value(registers, memory, operands);
-            sbc(registers, value);
-        }
-        Instruction::TAX => registers.set_x(registers.a),
-        Instruction::TAY => registers.set_y(registers.a),
-        Instruction::TXA => registers.set_accumulator(registers.x),
-        Instruction::TYA => registers.set_accumulator(registers.y),
-        Instruction::TSX => registers.set_x(registers.sp),
-        Instruction::TXS => registers.sp = registers.x,
         Instruction::CMP => {
             let value = operand_resolution.resolve_value(registers, memory, operands);
             compare(registers, registers.a, value);
@@ -141,11 +61,59 @@ pub fn execute_instruction(
             let value = operand_resolution.resolve_value(registers, memory, operands);
             compare(registers, registers.y, value);
         }
-        Instruction::BIT => {
+        Instruction::DEC => {
+            let address = operand_resolution.resolve_address(registers, memory, operands);
+            let value = memory.read_byte(address).wrapping_sub(1);
+            memory.set_byte(address, value);
+            registers.update_zero_and_negative(value);
+        }
+        Instruction::DEX => {
+            registers.set_x(registers.x.wrapping_sub(1));
+        }
+        Instruction::DEY => {
+            registers.set_y(registers.y.wrapping_sub(1));
+        }
+        Instruction::EOR => {
             let value = operand_resolution.resolve_value(registers, memory, operands);
-            registers.set_flag(ZERO_FLAG_BITMASK, registers.a & value == 0);
-            registers.set_flag(OVERFLOW_FLAG_BITMASK, value & 0x40 != 0);
-            registers.set_flag(NEGATIVE_FLAG_BITMASK, value & 0x80 != 0);
+            registers.set_accumulator(registers.a ^ value);
+        }
+        Instruction::INC => {
+            let address = operand_resolution.resolve_address(registers, memory, operands);
+            let value = memory.read_byte(address).wrapping_add(1);
+            memory.set_byte(address, value);
+            registers.update_zero_and_negative(value);
+        }
+        Instruction::INX => {
+            registers.set_x(registers.x.wrapping_add(1));
+        }
+        Instruction::INY => {
+            registers.set_y(registers.y.wrapping_add(1));
+        }
+        Instruction::JMP => {
+            let address = operand_resolution.resolve_address(registers, memory, operands);
+            registers.pc = address;
+        }
+        Instruction::JSR => {
+            let target = operand_resolution.resolve_address(registers, memory, operands);
+            stack_push_u16(registers, memory, registers.pc.wrapping_add(2));
+            registers.pc = target;
+        }
+        Instruction::LDA => {
+            let value = operand_resolution.resolve_value(registers, memory, operands);
+            registers.set_accumulator(value);
+        }
+        Instruction::LDX => {
+            let value = operand_resolution.resolve_value(registers, memory, operands);
+            registers.set_x(value);
+        }
+        Instruction::LDY => {
+            let value = operand_resolution.resolve_value(registers, memory, operands);
+            registers.set_y(value);
+        }
+        Instruction::NOP => {}
+        Instruction::ORA => {
+            let value = operand_resolution.resolve_value(registers, memory, operands);
+            registers.set_accumulator(registers.a | value);
         }
         Instruction::PHA => {
             stack_push(registers, memory, registers.a);
@@ -167,11 +135,43 @@ pub fn execute_instruction(
             // Bit 5 (unused) is always 1; bit 4 (B) is not a real CPU flag
             registers.status = (value | UNUSED_FLAG_BITMASK) & !BREAK_FLAG_BITMASK;
         }
-        Instruction::JSR => {
-            let target = operand_resolution.resolve_address(registers, memory, operands);
-            stack_push_u16(registers, memory, registers.pc.wrapping_add(2));
-            registers.pc = target;
+        Instruction::ROL => {
+            let old_carry = registers.is_flag_set(CARRY_FLAG_BITMASK) as u8;
+            apply_shift(registers, memory, operand_resolution, operands, |v| {
+                ((v << 1) | old_carry, v & 0x80 != 0)
+            });
         }
+        Instruction::ROR => {
+            let old_carry = registers.is_flag_set(CARRY_FLAG_BITMASK) as u8;
+            apply_shift(registers, memory, operand_resolution, operands, |v| {
+                ((v >> 1) | (old_carry << 7), v & 0x01 != 0)
+            });
+        }
+        Instruction::SBC => {
+            let value = operand_resolution.resolve_value(registers, memory, operands);
+            sbc(registers, value);
+        }
+        Instruction::SEC => registers.update_carry_flag(true),
+        Instruction::SED => registers.update_decimal_flag(true),
+        Instruction::SEI => registers.update_interrupt_flag(true),
+        Instruction::STA => {
+            let address = operand_resolution.resolve_address(registers, memory, operands);
+            memory.set_byte(address, registers.a);
+        }
+        Instruction::STX => {
+            let address = operand_resolution.resolve_address(registers, memory, operands);
+            memory.set_byte(address, registers.x);
+        }
+        Instruction::STY => {
+            let address = operand_resolution.resolve_address(registers, memory, operands);
+            memory.set_byte(address, registers.y);
+        }
+        Instruction::TAX => registers.set_x(registers.a),
+        Instruction::TAY => registers.set_y(registers.a),
+        Instruction::TSX => registers.set_x(registers.sp),
+        Instruction::TXA => registers.set_accumulator(registers.x),
+        Instruction::TXS => registers.sp = registers.x,
+        Instruction::TYA => registers.set_accumulator(registers.y),
         _ => unimplemented!("Instruction {:?} not implemented yet", instruction),
     }
 }
