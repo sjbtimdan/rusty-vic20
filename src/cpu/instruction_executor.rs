@@ -160,6 +160,13 @@ pub fn execute_instruction(
                 ((v >> 1) | (old_carry << 7), v & 0x01 != 0)
             });
         }
+        Instruction::RTI => {
+            let status = stack_pull(registers, memory);
+            registers.status = (status | UNUSED_FLAG_BITMASK) & !BREAK_FLAG_BITMASK;
+            let lo = stack_pull(registers, memory);
+            let hi = stack_pull(registers, memory);
+            registers.pc = (hi as u16) << 8 | lo as u16;
+        }
         Instruction::RTS => {
             let lo = stack_pull(registers, memory);
             let hi = stack_pull(registers, memory);
@@ -1111,6 +1118,40 @@ mod tests {
         );
         assert_eq!(registers.pc, 0x1203, "RTS should restore PC to return address + 1");
         assert_eq!(registers.sp, 0xFF, "SP should be restored to original value");
+    }
+
+    #[rstest]
+    fn test_rti(mut registers: Registers, mut memory: Memory) {
+        // Simulate what BRK pushes: PC then status (with B and unused set)
+        registers.sp = 0xFF;
+        let saved_pc: u16 = 0xC000;
+        let saved_status = CARRY_FLAG_BITMASK | ZERO_FLAG_BITMASK | BREAK_FLAG_BITMASK | UNUSED_FLAG_BITMASK;
+        stack_push_u16(&mut registers, &mut memory, saved_pc);
+        stack_push(&mut registers, &mut memory, saved_status);
+        let operand_resolution = Unimock::new(());
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::RTI,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
+        assert_eq!(registers.pc, saved_pc, "RTI should restore PC exactly (no +1)");
+        assert_eq!(registers.sp, 0xFF, "SP should be restored to original value");
+        assert!(
+            registers.is_flag_set(CARRY_FLAG_BITMASK),
+            "carry flag should be restored"
+        );
+        assert!(registers.is_flag_set(ZERO_FLAG_BITMASK), "zero flag should be restored");
+        assert!(
+            registers.is_flag_set(UNUSED_FLAG_BITMASK),
+            "unused flag should always be set"
+        );
+        assert!(
+            !registers.is_flag_set(BREAK_FLAG_BITMASK),
+            "B flag should be cleared (not a real CPU flag)"
+        );
     }
 
     #[rstest]
