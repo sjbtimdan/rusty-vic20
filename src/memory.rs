@@ -1,13 +1,15 @@
+use crate::device::{Device, UnimplementedDevice};
 use log::info;
 use std::fs;
 
 pub struct Memory {
     pub bytes: [u8; 65536],
+    vic: Box<dyn Device>,
 }
 
 impl Default for Memory {
     fn default() -> Self {
-        Self { bytes: [0; 65536] }
+        Self::new(Box::new(UnimplementedDevice))
     }
 }
 
@@ -23,6 +25,10 @@ pub const KERNEL_ROM_START: usize = 0xE000;
 pub const KERNEL_ROM_END: usize = 0xFFFF;
 
 impl Memory {
+    pub fn new(vic: Box<dyn Device>) -> Self {
+        Self { bytes: [0; 65536], vic }
+    }
+
     pub fn read_zero_page_byte(&self, address: u8) -> u8 {
         self.read_byte(address as u16)
     }
@@ -40,22 +46,28 @@ impl Memory {
     }
 
     pub fn read_word(&self, address: u16) -> u16 {
-        let lo = self.bytes[address as usize] as u16;
-        let hi = self.bytes[address.wrapping_add(1) as usize] as u16;
+        let lo = self.read_byte(address) as u16;
+        let hi = self.read_byte(address.wrapping_add(1)) as u16;
         (hi << 8) | lo
     }
 
     pub fn set_word(&mut self, address: u16, value: u16) {
-        self.bytes[address as usize] = (value & 0xFF) as u8;
-        self.bytes[address.wrapping_add(1) as usize] = (value >> 8) as u8;
+        self.set_byte(address, (value & 0xFF) as u8);
+        self.set_byte(address.wrapping_add(1), (value >> 8) as u8);
     }
 
     pub fn read_byte(&self, address: u16) -> u8 {
-        self.bytes[address as usize]
+        match address {
+            0x9000..=0x900F => self.vic.read(address),
+            _ => self.bytes[address as usize],
+        }
     }
 
     pub fn set_byte(&mut self, address: u16, value: u8) {
-        self.bytes[address as usize] = value
+        match address {
+            0x9000..=0x900F => self.vic.write(address, value),
+            _ => self.bytes[address as usize] = value,
+        }
     }
 
     pub fn load_standard_roms_from_data_dir(&mut self) {
