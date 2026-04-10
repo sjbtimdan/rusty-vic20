@@ -1,6 +1,8 @@
-use crate::memory::*;
-use crate::screen::PAL_HEIGHT;
-use crate::screen::PAL_WIDTH;
+use crate::{
+    device::Device,
+    memory::*,
+    screen::{PAL_HEIGHT, PAL_WIDTH},
+};
 
 pub struct VIC<'a> {
     registers: [u8; 16],
@@ -76,5 +78,15 @@ impl<'a> VIC<'a> {
             15 => 0xCCCCCCFF, // light gray
             _ => 0x000000FF,
         }
+    }
+}
+
+impl Device for VIC<'_> {
+    fn read(&self, address: u16) -> u8 {
+        self.registers[address as usize % 16 - 0x9000]
+    }
+
+    fn write(&mut self, address: u16, value: u8) {
+        self.registers[address as usize % 16] = value;
     }
 }
