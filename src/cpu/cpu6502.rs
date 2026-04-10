@@ -1,16 +1,12 @@
-use crate::{
-    cpu::{
-        addressing_mode::AddressingMode,
-        instructions::{InstructionInfo, decode},
-        interrupt_handler::{DefaultInterruptHandler, InterruptHandler},
-        registers::Registers,
-    },
-    memory::Memory,
+use crate::cpu::{
+    addressing_mode::AddressingMode,
+    instructions::{InstructionInfo, decode},
+    interrupt_handler::{DefaultInterruptHandler, InterruptHandler},
+    registers::Registers,
 };
 
-pub struct CPU6502<'a> {
+pub struct CPU6502 {
     pub registers: Registers,
-    pub memory: &'a mut Memory,
     current_instruction_info: Option<InstructionInfo>,
     cycle_count: u8,
     operands_index: usize,
@@ -18,12 +14,11 @@ pub struct CPU6502<'a> {
     interrupt_handler: Box<dyn InterruptHandler>,
 }
 
-impl<'a> CPU6502<'a> {
-    pub fn new(memory: &'a mut Memory) -> Self {
+impl Default for CPU6502 {
+    fn default() -> Self {
         let registers = Registers::default();
         Self {
             registers,
-            memory,
             cycle_count: 0,
             current_instruction_info: None,
             operands_index: 0,
@@ -31,14 +26,17 @@ impl<'a> CPU6502<'a> {
             interrupt_handler: Box::new(DefaultInterruptHandler),
         }
     }
+}
 
+impl CPU6502 {
     pub fn cycle(
         &mut self,
-        mut execute_instruction: impl FnMut(&mut Registers, &mut Memory, &AddressingMode, &[u8], &dyn InterruptHandler),
+        memory: &mut [u8; 65536],
+        mut execute_instruction: impl FnMut(&mut Registers, &mut [u8; 65536], &AddressingMode, &[u8], &dyn InterruptHandler),
     ) {
         self.cycle_count += 1;
         if self.current_instruction_info.is_none() {
-            let opcode = self.memory.read_byte(self.registers.pc);
+            let opcode = memory[self.registers.pc as usize];
             self.current_instruction_info = Some(decode(opcode));
             self.operands_index = 0;
         } else {
@@ -46,15 +44,14 @@ impl<'a> CPU6502<'a> {
                 panic!("Expected current_instruction_info to be Some");
             };
             if self.operands_index < instruction_info.mode.operand_count() {
-                self.operands_buffer[self.operands_index] = self
-                    .memory
-                    .read_byte(self.registers.pc + 1 + self.operands_index as u16);
+                self.operands_buffer[self.operands_index] =
+                    memory[(self.registers.pc + 1 + self.operands_index as u16) as usize];
                 self.operands_index += 1;
             }
             if self.cycle_count == instruction_info.cycles {
                 execute_instruction(
                     &mut self.registers,
-                    self.memory,
+                    memory,
                     &instruction_info.mode,
                     &self.operands_buffer,
                     self.interrupt_handler.as_ref(),
@@ -75,21 +72,21 @@ mod tests {
     use super::*;
 
     #[fixture]
-    fn memory() -> Memory {
-        Memory::default()
+    fn memory() -> [u8; 65536] {
+        [0; 65536]
     }
 
     #[rstest]
-    fn test_inx_executes_after_two_cycles(mut memory: Memory) {
-        let mut cpu = CPU6502::new(&mut memory);
+    fn test_inx_executes_after_two_cycles(mut memory: [u8; 65536]) {
+        let mut cpu = CPU6502::default();
         cpu.registers.pc = 0x8000;
-        cpu.memory.bytes[0x8000] = 0xE8; // INX opcode
+        memory[0x8000] = 0xE8; // INX opcode
 
-        cpu.cycle(|_, _, _, _, _| {
+        cpu.cycle(&mut memory, |_, _, _, _, _| {
             panic!("Instruction should not execute on first cycle");
         });
         let mut called = false;
-        cpu.cycle(|_, _, _, _, _| {
+        cpu.cycle(&mut memory, |_, _, _, _, _| {
             called = true;
         });
         assert!(called, "INX should execute on second cycle");
@@ -97,17 +94,17 @@ mod tests {
     }
 
     #[rstest]
-    fn test_lda_immediate_executes_after_two_cycles(mut memory: Memory) {
-        let mut cpu = CPU6502::new(&mut memory);
+    fn test_lda_immediate_executes_after_two_cycles(mut memory: [u8; 65536]) {
+        let mut cpu = CPU6502::default();
         cpu.registers.pc = 0x8000;
-        cpu.memory.bytes[0x8000] = 0xA9; // LDA immediate opcode
-        cpu.memory.bytes[0x8001] = 0x20; // LDA immediate operand
+        memory[0x8000] = 0xA9; // LDA immediate opcode
+        memory[0x8001] = 0x20; // LDA immediate operand
 
-        cpu.cycle(|_, _, _, _, _| {
+        cpu.cycle(&mut memory, |_, _, _, _, _| {
             panic!("Instruction should not execute on first cycle");
         });
         let mut called = false;
-        cpu.cycle(|_, _, _, operand, _| {
+        cpu.cycle(&mut memory, |_, _, _, operand, _| {
             called = true;
             assert_eq!(operand, &[0x20, 0x00], "Operand should be passed to executor");
         });

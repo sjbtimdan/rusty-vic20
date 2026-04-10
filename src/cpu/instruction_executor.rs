@@ -1,4 +1,5 @@
 use crate::{
+    addressable::Addressable,
     cpu::{
         addressing_mode::OperandResolution,
         instructions::Instruction,
@@ -8,12 +9,11 @@ use crate::{
             NEGATIVE_FLAG_BITMASK, OVERFLOW_FLAG_BITMASK, Registers, UNUSED_FLAG_BITMASK, ZERO_FLAG_BITMASK,
         },
     },
-    memory::Memory,
 };
 
 pub fn execute_instruction(
     registers: &mut Registers,
-    memory: &mut Memory,
+    memory: &mut dyn Addressable,
     instruction: Instruction,
     operand_resolution: &dyn OperandResolution,
     operands: &[u8],
@@ -77,7 +77,7 @@ pub fn execute_instruction(
         Instruction::DEC => {
             let address = operand_resolution.resolve_address(registers, memory, operands);
             let value = memory.read_byte(address).wrapping_sub(1);
-            memory.set_byte(address, value);
+            memory.write_byte(address, value);
             registers.update_zero_and_negative(value);
         }
         Instruction::DEX => {
@@ -93,7 +93,7 @@ pub fn execute_instruction(
         Instruction::INC => {
             let address = operand_resolution.resolve_address(registers, memory, operands);
             let value = memory.read_byte(address).wrapping_add(1);
-            memory.set_byte(address, value);
+            memory.write_byte(address, value);
             registers.update_zero_and_negative(value);
         }
         Instruction::INX => {
@@ -181,15 +181,15 @@ pub fn execute_instruction(
         Instruction::SEI => registers.update_interrupt_flag(true),
         Instruction::STA => {
             let address = operand_resolution.resolve_address(registers, memory, operands);
-            memory.set_byte(address, registers.a);
+            memory.write_byte(address, registers.a);
         }
         Instruction::STX => {
             let address = operand_resolution.resolve_address(registers, memory, operands);
-            memory.set_byte(address, registers.x);
+            memory.write_byte(address, registers.x);
         }
         Instruction::STY => {
             let address = operand_resolution.resolve_address(registers, memory, operands);
-            memory.set_byte(address, registers.y);
+            memory.write_byte(address, registers.y);
         }
         Instruction::TAX => registers.set_x(registers.a),
         Instruction::TAY => registers.set_y(registers.a),
@@ -278,24 +278,24 @@ fn compare(registers: &mut Registers, reg: u8, value: u8) {
     registers.update_zero_and_negative(result);
 }
 
-fn stack_push(registers: &mut Registers, memory: &mut Memory, value: u8) {
-    memory.set_byte(0x0100 + registers.sp as u16, value);
+fn stack_push(registers: &mut Registers, memory: &mut dyn Addressable, value: u8) {
+    memory.write_byte(0x0100 + registers.sp as u16, value);
     registers.sp = registers.sp.wrapping_sub(1);
 }
 
-fn stack_push_u16(registers: &mut Registers, memory: &mut Memory, value: u16) {
+fn stack_push_u16(registers: &mut Registers, memory: &mut dyn Addressable, value: u16) {
     stack_push(registers, memory, (value >> 8) as u8);
     stack_push(registers, memory, value as u8);
 }
 
-fn stack_pull(registers: &mut Registers, memory: &mut Memory) -> u8 {
+fn stack_pull(registers: &mut Registers, memory: &mut dyn Addressable) -> u8 {
     registers.sp = registers.sp.wrapping_add(1);
     memory.read_byte(0x0100 + registers.sp as u16)
 }
 
 fn apply_shift(
     registers: &mut Registers,
-    memory: &mut Memory,
+    memory: &mut dyn Addressable,
     operand_resolution: &dyn OperandResolution,
     operands: &[u8],
     compute: impl Fn(u8) -> (u8, bool),
@@ -309,7 +309,7 @@ fn apply_shift(
         let address = operand_resolution.resolve_address(registers, memory, operands);
         let value = memory.read_byte(address);
         let (result, new_carry) = compute(value);
-        memory.set_byte(address, result);
+        memory.write_byte(address, result);
         registers.update_carry_flag(new_carry);
         registers.update_zero_and_negative(result);
     }
@@ -327,6 +327,7 @@ mod tests {
     use crate::cpu::instructions::*;
     use crate::cpu::interrupt_handler::{InterruptHandler, InterruptHandlerMock};
     use crate::cpu::registers::*;
+    use crate::memory::Memory;
     use unimock::Unimock;
 
     #[fixture]
@@ -336,12 +337,12 @@ mod tests {
 
     #[fixture]
     fn memory() -> Memory {
-        Memory::default()
+        crate::memory::default()
     }
 
     struct NoOpInterruptHandler;
     impl InterruptHandler for NoOpInterruptHandler {
-        fn handle_interrupt(&self, _registers: &mut Registers, _memory: &mut Memory) {}
+        fn handle_interrupt(&self, _registers: &mut Registers, _memory: &mut dyn crate::addressable::Addressable) {}
     }
 
     // adc_binary: (a, operand, carry_in, expected, carry, overflow, zero, negative)
@@ -861,7 +862,7 @@ mod tests {
                 .each_call(matching!(_, _, _))
                 .returns(address),
         );
-        memory.set_byte(address, initial);
+        memory.write_byte(address, initial);
         execute_instruction(
             &mut registers,
             &mut memory,
@@ -893,7 +894,7 @@ mod tests {
                 .each_call(matching!(_, _, _))
                 .returns(address),
         );
-        memory.set_byte(address, initial);
+        memory.write_byte(address, initial);
         execute_instruction(
             &mut registers,
             &mut memory,
@@ -1361,7 +1362,7 @@ mod tests {
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
-        memory.set_byte(address, initial);
+        memory.write_byte(address, initial);
         registers.update_carry_flag(carry_in);
         let operand_resolution = Unimock::new((
             OperandResolutionMock::is_accumulator
@@ -1437,7 +1438,7 @@ mod tests {
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
-        memory.set_byte(address, initial);
+        memory.write_byte(address, initial);
         registers.update_carry_flag(carry_in);
         let operand_resolution = Unimock::new((
             OperandResolutionMock::is_accumulator
@@ -1566,7 +1567,7 @@ mod tests {
         #[case] zero: bool,
         #[case] negative: bool,
     ) {
-        memory.set_byte(0x1234, initial);
+        memory.write_byte(0x1234, initial);
         let operand_resolution = Unimock::new((
             OperandResolutionMock::is_accumulator
                 .each_call(matching!())

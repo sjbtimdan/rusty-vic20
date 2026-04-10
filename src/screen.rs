@@ -24,8 +24,8 @@ impl Screen {
         }
     }
 
-    pub fn update_framebuffer(&mut self, framebuffer: &[u32]) {
-        self.framebuffer = framebuffer.to_owned();
+    pub fn update_framebuffer(&mut self, framebuffer: &Vec<u32>) {
+        self.framebuffer = framebuffer.clone();
     }
 
     fn draw(&mut self) {

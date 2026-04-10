@@ -1,4 +1,4 @@
-use crate::{cpu::registers::Registers, memory::Memory};
+use crate::{addressable::Addressable, cpu::registers::Registers};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AddressingMode {
@@ -20,8 +20,8 @@ pub enum AddressingMode {
 #[cfg_attr(test, unimock::unimock(api=OperandResolutionMock))]
 pub trait OperandResolution {
     fn is_accumulator(&self) -> bool;
-    fn resolve_value(&self, registers: &Registers, memory: &Memory, operands: &[u8]) -> u8;
-    fn resolve_address(&self, registers: &Registers, memory: &Memory, operands: &[u8]) -> u16;
+    fn resolve_value(&self, registers: &Registers, memory: &dyn Addressable, operands: &[u8]) -> u8;
+    fn resolve_address(&self, registers: &Registers, memory: &dyn Addressable, operands: &[u8]) -> u16;
 }
 
 impl AddressingMode {
@@ -48,7 +48,7 @@ impl OperandResolution for AddressingMode {
         matches!(self, AddressingMode::Accumulator)
     }
 
-    fn resolve_value(&self, registers: &Registers, memory: &Memory, operands: &[u8]) -> u8 {
+    fn resolve_value(&self, registers: &Registers, memory: &dyn Addressable, operands: &[u8]) -> u8 {
         match self {
             AddressingMode::Immediate => operands[0],
             AddressingMode::ZeroPage => memory.read_zero_page_byte(operands[0]),
@@ -80,7 +80,7 @@ impl OperandResolution for AddressingMode {
         }
     }
 
-    fn resolve_address(&self, registers: &Registers, memory: &Memory, operands: &[u8]) -> u16 {
+    fn resolve_address(&self, registers: &Registers, memory: &dyn Addressable, operands: &[u8]) -> u16 {
         match self {
             AddressingMode::ZeroPage => operands[0] as u16,
             AddressingMode::ZeroPageX => operands[0].wrapping_add(registers.x) as u16,
@@ -115,7 +115,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::{cpu::registers::Registers, memory::Memory};
+    use crate::{cpu::registers::Registers, memory::*};
 
     #[fixture]
     fn registers() -> Registers {
@@ -124,7 +124,7 @@ mod tests {
 
     #[fixture]
     fn memory() -> Memory {
-        Memory::default()
+        crate::memory::default()
     }
 
     // resolve_load_operand
@@ -139,7 +139,7 @@ mod tests {
 
     #[rstest]
     fn test_load_zero_page(registers: Registers, mut memory: Memory) {
-        memory.set_zero_page_byte(0x10, 0x42);
+        memory.write_zero_page_byte(0x10, 0x42);
         assert_eq!(
             AddressingMode::ZeroPage.resolve_value(&registers, &memory, &[0x10]),
             0x42
@@ -149,7 +149,7 @@ mod tests {
     #[rstest]
     fn test_load_zero_page_x(mut registers: Registers, mut memory: Memory) {
         registers.set_x(0x05);
-        memory.set_zero_page_byte(0x15, 0x42);
+        memory.write_zero_page_byte(0x15, 0x42);
         assert_eq!(
             AddressingMode::ZeroPageX.resolve_value(&registers, &memory, &[0x10]),
             0x42
@@ -159,7 +159,7 @@ mod tests {
     #[rstest]
     fn test_load_zero_page_y(mut registers: Registers, mut memory: Memory) {
         registers.set_y(0x05);
-        memory.set_zero_page_byte(0x15, 0x42);
+        memory.write_zero_page_byte(0x15, 0x42);
         assert_eq!(
             AddressingMode::ZeroPageY.resolve_value(&registers, &memory, &[0x10]),
             0x42
@@ -168,7 +168,7 @@ mod tests {
 
     #[rstest]
     fn test_load_absolute(registers: Registers, mut memory: Memory) {
-        memory.set_byte(0x0200, 0x42);
+        memory.write_byte(0x0200, 0x42);
         assert_eq!(
             AddressingMode::Absolute.resolve_value(&registers, &memory, &[0x00, 0x02]),
             0x42
@@ -178,7 +178,7 @@ mod tests {
     #[rstest]
     fn test_load_absolute_x(mut registers: Registers, mut memory: Memory) {
         registers.set_x(0x04);
-        memory.set_byte(0x0204, 0x42);
+        memory.write_byte(0x0204, 0x42);
         assert_eq!(
             AddressingMode::AbsoluteX.resolve_value(&registers, &memory, &[0x00, 0x02]),
             0x42
@@ -188,7 +188,7 @@ mod tests {
     #[rstest]
     fn test_load_absolute_y(mut registers: Registers, mut memory: Memory) {
         registers.set_y(0x04);
-        memory.set_byte(0x0204, 0x42);
+        memory.write_byte(0x0204, 0x42);
         assert_eq!(
             AddressingMode::AbsoluteY.resolve_value(&registers, &memory, &[0x00, 0x02]),
             0x42
@@ -198,8 +198,8 @@ mod tests {
     #[rstest]
     fn test_load_indexed_indirect(mut registers: Registers, mut memory: Memory) {
         registers.set_x(0x03);
-        memory.set_zero_page_word(0x13, 0x0200);
-        memory.set_byte(0x0200, 0x42);
+        memory.write_zero_page_word(0x13, 0x0200);
+        memory.write_byte(0x0200, 0x42);
         assert_eq!(
             AddressingMode::IndexedIndirect.resolve_value(&registers, &memory, &[0x10]),
             0x42
@@ -209,8 +209,8 @@ mod tests {
     #[rstest]
     fn test_load_indirect_indexed(mut registers: Registers, mut memory: Memory) {
         registers.set_y(0x03);
-        memory.set_zero_page_word(0x10, 0x01FD);
-        memory.set_byte(0x0200, 0x42);
+        memory.write_zero_page_word(0x10, 0x01FD);
+        memory.write_byte(0x0200, 0x42);
         assert_eq!(
             AddressingMode::IndirectIndexed.resolve_value(&registers, &memory, &[0x10]),
             0x42
@@ -274,7 +274,7 @@ mod tests {
     #[rstest]
     fn test_store_indexed_indirect(mut registers: Registers, mut memory: Memory) {
         registers.set_x(0x03);
-        memory.set_zero_page_word(0x13, 0x0200);
+        memory.write_zero_page_word(0x13, 0x0200);
         assert_eq!(
             AddressingMode::IndexedIndirect.resolve_address(&registers, &memory, &[0x10]),
             0x0200
@@ -284,7 +284,7 @@ mod tests {
     #[rstest]
     fn test_store_indirect_indexed(mut registers: Registers, mut memory: Memory) {
         registers.set_y(0x03);
-        memory.set_zero_page_word(0x10, 0x01FD);
+        memory.write_zero_page_word(0x10, 0x01FD);
         assert_eq!(
             AddressingMode::IndirectIndexed.resolve_address(&registers, &memory, &[0x10]),
             0x0200

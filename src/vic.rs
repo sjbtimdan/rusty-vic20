@@ -1,16 +1,16 @@
 use crate::{
+    bus::*,
     device::Device,
-    memory::*,
     screen::{PAL_HEIGHT, PAL_WIDTH},
 };
 
-pub struct VIC<'a> {
+pub struct VIC {
     registers: [u8; 16],
-    memory: &'a Memory,
+    memory: Box<[u8; 65536]>,
 }
 
-impl<'a> VIC<'a> {
-    pub fn new(memory: &'a Memory) -> Self {
+impl VIC {
+    pub fn new(memory: Box<[u8; 65536]>) -> Self {
         Self {
             registers: [0; 16],
             memory,
@@ -26,9 +26,9 @@ impl<'a> VIC<'a> {
     }
 
     pub fn render_frame(&self) -> Vec<u32> {
-        let screen_ram = &self.memory.bytes[SCREEN_RAM_START..SCREEN_RAM_END + 1];
-        let color_ram = &self.memory.bytes[COLOUR_RAM_START..COLOUR_RAM_END + 1];
-        let char_rom = &self.memory.bytes[CHARACTER_ROM_START..CHARACTER_ROM_END + 1];
+        let screen_ram = &self.memory[SCREEN_RAM_START..SCREEN_RAM_END + 1];
+        let color_ram = &self.memory[COLOUR_RAM_START..COLOUR_RAM_END + 1];
+        let char_rom = &self.memory[CHARACTER_ROM_START..CHARACTER_ROM_END + 1];
         let width = PAL_WIDTH;
         let height = PAL_HEIGHT;
         let mut framebuffer = Vec::with_capacity(width * height);
@@ -81,7 +81,7 @@ impl<'a> VIC<'a> {
     }
 }
 
-impl Device for VIC<'_> {
+impl Device for VIC {
     fn read(&self, address: u16) -> u8 {
         self.registers[address as usize % 16 - 0x9000]
     }
