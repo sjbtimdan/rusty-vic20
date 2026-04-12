@@ -1,4 +1,13 @@
-use crate::{addressable::Addressable, cpu::cpu6502::CPU6502, device::Device, memory::Memory, vic::VIC};
+use crate::{
+    addressable::Addressable,
+    cpu::{
+        cpu6502::CPU6502,
+        interrupt_handler::{DefaultInterruptHandler, InterruptHandler},
+    },
+    device::Device,
+    memory::Memory,
+    vic::VIC,
+};
 use log::info;
 use std::fs;
 
@@ -6,6 +15,7 @@ pub struct Bus {
     pub memory: Memory,
     pub cpu: CPU6502,
     pub vic: VIC,
+    pub interrupt_handler: Box<dyn InterruptHandler>,
 }
 
 pub const SCREEN_RAM_START: usize = 0x1E00;
@@ -28,6 +38,7 @@ impl Default for Bus {
             memory,
             cpu: CPU6502::default(),
             vic: VIC::new(Box::new(memory)),
+            interrupt_handler: Box::new(DefaultInterruptHandler),
         }
     }
 }
@@ -49,6 +60,10 @@ impl Addressable for Bus {
 }
 
 impl Bus {
+    pub fn step(&mut self) {
+        self.cpu.step(&mut self.memory, &*self.interrupt_handler);
+    }
+
     pub fn load_standard_roms_from_data_dir(&mut self) {
         let data_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/data");
         let basic_rom = fs::read(format!("{}/basic.901486-01.bin", data_dir)).expect("Missing basic_rom");

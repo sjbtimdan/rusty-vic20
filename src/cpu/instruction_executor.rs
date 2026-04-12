@@ -11,7 +11,48 @@ use crate::{
     },
 };
 
-pub fn execute_instruction(
+pub trait InstructionExecutor {
+    fn execute_instruction(
+        &mut self,
+        registers: &mut Registers,
+        memory: &mut dyn Addressable,
+        instruction: Instruction,
+        operand_resolution: &dyn OperandResolution,
+        operands: &[u8],
+        interrupt_handler: &dyn InterruptHandler,
+    );
+}
+
+pub struct DefaultInstructionExecutor;
+
+impl DefaultInstructionExecutor {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl InstructionExecutor for DefaultInstructionExecutor {
+    fn execute_instruction(
+        &mut self,
+        registers: &mut Registers,
+        memory: &mut dyn Addressable,
+        instruction: Instruction,
+        operand_resolution: &dyn OperandResolution,
+        operands: &[u8],
+        interrupt_handler: &dyn InterruptHandler,
+    ) {
+        execute_instruction(
+            registers,
+            memory,
+            instruction,
+            operand_resolution,
+            operands,
+            interrupt_handler,
+        );
+    }
+}
+
+fn execute_instruction(
     registers: &mut Registers,
     memory: &mut dyn Addressable,
     instruction: Instruction,

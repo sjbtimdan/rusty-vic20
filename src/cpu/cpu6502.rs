@@ -1,7 +1,7 @@
 use crate::cpu::{
-    addressing_mode::AddressingMode,
+    instruction_executor::{DefaultInstructionExecutor, InstructionExecutor},
     instructions::{InstructionInfo, decode},
-    interrupt_handler::{DefaultInterruptHandler, InterruptHandler},
+    interrupt_handler::InterruptHandler,
     registers::Registers,
 };
 
@@ -11,7 +11,7 @@ pub struct CPU6502 {
     cycle_count: u8,
     operands_index: usize,
     operands_buffer: [u8; 2],
-    interrupt_handler: Box<dyn InterruptHandler>,
+    instruction_executor: Box<dyn InstructionExecutor>,
 }
 
 impl Default for CPU6502 {
@@ -23,17 +23,13 @@ impl Default for CPU6502 {
             current_instruction_info: None,
             operands_index: 0,
             operands_buffer: [0; 2],
-            interrupt_handler: Box::new(DefaultInterruptHandler),
+            instruction_executor: Box::new(DefaultInstructionExecutor::new()),
         }
     }
 }
 
 impl CPU6502 {
-    pub fn cycle(
-        &mut self,
-        memory: &mut [u8; 65536],
-        mut execute_instruction: impl FnMut(&mut Registers, &mut [u8; 65536], &AddressingMode, &[u8], &dyn InterruptHandler),
-    ) {
+    pub fn step(&mut self, memory: &mut [u8; 65536], interrupt_handler: &dyn InterruptHandler) {
         self.cycle_count += 1;
         if self.current_instruction_info.is_none() {
             let opcode = memory[self.registers.pc as usize];
@@ -49,12 +45,13 @@ impl CPU6502 {
                 self.operands_index += 1;
             }
             if self.cycle_count == instruction_info.cycles {
-                execute_instruction(
+                self.instruction_executor.execute_instruction(
                     &mut self.registers,
                     memory,
+                    instruction_info.instruction,
                     &instruction_info.mode,
                     &self.operands_buffer,
-                    self.interrupt_handler.as_ref(),
+                    interrupt_handler,
                 );
                 self.registers
                     .update_pc(self.registers.pc + 1 + instruction_info.mode.operand_count() as u16);
@@ -67,9 +64,9 @@ impl CPU6502 {
 
 #[cfg(test)]
 mod tests {
-    use rstest::{fixture, rstest};
-
     use super::*;
+    use crate::cpu::interrupt_handler::DefaultInterruptHandler;
+    use rstest::{fixture, rstest};
 
     #[fixture]
     fn memory() -> [u8; 65536] {
@@ -77,38 +74,35 @@ mod tests {
     }
 
     #[rstest]
-    fn test_inx_executes_after_two_cycles(mut memory: [u8; 65536]) {
+    fn test_inx_executes_after_two_steps(mut memory: [u8; 65536]) {
         let mut cpu = CPU6502::default();
+        let interrupt_handler = DefaultInterruptHandler;
         cpu.registers.pc = 0x8000;
         memory[0x8000] = 0xE8; // INX opcode
 
-        cpu.cycle(&mut memory, |_, _, _, _, _| {
-            panic!("Instruction should not execute on first cycle");
-        });
-        let mut called = false;
-        cpu.cycle(&mut memory, |_, _, _, _, _| {
-            called = true;
-        });
-        assert!(called, "INX should execute on second cycle");
-        assert_eq!(0x8001, cpu.registers.pc, "Program counter should advance by 1");
+        cpu.step(&mut memory, &interrupt_handler);
+        assert_eq!(cpu.registers.x, 0x00, "INX should not execute on first cycle");
+        assert_eq!(cpu.registers.pc, 0x8000, "PC should not advance on first cycle");
+
+        cpu.step(&mut memory, &interrupt_handler);
+        assert_eq!(cpu.registers.x, 0x01, "INX should execute on second cycle");
+        assert_eq!(cpu.registers.pc, 0x8001, "Program counter should advance by 1");
     }
 
     #[rstest]
     fn test_lda_immediate_executes_after_two_cycles(mut memory: [u8; 65536]) {
         let mut cpu = CPU6502::default();
+        let interrupt_handler = DefaultInterruptHandler;
         cpu.registers.pc = 0x8000;
         memory[0x8000] = 0xA9; // LDA immediate opcode
         memory[0x8001] = 0x20; // LDA immediate operand
 
-        cpu.cycle(&mut memory, |_, _, _, _, _| {
-            panic!("Instruction should not execute on first cycle");
-        });
-        let mut called = false;
-        cpu.cycle(&mut memory, |_, _, _, operand, _| {
-            called = true;
-            assert_eq!(operand, &[0x20, 0x00], "Operand should be passed to executor");
-        });
-        assert!(called, "LDA should execute on third cycle");
-        assert_eq!(0x8002, cpu.registers.pc, "Program counter should advance by 2");
+        cpu.step(&mut memory, &interrupt_handler);
+        assert_eq!(cpu.registers.a, 0x00, "LDA should not execute on first cycle");
+        assert_eq!(cpu.registers.pc, 0x8000, "PC should not advance on first cycle");
+
+        cpu.step(&mut memory, &interrupt_handler);
+        assert_eq!(cpu.registers.a, 0x20, "LDA immediate should load operand");
+        assert_eq!(cpu.registers.pc, 0x8002, "Program counter should advance by 2");
     }
 }
