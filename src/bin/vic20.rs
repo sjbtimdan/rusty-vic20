@@ -12,5 +12,8 @@ fn main() -> Result<(), EventLoopError> {
     bus.vic.set_border_color(4); // purple border
     let framebuffer = bus.vic.render_frame();
     screen.update_framebuffer(&framebuffer);
+
+    screen.set_step_callback(move || bus.step());
+
     event_loop.run_app(&mut screen)
 }

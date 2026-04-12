@@ -1,8 +1,10 @@
 use pixels::{Pixels, SurfaceTexture};
+use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
+use winit::event_loop::ControlFlow;
 use winit::window::{Window, WindowId};
 
 pub const PAL_WIDTH: usize = 312;
@@ -14,6 +16,7 @@ pub struct Screen {
     pixels: Option<Pixels<'static>>,
     framebuffer: Vec<u32>,
     width: u32,
+    step_callback: Option<Box<dyn FnMut()>>,
 }
 
 impl Screen {
@@ -26,6 +29,13 @@ impl Screen {
 
     pub fn update_framebuffer(&mut self, framebuffer: &Vec<u32>) {
         self.framebuffer = framebuffer.clone();
+    }
+
+    pub fn set_step_callback<F>(&mut self, callback: F)
+    where
+        F: FnMut() + 'static,
+    {
+        self.step_callback = Some(Box::new(callback));
     }
 
     fn draw(&mut self) {
@@ -86,6 +96,18 @@ impl ApplicationHandler for Screen {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if let Some(step_callback) = self.step_callback.as_mut() {
+            step_callback();
+        }
+
+        event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + Duration::from_micros(1)));
+
+        if let Some(window) = self.window {
+            window.request_redraw();
         }
     }
 }
