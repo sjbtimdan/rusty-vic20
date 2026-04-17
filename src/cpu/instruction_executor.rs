@@ -161,6 +161,11 @@ fn execute_instruction(
             let value = operand_resolution.resolve_value(registers, memory, operands);
             registers.set_y(value);
         }
+        Instruction::LSR => {
+            apply_shift(registers, memory, operand_resolution, operands, |v| {
+                (v >> 1, v & 0x01 != 0)
+            });
+        }
         Instruction::NOP => {}
         Instruction::ORA => {
             let value = operand_resolution.resolve_value(registers, memory, operands);
@@ -1348,6 +1353,78 @@ mod tests {
             &NoOpInterruptHandler,
         );
         assert_eq!(registers.a, expected);
+        assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x01, 0x00, true, true, false)]
+    #[case(0x02, 0x01, false, false, false)]
+    #[case(0x80, 0x40, false, false, false)]
+    #[case(0x00, 0x00, false, true, false)]
+    fn test_lsr_accumulator(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] initial: u8,
+        #[case] expected: u8,
+        #[case] carry: bool,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        let operand_resolution = Unimock::new(
+            OperandResolutionMock::is_accumulator
+                .each_call(matching!())
+                .returns(true),
+        );
+        registers.a = initial;
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::LSR,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
+        assert_eq!(registers.a, expected);
+        assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
+    #[rstest]
+    #[case(0x1234u16, 0x01, 0x00, true, true, false)]
+    #[case(0x1234u16, 0x02, 0x01, false, false, false)]
+    #[case(0x1234u16, 0x80, 0x40, false, false, false)]
+    #[case(0x1234u16, 0x00, 0x00, false, true, false)]
+    fn test_lsr_memory(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] address: u16,
+        #[case] initial: u8,
+        #[case] expected: u8,
+        #[case] carry: bool,
+        #[case] zero: bool,
+        #[case] negative: bool,
+    ) {
+        memory.write_byte(address, initial);
+        let operand_resolution = Unimock::new((
+            OperandResolutionMock::is_accumulator
+                .each_call(matching!())
+                .returns(false),
+            OperandResolutionMock::resolve_address
+                .each_call(matching!(_, _, _))
+                .returns(address),
+        ));
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::LSR,
+            &operand_resolution,
+            &[],
+            &NoOpInterruptHandler,
+        );
+        assert_eq!(memory.read_byte(address), expected);
         assert_eq!(registers.is_flag_set(CARRY_FLAG_BITMASK), carry, "carry flag");
         assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
         assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
