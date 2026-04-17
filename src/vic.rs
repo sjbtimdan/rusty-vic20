@@ -26,9 +26,9 @@ impl VIC {
     }
 
     pub fn render_frame(&self) -> Vec<u32> {
-        let screen_ram = &self.memory[SCREEN_RAM_START..SCREEN_RAM_END + 1];
-        let color_ram = &self.memory[COLOUR_RAM_START..COLOUR_RAM_END + 1];
-        let char_rom = &self.memory[CHARACTER_ROM_START..CHARACTER_ROM_END + 1];
+        let screen_ram = &self.memory[SCREEN_RAM_START as usize..SCREEN_RAM_END as usize];
+        let color_ram = &self.memory[COLOUR_RAM_START..=COLOUR_RAM_END];
+        let char_rom = &self.memory[CHARACTER_ROM_START..=CHARACTER_ROM_END];
         let width = PAL_WIDTH;
         let height = PAL_HEIGHT;
         let mut framebuffer = Vec::with_capacity(width * height);
@@ -83,10 +83,10 @@ impl VIC {
 
 impl Device for VIC {
     fn read(&self, address: u16) -> u8 {
-        self.registers[address as usize % 16 - 0x9000]
+        self.registers[address as usize - 0x9000]
     }
 
     fn write(&mut self, address: u16, value: u8) {
-        self.registers[address as usize % 16] = value;
+        self.registers[address as usize - 0x9000] = value;
     }
 }

@@ -7,8 +7,8 @@ pub struct Bus {
     pub vic: VIC,
 }
 
-pub const SCREEN_RAM_START: usize = 0x1E00;
-pub const SCREEN_RAM_END: usize = 0x1FFF;
+pub const SCREEN_RAM_START: u16 = 0x1E00;
+pub const SCREEN_RAM_END: u16 = 0x2000;
 pub const COLOUR_RAM_START: usize = 0x9400;
 pub const COLOUR_RAM_END: usize = 0x97FF;
 pub const CHARACTER_ROM_START: usize = 0x8000;
