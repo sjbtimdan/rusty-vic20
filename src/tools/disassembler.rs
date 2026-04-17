@@ -47,9 +47,20 @@ impl Disassembler for DefaultDisassembler {
     }
 }
 
-pub fn disassemble_bytes(data: &[u8], disassembler: &impl Disassembler) -> Vec<String> {
+pub fn disassemble_bytes(
+    data: &[u8],
+    disassembler: &impl Disassembler,
+    base_address: u16,
+    start_address: u16,
+) -> Vec<String> {
+    assert!(
+        start_address >= base_address,
+        "Start address: 0x{:04X} must be greater than or equal to base address: 0x{:04X}",
+        start_address,
+        base_address
+    );
     let mut result = Vec::new();
-    let mut index = 0;
+    let mut index = (start_address - base_address) as usize;
     let data_len = data.len();
     while index < data_len {
         let (instruction_length, instruction_info) = disassembler.parse_instruction(&data[index..]);
@@ -59,7 +70,8 @@ pub fn disassemble_bytes(data: &[u8], disassembler: &impl Disassembler) -> Vec<S
         }
         let instruction_str =
             disassembler.disassemble_instruction(&instruction_info, &data[index + 1..end_next_instruction]);
-        result.push(instruction_str);
+        let address_str = format!("0x{:04X}:", base_address + index as u16);
+        result.push(format!("{}\t{}", address_str, instruction_str));
         index += instruction_length;
     }
     result
@@ -91,9 +103,9 @@ mod tests {
                 .returns("LDA\t#$45".to_string()),
         ));
 
-        let result = disassemble_bytes(&[0xA9, 0x45], &mock);
+        let result = disassemble_bytes(&[0xA9, 0x45], &mock, 0x1000, 0x1000);
 
-        assert_eq!(result, vec!["LDA\t#$45"]);
+        assert_eq!(result, vec!["0x1000:\tLDA\t#$45"]);
     }
 
     #[rstest]
