@@ -5,6 +5,7 @@ use crate::cpu::{
     interrupt_handler::InterruptHandler,
     registers::{DECIMAL_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK, Registers},
 };
+use log::info;
 
 pub struct CPU6502 {
     pub registers: Registers,
@@ -54,6 +55,9 @@ impl CPU6502 {
                 self.operands_index += 1;
             }
             if self.cycle_count == instruction_info.cycles {
+                let debug_log =
+                    crate::tools::disassembler::disassemble_instruction(instruction_info, &self.operands_buffer, " ");
+                info!("@0x{:04X}: {}", self.registers.pc, debug_log);
                 self.instruction_executor.execute_instruction(
                     &mut self.registers,
                     memory,

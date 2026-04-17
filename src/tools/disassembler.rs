@@ -27,24 +27,28 @@ impl Disassembler for DefaultDisassembler {
     }
 
     fn disassemble_instruction(&self, instruction_info: &InstructionInfo, operands: &[u8]) -> String {
-        let name = format!("{:?}", instruction_info.instruction);
-        let operand_str = match instruction_info.mode {
-            AddressingMode::Implied => return name,
-            AddressingMode::Accumulator => "A".to_string(),
-            AddressingMode::Immediate => format!("#${:02X}", operands[0]),
-            AddressingMode::ZeroPage => format!("${:02X}", operands[0]),
-            AddressingMode::ZeroPageX => format!("${:02X},X", operands[0]),
-            AddressingMode::ZeroPageY => format!("${:02X},Y", operands[0]),
-            AddressingMode::Relative => format!("${:02X}", operands[0]),
-            AddressingMode::Absolute => format!("${:02X}{:02X}", operands[1], operands[0]),
-            AddressingMode::AbsoluteX => format!("${:02X}{:02X},X", operands[1], operands[0]),
-            AddressingMode::AbsoluteY => format!("${:02X}{:02X},Y", operands[1], operands[0]),
-            AddressingMode::Indirect => format!("(${:02X}{:02X})", operands[1], operands[0]),
-            AddressingMode::IndexedIndirect => format!("(${:02X},X)", operands[0]),
-            AddressingMode::IndirectIndexed => format!("(${:02X}),Y", operands[0]),
-        };
-        format!("{}{}{}", name, self.separator, operand_str)
+        disassemble_instruction(instruction_info, operands, &self.separator)
     }
+}
+
+pub fn disassemble_instruction(instruction_info: &InstructionInfo, operands: &[u8], separator: &str) -> String {
+    let name = format!("{:?}", instruction_info.instruction);
+    let operand_str = match instruction_info.mode {
+        AddressingMode::Implied => return name,
+        AddressingMode::Accumulator => "A".to_string(),
+        AddressingMode::Immediate => format!("#${:02X}", operands[0]),
+        AddressingMode::ZeroPage => format!("${:02X}", operands[0]),
+        AddressingMode::ZeroPageX => format!("${:02X},X", operands[0]),
+        AddressingMode::ZeroPageY => format!("${:02X},Y", operands[0]),
+        AddressingMode::Relative => format!("${:02X}", operands[0]),
+        AddressingMode::Absolute => format!("${:02X}{:02X}", operands[1], operands[0]),
+        AddressingMode::AbsoluteX => format!("${:02X}{:02X},X", operands[1], operands[0]),
+        AddressingMode::AbsoluteY => format!("${:02X}{:02X},Y", operands[1], operands[0]),
+        AddressingMode::Indirect => format!("(${:02X}{:02X})", operands[1], operands[0]),
+        AddressingMode::IndexedIndirect => format!("(${:02X},X)", operands[0]),
+        AddressingMode::IndirectIndexed => format!("(${:02X}),Y", operands[0]),
+    };
+    format!("{}{}{}", name, separator, operand_str)
 }
 
 pub fn disassemble_bytes(
