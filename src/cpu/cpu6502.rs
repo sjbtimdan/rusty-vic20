@@ -1,11 +1,14 @@
-use crate::addressable::Addressable;
-use crate::cpu::{
-    instruction_executor::{DefaultInstructionExecutor, InstructionExecutor},
-    instructions::{InstructionInfo, decode},
-    interrupt_handler::InterruptHandler,
-    registers::{DECIMAL_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK, Registers},
+use crate::{
+    addressable::Addressable,
+    cpu::{
+        instruction_executor::{DefaultInstructionExecutor, InstructionExecutor},
+        instructions::{Instruction, InstructionInfo, decode},
+        interrupt_handler::InterruptHandler,
+        registers::{DECIMAL_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK, Registers},
+    },
+    tools::disassembler::disassemble_instruction,
 };
-use log::info;
+use log::{info, log_enabled};
 
 pub struct CPU6502 {
     pub registers: Registers,
@@ -55,9 +58,13 @@ impl CPU6502 {
                 self.operands_index += 1;
             }
             if self.cycle_count == instruction_info.cycles {
-                let debug_log =
-                    crate::tools::disassembler::disassemble_instruction(instruction_info, &self.operands_buffer, " ");
-                info!("@0x{:04X}: {}", self.registers.pc, debug_log);
+                let debug_log = if log_enabled!(log::Level::Info) {
+                    Some(line_debug_log(instruction_info, &self.operands_buffer, &self.registers))
+                } else {
+                    None
+                };
+                let pc_before = self.registers.pc;
+                let expected_next_pc = pc_before.wrapping_add(1 + instruction_info.mode.operand_count() as u16);
                 let increment_pc = self.instruction_executor.execute_instruction(
                     &mut self.registers,
                     memory,
@@ -70,10 +77,36 @@ impl CPU6502 {
                     self.registers
                         .update_pc(self.registers.pc + 1 + instruction_info.mode.operand_count() as u16);
                 }
+                log_instruction_result(
+                    debug_log,
+                    instruction_info.instruction,
+                    pc_before,
+                    self.registers.pc,
+                    expected_next_pc,
+                );
                 self.current_instruction_info = None;
                 self.cycle_count = 0;
             }
         }
+    }
+}
+
+fn line_debug_log(instruction_info: &InstructionInfo, operands_buffer: &[u8; 2], registers: &Registers) -> String {
+    let code = disassemble_instruction(instruction_info, operands_buffer, " ");
+    format!("@0x{:04X}: {:<20} [{}]", registers.pc, code, registers)
+}
+
+fn log_instruction_result(
+    debug_log: Option<String>,
+    instruction: Instruction,
+    pc_before: u16,
+    actual_pc: u16,
+    expected_next_pc: u16,
+) {
+    if let Some(debug_log) = debug_log {
+        let branch_taken = instruction.is_branch() && actual_pc != expected_next_pc;
+        let branch_marker = if branch_taken { " (*)" } else { "" };
+        info!("@0x{:04X}: {}{}", pc_before, debug_log, branch_marker);
     }
 }
 

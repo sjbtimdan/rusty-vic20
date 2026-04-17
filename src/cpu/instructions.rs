@@ -1,3 +1,5 @@
+use crate::cpu::addressing_mode::AddressingMode;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Instruction {
     ADC,
@@ -59,7 +61,21 @@ pub enum Instruction {
     Illegal,
 }
 
-pub use super::addressing_mode::AddressingMode;
+impl Instruction {
+    pub fn is_branch(&self) -> bool {
+        matches!(
+            self,
+            Instruction::BCC
+                | Instruction::BCS
+                | Instruction::BEQ
+                | Instruction::BMI
+                | Instruction::BNE
+                | Instruction::BPL
+                | Instruction::BVC
+                | Instruction::BVS
+        )
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InstructionInfo {
@@ -242,10 +258,6 @@ pub const fn decode(opcode: u8) -> InstructionInfo {
         0xFE => info(0xFE, Instruction::INC, AddressingMode::AbsoluteX, 7),
         _ => illegal(opcode),
     }
-}
-
-pub const fn cycles_for(opcode: u8) -> u8 {
-    decode(opcode).cycles
 }
 
 pub const fn length_for(mode: AddressingMode) -> usize {

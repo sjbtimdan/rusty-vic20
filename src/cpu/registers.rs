@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 #[derive(Default)]
 pub struct Registers {
     pub a: u8,
@@ -6,6 +8,16 @@ pub struct Registers {
     pub sp: u8,     // Stack Pointer
     pub pc: u16,    // Program Counter
     pub status: u8, // Processor Status
+}
+
+impl Display for Registers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "A:{:02X} X:{:02X} Y:{:02X} SP:{:02X} PC:{:04X} STATUS:{:08b}",
+            self.a, self.x, self.y, self.sp, self.pc, self.status
+        )
+    }
 }
 
 pub const CARRY_FLAG_BITMASK: u8 = 0x01; // Bit 0 - C
