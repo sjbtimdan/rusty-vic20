@@ -1,5 +1,7 @@
 use rusty_vic20::{
+    addressable::Addressable,
     bus::Bus,
+    cpu::{cpu6502::CPU6502, interrupt_handler::DefaultInterruptHandler},
     screen::{PAL_HEIGHT, PAL_WIDTH, Screen},
 };
 use std::env;
@@ -37,12 +39,15 @@ fn frame_duration_from_tick(tick_duration: Duration) -> Duration {
 fn main() {
     env_logger::init();
     let tick_duration = parse_tick_duration();
+    let mut cpu = CPU6502::default();
     let mut bus = Bus::default();
+    let interrupt_handler = DefaultInterruptHandler;
     bus.load_standard_roms_from_data_dir();
     bus.vic.set_border_color(4); // purple border
-    bus.cpu.reset(&mut bus.memory);
+    let reset_vector = bus.read_word(0xFFFC);
+    cpu.reset(reset_vector);
     loop {
-        bus.step();
+        cpu.step(&mut bus, &interrupt_handler);
         thread::sleep(tick_duration);
     }
 }
@@ -61,13 +66,13 @@ pub fn old_main() -> Result<(), EventLoopError> {
         let mut bus = Bus::default();
         bus.load_standard_roms_from_data_dir();
         bus.vic.set_border_color(4); // purple border
-        bus.cpu.reset(&mut bus.memory);
+        // bus.cpu.reset(&mut bus);
 
         let mut next_frame_deadline = Instant::now();
 
         while step_thread_running.load(Ordering::Relaxed) {
             let tick_start = Instant::now();
-            bus.step();
+            // bus.step();
 
             if tick_start >= next_frame_deadline {
                 let frame = bus.vic.render_frame();

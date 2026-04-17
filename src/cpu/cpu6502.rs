@@ -36,19 +36,19 @@ impl Default for CPU6502 {
 }
 
 impl CPU6502 {
-    pub fn reset(&mut self, memory: &mut dyn Addressable) {
+    pub fn reset(&mut self, reset_vector: u16) {
         let registers = &mut self.registers;
         registers.set_flag(DECIMAL_FLAG_BITMASK, false);
         registers.set_flag(INTERRUPT_FLAG_BITMASK, true);
         registers.sp = 0xFD;
-        registers.pc = memory.read_word(0xFFFC);
+        registers.pc = reset_vector;
     }
 
-    pub fn step(&mut self, memory: &mut [u8; 65536], interrupt_handler: &dyn InterruptHandler) {
+    pub fn step(&mut self, memory: &mut dyn Addressable, interrupt_handler: &dyn InterruptHandler) {
         self.total_cycles += 1;
         self.cycle_count += 1;
         if self.current_instruction_info.is_none() {
-            let opcode = memory[self.registers.pc as usize];
+            let opcode = memory.read_byte(self.registers.pc);
             self.current_instruction_info = Some(decode(opcode));
             self.operands_index = 0;
         } else {
@@ -57,7 +57,7 @@ impl CPU6502 {
             };
             if self.operands_index < instruction_info.mode.operand_count() {
                 self.operands_buffer[self.operands_index] =
-                    memory[(self.registers.pc + 1 + self.operands_index as u16) as usize];
+                    memory.read_byte(self.registers.pc + 1 + self.operands_index as u16);
                 self.operands_index += 1;
             }
             if self.cycle_count == instruction_info.cycles {

@@ -5,7 +5,7 @@ pub trait InterruptHandler {
     fn handle_interrupt(&self, registers: &mut Registers, memory: &mut dyn Addressable);
 }
 
-pub(crate) struct DefaultInterruptHandler;
+pub struct DefaultInterruptHandler;
 
 // TODO: NMI doesn't go to 0xFFFE/0xFFFF, it goes to 0xFFFA/0xFFFB. We need to distinguish between the two types of interrupt in order to handle this correctly.
 impl InterruptHandler for DefaultInterruptHandler {
