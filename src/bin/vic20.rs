@@ -3,6 +3,7 @@ use rusty_vic20::{
     bus::Bus,
     cpu::{cpu6502::CPU6502, interrupt_handler::DefaultInterruptHandler},
     screen::{PAL_HEIGHT, PAL_WIDTH, Screen},
+    tools::debug::LoggingAddressBreakpoint,
 };
 use std::env;
 use std::sync::{
@@ -46,6 +47,7 @@ fn main() {
     bus.vic.set_border_color(4); // purple border
     let reset_vector = bus.read_word(0xFFFC);
     cpu.reset(reset_vector);
+    cpu.add_breakpoint(Box::new(LoggingAddressBreakpoint::new(0xEA8D)));
     loop {
         cpu.step(&mut bus, &interrupt_handler);
         thread::sleep(tick_duration);

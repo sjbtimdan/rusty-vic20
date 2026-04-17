@@ -6,7 +6,7 @@ use crate::{
         interrupt_handler::InterruptHandler,
         registers::{DECIMAL_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK, Registers},
     },
-    tools::disassembler::disassemble_instruction,
+    tools::{debug::Breakpoint, disassembler::disassemble_instruction},
 };
 use log::{info, log_enabled};
 
@@ -18,6 +18,7 @@ pub struct CPU6502 {
     operands_buffer: [u8; 2],
     instruction_executor: Box<dyn InstructionExecutor>,
     total_cycles: u64,
+    breakpoints: Vec<Box<dyn Breakpoint>>,
 }
 
 impl Default for CPU6502 {
@@ -31,6 +32,7 @@ impl Default for CPU6502 {
             operands_buffer: [0; 2],
             instruction_executor: Box::new(DefaultInstructionExecutor),
             total_cycles: 0,
+            breakpoints: vec![],
         }
     }
 }
@@ -42,6 +44,10 @@ impl CPU6502 {
         registers.set_flag(INTERRUPT_FLAG_BITMASK, true);
         registers.sp = 0xFD;
         registers.pc = reset_vector;
+    }
+
+    pub fn add_breakpoint(&mut self, breakpoint: Box<dyn Breakpoint>) {
+        self.breakpoints.push(breakpoint);
     }
 
     pub fn step(&mut self, memory: &mut dyn Addressable, interrupt_handler: &dyn InterruptHandler) {
@@ -61,6 +67,7 @@ impl CPU6502 {
                 self.operands_index += 1;
             }
             if self.cycle_count == instruction_info.cycles {
+                self.breakpoints.iter().for_each(|bp| bp.on_hit(self.registers.pc));
                 let debug_log = if log_enabled!(log::Level::Info) {
                     Some(line_debug_log(
                         self.total_cycles,
