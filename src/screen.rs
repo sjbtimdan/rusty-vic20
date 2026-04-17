@@ -1,4 +1,8 @@
 use pixels::{Pixels, SurfaceTexture};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
@@ -14,28 +18,19 @@ pub const PAL_HEIGHT: usize = 312;
 pub struct Screen {
     window: Option<&'static Window>,
     pixels: Option<Pixels<'static>>,
-    framebuffer: Vec<u32>,
+    framebuffer: Arc<Mutex<Vec<u32>>>,
+    running: Arc<AtomicBool>,
     width: u32,
-    step_callback: Option<Box<dyn FnMut()>>,
 }
 
 impl Screen {
-    pub fn new() -> Self {
+    pub fn new(framebuffer: Arc<Mutex<Vec<u32>>>, running: Arc<AtomicBool>) -> Self {
         Self {
+            framebuffer,
+            running,
             width: PAL_WIDTH as u32,
             ..Default::default()
         }
-    }
-
-    pub fn update_framebuffer(&mut self, framebuffer: &[u32]) {
-        self.framebuffer = framebuffer.to_owned();
-    }
-
-    pub fn set_step_callback<F>(&mut self, callback: F)
-    where
-        F: FnMut() + 'static,
-    {
-        self.step_callback = Some(Box::new(callback));
     }
 
     fn draw(&mut self) {
@@ -43,8 +38,9 @@ impl Screen {
             return;
         };
 
+        let framebuffer = self.framebuffer.lock().expect("framebuffer mutex poisoned");
         let frame = pixels.frame_mut();
-        let chunks = frame.chunks_exact_mut(4).zip(self.framebuffer.iter().copied());
+        let chunks = frame.chunks_exact_mut(4).zip(framebuffer.iter().copied());
         for (pixel, rgba) in chunks {
             pixel.copy_from_slice(&rgba.to_be_bytes());
         }
@@ -66,7 +62,10 @@ impl ApplicationHandler for Screen {
 
         // Pixels borrows the window for app lifetime, so keep it alive to shutdown.
         let window: &'static Window = Box::leak(Box::new(window));
-        let height = self.framebuffer.len() as u32 / self.width;
+        let height = {
+            let framebuffer = self.framebuffer.lock().expect("framebuffer mutex poisoned");
+            framebuffer.len() as u32 / self.width
+        };
         let surface_texture = SurfaceTexture::new(self.width, height, window);
         let pixels = Pixels::new(self.width, height, surface_texture).expect("failed to create pixel surface");
 
@@ -84,7 +83,10 @@ impl ApplicationHandler for Screen {
         }
 
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => {
+                self.running.store(false, Ordering::Relaxed);
+                event_loop.exit();
+            }
             WindowEvent::RedrawRequested => {
                 self.draw();
             }
@@ -100,10 +102,6 @@ impl ApplicationHandler for Screen {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        if let Some(step_callback) = self.step_callback.as_mut() {
-            step_callback();
-        }
-
         event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + Duration::from_micros(1)));
 
         if let Some(window) = self.window {
