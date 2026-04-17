@@ -3,7 +3,6 @@ use rusty_vic20::{
     bus::Bus,
     cpu::{cpu6502::CPU6502, interrupt_handler::DefaultInterruptHandler},
     screen::{PAL_HEIGHT, PAL_WIDTH, Screen},
-    tools::debug::LoggingAddressBreakpoint,
 };
 use std::env;
 use std::sync::{
@@ -21,7 +20,6 @@ fn parse_tick_duration() -> Duration {
     let tick_micros = env::args()
         .nth(1)
         .and_then(|value| value.parse::<u64>().ok())
-        .filter(|value| *value > 0)
         .unwrap_or(DEFAULT_TICK_MICROS);
 
     Duration::from_micros(tick_micros)
@@ -40,6 +38,11 @@ fn frame_duration_from_tick(tick_duration: Duration) -> Duration {
 fn main() {
     env_logger::init();
     let tick_duration = parse_tick_duration();
+    println!(
+        "Using tick duration of {:?} ({} microseconds)",
+        tick_duration,
+        tick_duration.as_micros()
+    );
     let mut cpu = CPU6502::default();
     let mut bus = Bus::default();
     let interrupt_handler = DefaultInterruptHandler;
@@ -47,10 +50,12 @@ fn main() {
     bus.vic.set_border_color(4); // purple border
     let reset_vector = bus.read_word(0xFFFC);
     cpu.reset(reset_vector);
-    cpu.add_breakpoint(Box::new(LoggingAddressBreakpoint::new(0xEA8D)));
+    // cpu.add_breakpoint_address(0xE5E8);
     loop {
         cpu.step(&mut bus, &interrupt_handler);
-        thread::sleep(tick_duration);
+        if !tick_duration.is_zero() {
+            thread::sleep(tick_duration);
+        }
     }
 }
 

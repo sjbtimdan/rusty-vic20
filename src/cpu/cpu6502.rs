@@ -6,9 +6,15 @@ use crate::{
         interrupt_handler::InterruptHandler,
         registers::{DECIMAL_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK, Registers},
     },
-    tools::{debug::Breakpoint, disassembler::disassemble_instruction},
+    tools::{
+        debug::{Breakpoint, LoggingAddressBreakpoint},
+        disassembler::disassemble_instruction,
+    },
 };
 use log::{info, log_enabled};
+use std::time::Instant;
+
+const PERFORMANCE_LOG_INTERVAL_CYCLES: u64 = 1_000_000;
 
 pub struct CPU6502 {
     pub registers: Registers,
@@ -18,6 +24,8 @@ pub struct CPU6502 {
     operands_buffer: [u8; 2],
     instruction_executor: Box<dyn InstructionExecutor>,
     total_cycles: u64,
+    last_performance_log_cycle: u64,
+    last_performance_log_instant: Instant,
     breakpoints: Vec<Box<dyn Breakpoint>>,
 }
 
@@ -32,6 +40,8 @@ impl Default for CPU6502 {
             operands_buffer: [0; 2],
             instruction_executor: Box::new(DefaultInstructionExecutor),
             total_cycles: 0,
+            last_performance_log_cycle: 0,
+            last_performance_log_instant: Instant::now(),
             breakpoints: vec![],
         }
     }
@@ -46,12 +56,26 @@ impl CPU6502 {
         registers.pc = reset_vector;
     }
 
+    pub fn add_breakpoint_address(&mut self, address: u16) {
+        self.add_breakpoint(Box::new(LoggingAddressBreakpoint::new(address)));
+    }
+
     pub fn add_breakpoint(&mut self, breakpoint: Box<dyn Breakpoint>) {
         self.breakpoints.push(breakpoint);
     }
 
     pub fn step(&mut self, memory: &mut dyn Addressable, interrupt_handler: &dyn InterruptHandler) {
         self.total_cycles += 1;
+        if self.total_cycles - self.last_performance_log_cycle >= PERFORMANCE_LOG_INTERVAL_CYCLES {
+            let elapsed = self.last_performance_log_instant.elapsed();
+            println!(
+                "Executed {} cycles in {:.3} ms",
+                PERFORMANCE_LOG_INTERVAL_CYCLES,
+                elapsed.as_secs_f64() * 1_000.0
+            );
+            self.last_performance_log_cycle = self.total_cycles;
+            self.last_performance_log_instant = Instant::now();
+        }
         self.cycle_count += 1;
         if self.current_instruction_info.is_none() {
             let opcode = memory.read_byte(self.registers.pc);
