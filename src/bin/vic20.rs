@@ -48,6 +48,7 @@ fn main() {
     let interrupt_handler = DefaultInterruptHandler;
     bus.load_standard_roms_from_data_dir();
     bus.vic.set_border_color(4); // purple border
+    bus.add_watchpoint_at(0x1E00);
     let reset_vector = bus.read_word(0xFFFC);
     cpu.reset(reset_vector);
     // cpu.add_breakpoint_address(0xE5E8);

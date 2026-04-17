@@ -1,10 +1,11 @@
-use crate::{addressable::Addressable, device::Device, memory::Memory, vic::VIC};
+use crate::{addressable::Addressable, device::Device, memory::Memory, tools::debug::MemoryWriteWatchpoint, vic::VIC};
 use log::info;
 use std::fs;
 
 pub struct Bus {
     memory: Memory,
     pub vic: VIC,
+    watchpoints: Vec<MemoryWriteWatchpoint>,
 }
 
 pub const SCREEN_RAM_START: u16 = 0x1E00;
@@ -26,6 +27,7 @@ impl Default for Bus {
         Self {
             memory,
             vic: VIC::new(Box::new(memory)),
+            watchpoints: vec![],
         }
     }
 }
@@ -39,6 +41,9 @@ impl Addressable for Bus {
     }
 
     fn write_byte(&mut self, address: u16, value: u8) {
+        self.watchpoints
+            .iter()
+            .for_each(|watchpoint| watchpoint.on_write(address, value));
         match address {
             VIC_REGISTERS_START..VIC_REGISTERS_END => self.vic.write(address, value),
             _ => self.memory[address as usize] = value,
@@ -47,6 +52,10 @@ impl Addressable for Bus {
 }
 
 impl Bus {
+    pub fn add_watchpoint_at(&mut self, address: u16) {
+        self.watchpoints.push(MemoryWriteWatchpoint::new(address));
+    }
+
     pub fn load_standard_roms_from_data_dir(&mut self) {
         let data_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/data");
         let basic_rom = fs::read(format!("{}/basic.901486-01.bin", data_dir)).expect("Missing basic_rom");
