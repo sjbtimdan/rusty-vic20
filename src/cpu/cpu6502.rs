@@ -3,7 +3,7 @@ use crate::cpu::{
     instruction_executor::{DefaultInstructionExecutor, InstructionExecutor},
     instructions::{InstructionInfo, decode},
     interrupt_handler::InterruptHandler,
-    registers::{self, DECIMAL_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK, Registers},
+    registers::{DECIMAL_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK, Registers},
 };
 
 pub struct CPU6502 {
@@ -24,7 +24,7 @@ impl Default for CPU6502 {
             current_instruction_info: None,
             operands_index: 0,
             operands_buffer: [0; 2],
-            instruction_executor: Box::new(DefaultInstructionExecutor::new()),
+            instruction_executor: Box::new(DefaultInstructionExecutor),
         }
     }
 }

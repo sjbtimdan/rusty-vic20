@@ -23,13 +23,8 @@ pub trait InstructionExecutor {
     );
 }
 
+#[derive(Default)]
 pub struct DefaultInstructionExecutor;
-
-impl DefaultInstructionExecutor {
-    pub fn new() -> Self {
-        Self
-    }
-}
 
 impl InstructionExecutor for DefaultInstructionExecutor {
     fn execute_instruction(
