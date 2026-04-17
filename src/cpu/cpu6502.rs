@@ -1,8 +1,9 @@
+use crate::addressable::Addressable;
 use crate::cpu::{
     instruction_executor::{DefaultInstructionExecutor, InstructionExecutor},
     instructions::{InstructionInfo, decode},
     interrupt_handler::InterruptHandler,
-    registers::Registers,
+    registers::{self, DECIMAL_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK, Registers},
 };
 
 pub struct CPU6502 {
@@ -29,6 +30,14 @@ impl Default for CPU6502 {
 }
 
 impl CPU6502 {
+    pub fn reset(&mut self, memory: &mut dyn Addressable) {
+        let registers = &mut self.registers;
+        registers.set_flag(DECIMAL_FLAG_BITMASK, false);
+        registers.set_flag(INTERRUPT_FLAG_BITMASK, true);
+        registers.sp = 0xFD;
+        registers.pc = memory.read_word(0xFFFC);
+    }
+
     pub fn step(&mut self, memory: &mut [u8; 65536], interrupt_handler: &dyn InterruptHandler) {
         self.cycle_count += 1;
         if self.current_instruction_info.is_none() {
