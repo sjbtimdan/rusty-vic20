@@ -34,7 +34,20 @@ fn frame_duration_from_tick(tick_duration: Duration) -> Duration {
     Duration::from_micros(frame_micros as u64)
 }
 
-fn main() -> Result<(), EventLoopError> {
+fn main() {
+    env_logger::init();
+    let tick_duration = parse_tick_duration();
+    let mut bus = Bus::default();
+    bus.load_standard_roms_from_data_dir();
+    bus.vic.set_border_color(4); // purple border
+    bus.cpu.reset(&mut bus.memory);
+    loop {
+        bus.step();
+        thread::sleep(tick_duration);
+    }
+}
+
+pub fn old_main() -> Result<(), EventLoopError> {
     env_logger::init();
     let tick_duration = parse_tick_duration();
     let frame_duration = frame_duration_from_tick(tick_duration);
@@ -71,7 +84,7 @@ fn main() -> Result<(), EventLoopError> {
 
             let tick_elapsed = tick_start.elapsed();
             if tick_elapsed < tick_duration {
-                thread::sleep(tick_duration - tick_elapsed);
+                // thread::sleep(tick_duration - tick_elapsed);
             }
         }
     });

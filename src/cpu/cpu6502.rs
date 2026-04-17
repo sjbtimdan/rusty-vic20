@@ -17,6 +17,7 @@ pub struct CPU6502 {
     operands_index: usize,
     operands_buffer: [u8; 2],
     instruction_executor: Box<dyn InstructionExecutor>,
+    total_cycles: u64,
 }
 
 impl Default for CPU6502 {
@@ -29,6 +30,7 @@ impl Default for CPU6502 {
             operands_index: 0,
             operands_buffer: [0; 2],
             instruction_executor: Box::new(DefaultInstructionExecutor),
+            total_cycles: 0,
         }
     }
 }
@@ -43,6 +45,7 @@ impl CPU6502 {
     }
 
     pub fn step(&mut self, memory: &mut [u8; 65536], interrupt_handler: &dyn InterruptHandler) {
+        self.total_cycles += 1;
         self.cycle_count += 1;
         if self.current_instruction_info.is_none() {
             let opcode = memory[self.registers.pc as usize];
@@ -59,7 +62,12 @@ impl CPU6502 {
             }
             if self.cycle_count == instruction_info.cycles {
                 let debug_log = if log_enabled!(log::Level::Info) {
-                    Some(line_debug_log(instruction_info, &self.operands_buffer, &self.registers))
+                    Some(line_debug_log(
+                        self.total_cycles,
+                        instruction_info,
+                        &self.operands_buffer,
+                        &self.registers,
+                    ))
                 } else {
                     None
                 };
@@ -91,9 +99,17 @@ impl CPU6502 {
     }
 }
 
-fn line_debug_log(instruction_info: &InstructionInfo, operands_buffer: &[u8; 2], registers: &Registers) -> String {
+fn line_debug_log(
+    total_cycles: u64,
+    instruction_info: &InstructionInfo,
+    operands_buffer: &[u8; 2],
+    registers: &Registers,
+) -> String {
     let code = disassemble_instruction(instruction_info, operands_buffer, registers.pc, " ");
-    format!("@0x{:04X}: {:<20} [{}]", registers.pc, code, registers)
+    format!(
+        "[{}]: 0x{:04X}: {:<20} [{}]",
+        total_cycles, registers.pc, code, registers
+    )
 }
 
 fn log_instruction_result(
