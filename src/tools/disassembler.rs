@@ -6,7 +6,12 @@ use crate::cpu::{
 #[cfg_attr(test, unimock::unimock(api=DisassemblerMock))]
 pub trait Disassembler {
     fn parse_instruction(&self, data: &[u8]) -> (usize, InstructionInfo);
-    fn disassemble_instruction(&self, instruction_info: &InstructionInfo, operands: &[u8]) -> String;
+    fn disassemble_instruction(
+        &self,
+        instruction_info: &InstructionInfo,
+        operands: &[u8],
+        instruction_address: u16,
+    ) -> String;
 }
 
 pub struct DefaultDisassembler {
@@ -26,12 +31,22 @@ impl Disassembler for DefaultDisassembler {
         (1 + instruction_info.mode.operand_count(), instruction_info)
     }
 
-    fn disassemble_instruction(&self, instruction_info: &InstructionInfo, operands: &[u8]) -> String {
-        disassemble_instruction(instruction_info, operands, &self.separator)
+    fn disassemble_instruction(
+        &self,
+        instruction_info: &InstructionInfo,
+        operands: &[u8],
+        instruction_address: u16,
+    ) -> String {
+        disassemble_instruction(instruction_info, operands, instruction_address, &self.separator)
     }
 }
 
-pub fn disassemble_instruction(instruction_info: &InstructionInfo, operands: &[u8], separator: &str) -> String {
+pub fn disassemble_instruction(
+    instruction_info: &InstructionInfo,
+    operands: &[u8],
+    instruction_address: u16,
+    separator: &str,
+) -> String {
     let name = format!("{:?}", instruction_info.instruction);
     let operand_str = match instruction_info.mode {
         AddressingMode::Implied => return name,
@@ -40,7 +55,12 @@ pub fn disassemble_instruction(instruction_info: &InstructionInfo, operands: &[u
         AddressingMode::ZeroPage => format!("${:02X}", operands[0]),
         AddressingMode::ZeroPageX => format!("${:02X},X", operands[0]),
         AddressingMode::ZeroPageY => format!("${:02X},Y", operands[0]),
-        AddressingMode::Relative => format!("${:02X}", operands[0]),
+        AddressingMode::Relative => {
+            let offset = operands[0] as i8;
+            let next_pc = instruction_address.wrapping_add(2);
+            let target = next_pc.wrapping_add_signed(offset as i16);
+            format!("${:04X}", target)
+        }
         AddressingMode::Absolute => format!("${:02X}{:02X}", operands[1], operands[0]),
         AddressingMode::AbsoluteX => format!("${:02X}{:02X},X", operands[1], operands[0]),
         AddressingMode::AbsoluteY => format!("${:02X}{:02X},Y", operands[1], operands[0]),
@@ -72,9 +92,13 @@ pub fn disassemble_bytes(
         if end_next_instruction > data_len {
             break;
         }
-        let instruction_str =
-            disassembler.disassemble_instruction(&instruction_info, &data[index + 1..end_next_instruction]);
-        let address_str = format!("0x{:04X}:", base_address + index as u16);
+        let instruction_address = base_address + index as u16;
+        let instruction_str = disassembler.disassemble_instruction(
+            &instruction_info,
+            &data[index + 1..end_next_instruction],
+            instruction_address,
+        );
+        let address_str = format!("0x{:04X}:", instruction_address);
         result.push(format!("{}\t{}", address_str, instruction_str));
         index += instruction_length;
     }
@@ -84,7 +108,7 @@ pub fn disassemble_bytes(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cpu::instructions::{BRK_IMPLIED, LDA_IMMEDIATE};
+    use crate::cpu::instructions::{BNE_RELATIVE, BRK_IMPLIED, LDA_IMMEDIATE};
     use rstest::{fixture, rstest};
 
     #[fixture]
@@ -103,7 +127,7 @@ mod tests {
                 .each_call(matching!(_))
                 .returns((2_usize, LDA_IMMEDIATE)),
             DisassemblerMock::disassemble_instruction
-                .each_call(matching!(_, _))
+                .each_call(matching!(_, _, _))
                 .returns("LDA\t#$45".to_string()),
         ));
 
@@ -115,6 +139,7 @@ mod tests {
     #[rstest]
     #[case(&LDA_IMMEDIATE, &[0x45], "LDA\t#$45")]
     #[case(&BRK_IMPLIED, &[], "BRK")]
+    #[case(&BNE_RELATIVE, &[0x05], "BNE\t$1007")]
     fn test_disassemble(
         disassembler: DefaultDisassembler,
         #[case] instruction_info: &InstructionInfo,
@@ -122,7 +147,7 @@ mod tests {
         #[case] expected: &str,
     ) {
         assert_eq!(
-            disassembler.disassemble_instruction(instruction_info, operands),
+            disassembler.disassemble_instruction(instruction_info, operands, 0x1000),
             expected
         );
     }

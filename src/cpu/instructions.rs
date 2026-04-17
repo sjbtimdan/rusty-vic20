@@ -100,6 +100,7 @@ const fn illegal(opcode: u8) -> InstructionInfo {
 
 pub const BRK_IMPLIED: InstructionInfo = info(0x00, Instruction::BRK, AddressingMode::Implied, 7);
 pub const LDA_IMMEDIATE: InstructionInfo = info(0xA9, Instruction::LDA, AddressingMode::Immediate, 2);
+pub const BNE_RELATIVE: InstructionInfo = info(0xD0, Instruction::BNE, AddressingMode::Relative, 2);
 
 // Base cycle counts are provided here. Some instructions (branches/page crossings)
 // can take extra cycles depending on runtime conditions.
@@ -229,7 +230,7 @@ pub const fn decode(opcode: u8) -> InstructionInfo {
         0xCC => info(0xCC, Instruction::CPY, AddressingMode::Absolute, 4),
         0xCD => info(0xCD, Instruction::CMP, AddressingMode::Absolute, 4),
         0xCE => info(0xCE, Instruction::DEC, AddressingMode::Absolute, 6),
-        0xD0 => info(0xD0, Instruction::BNE, AddressingMode::Relative, 2),
+        0xD0 => BNE_RELATIVE,
         0xD1 => info(0xD1, Instruction::CMP, AddressingMode::IndirectIndexed, 5),
         0xD5 => info(0xD5, Instruction::CMP, AddressingMode::ZeroPageX, 4),
         0xD6 => info(0xD6, Instruction::DEC, AddressingMode::ZeroPageX, 6),

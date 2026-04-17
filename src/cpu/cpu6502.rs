@@ -92,7 +92,7 @@ impl CPU6502 {
 }
 
 fn line_debug_log(instruction_info: &InstructionInfo, operands_buffer: &[u8; 2], registers: &Registers) -> String {
-    let code = disassemble_instruction(instruction_info, operands_buffer, " ");
+    let code = disassemble_instruction(instruction_info, operands_buffer, registers.pc, " ");
     format!("@0x{:04X}: {:<20} [{}]", registers.pc, code, registers)
 }
 
