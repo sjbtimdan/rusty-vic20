@@ -58,7 +58,7 @@ impl CPU6502 {
                 let debug_log =
                     crate::tools::disassembler::disassemble_instruction(instruction_info, &self.operands_buffer, " ");
                 info!("@0x{:04X}: {}", self.registers.pc, debug_log);
-                self.instruction_executor.execute_instruction(
+                let increment_pc = self.instruction_executor.execute_instruction(
                     &mut self.registers,
                     memory,
                     instruction_info.instruction,
@@ -66,8 +66,10 @@ impl CPU6502 {
                     &self.operands_buffer,
                     interrupt_handler,
                 );
-                self.registers
-                    .update_pc(self.registers.pc + 1 + instruction_info.mode.operand_count() as u16);
+                if increment_pc {
+                    self.registers
+                        .update_pc(self.registers.pc + 1 + instruction_info.mode.operand_count() as u16);
+                }
                 self.current_instruction_info = None;
                 self.cycle_count = 0;
             }

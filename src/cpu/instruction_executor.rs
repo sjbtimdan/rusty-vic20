@@ -20,7 +20,7 @@ pub trait InstructionExecutor {
         operand_resolution: &dyn OperandResolution,
         operands: &[u8],
         interrupt_handler: &dyn InterruptHandler,
-    );
+    ) -> bool;
 }
 
 #[derive(Default)]
@@ -35,7 +35,7 @@ impl InstructionExecutor for DefaultInstructionExecutor {
         operand_resolution: &dyn OperandResolution,
         operands: &[u8],
         interrupt_handler: &dyn InterruptHandler,
-    ) {
+    ) -> bool {
         execute_instruction(
             registers,
             memory,
@@ -43,7 +43,7 @@ impl InstructionExecutor for DefaultInstructionExecutor {
             operand_resolution,
             operands,
             interrupt_handler,
-        );
+        )
     }
 }
 
@@ -54,7 +54,7 @@ fn execute_instruction(
     operand_resolution: &dyn OperandResolution,
     operands: &[u8],
     interrupt_handler: &dyn InterruptHandler,
-) {
+) -> bool {
     match instruction {
         Instruction::ADC => {
             let value = operand_resolution.resolve_value(registers, memory, operands);
@@ -141,11 +141,13 @@ fn execute_instruction(
         Instruction::JMP => {
             let address = operand_resolution.resolve_address(registers, memory, operands);
             registers.pc = address;
+            return false;
         }
         Instruction::JSR => {
             let target = operand_resolution.resolve_address(registers, memory, operands);
             stack_push_u16(registers, memory, registers.pc.wrapping_add(2));
             registers.pc = target;
+            return false;
         }
         Instruction::LDA => {
             let value = operand_resolution.resolve_value(registers, memory, operands);
@@ -202,11 +204,13 @@ fn execute_instruction(
             let lo = stack_pull(registers, memory);
             let hi = stack_pull(registers, memory);
             registers.pc = (hi as u16) << 8 | lo as u16;
+            return false;
         }
         Instruction::RTS => {
             let lo = stack_pull(registers, memory);
             let hi = stack_pull(registers, memory);
             registers.pc = ((hi as u16) << 8 | lo as u16).wrapping_add(1);
+            return false;
         }
         Instruction::SBC => {
             let value = operand_resolution.resolve_value(registers, memory, operands);
@@ -235,6 +239,7 @@ fn execute_instruction(
         Instruction::TYA => registers.set_accumulator(registers.y),
         _ => unimplemented!("Instruction {:?} not implemented yet", instruction),
     }
+    true
 }
 
 fn adc(registers: &mut Registers, value: u8) {
@@ -1105,7 +1110,7 @@ mod tests {
                 .each_call(matching!(_, _, _))
                 .returns(0x1234u16),
         );
-        execute_instruction(
+        let increment_pc = execute_instruction(
             &mut registers,
             &mut memory,
             Instruction::JMP,
@@ -1114,6 +1119,7 @@ mod tests {
             &NoOpInterruptHandler,
         );
         assert_eq!(registers.pc, 0x1234);
+        assert!(!increment_pc, "JSR should not indicate PC increment");
     }
 
     #[rstest]
@@ -1125,7 +1131,7 @@ mod tests {
                 .each_call(matching!(_, _, _))
                 .returns(0xC000u16),
         );
-        execute_instruction(
+        let increment_pc = execute_instruction(
             &mut registers,
             &mut memory,
             Instruction::JSR,
@@ -1137,6 +1143,7 @@ mod tests {
         assert_eq!(registers.sp, 0xFD, "sp should decrease by 2");
         assert_eq!(memory.read_byte(0x01FF), 0x12, "high byte of return address on stack");
         assert_eq!(memory.read_byte(0x01FE), 0x02, "low byte of return address on stack");
+        assert!(!increment_pc, "JSR should not indicate PC increment");
     }
 
     #[rstest]
