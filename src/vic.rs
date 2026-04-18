@@ -4,15 +4,37 @@ use crate::{
     screen::{PAL_HEIGHT, PAL_WIDTH},
 };
 
-#[derive(Default)]
 pub struct VIC {
     registers: [u8; 16],
+    cycle_count: u64,
+    screen_ram: [u8; (SCREEN_RAM_END - SCREEN_RAM_START) as usize],
+}
+
+impl Default for VIC {
+    fn default() -> Self {
+        Self {
+            registers: [0; 16],
+            cycle_count: 0,
+            screen_ram: [0; (SCREEN_RAM_END - SCREEN_RAM_START) as usize],
+        }
+    }
 }
 
 impl VIC {
-    pub fn step(&mut self, _memory: &[u8; 65536]) {
-        // For now, the VIC doesn't have any internal state or timing, so this is a no-op.
-        // In the future, we could add support for raster interrupts and other features that require timing.
+    pub fn step(&mut self, memory: &[u8; 65536]) {
+        self.cycle_count += 1;
+        if self.cycle_count % 10000 == 0 {
+            let screen_ram = &memory[SCREEN_RAM_START as usize..SCREEN_RAM_END as usize];
+            for (i, (&old_byte, &new_byte)) in self.screen_ram.iter().zip(screen_ram.iter()).enumerate() {
+                if old_byte != new_byte {
+                    println!(
+                        "Screen RAM changed at offset {:04X}: {:02X} -> {:02X}",
+                        i, old_byte, new_byte
+                    );
+                }
+            }
+            self.screen_ram.clone_from_slice(screen_ram);
+        }
     }
 
     pub fn render_frame(&self, memory: &[u8; 65536]) -> Vec<u32> {
