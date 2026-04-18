@@ -1,6 +1,6 @@
 use crate::{
+    addressable::Addressable,
     bus::*,
-    device::Device,
     screen::{PAL_HEIGHT, PAL_WIDTH},
 };
 
@@ -81,12 +81,12 @@ impl VIC {
     }
 }
 
-impl Device for VIC {
-    fn read(&self, address: u16) -> u8 {
+impl Addressable for VIC {
+    fn read_byte(&self, address: u16) -> u8 {
         self.registers[address as usize - 0x9000]
     }
 
-    fn write(&mut self, address: u16, value: u8) {
+    fn write_byte(&mut self, address: u16, value: u8) {
         self.registers[address as usize - 0x9000] = value;
     }
 }

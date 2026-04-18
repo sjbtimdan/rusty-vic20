@@ -1,4 +1,4 @@
-use crate::{addressable::Addressable, device::Device, memory::Memory, tools::debug::MemoryWriteWatchpoint, vic::VIC};
+use crate::{addressable::Addressable, memory::Memory, tools::debug::MemoryWriteWatchpoint, vic::VIC};
 use log::info;
 use std::fs;
 
@@ -35,7 +35,7 @@ impl Default for Bus {
 impl Addressable for Bus {
     fn read_byte(&self, address: u16) -> u8 {
         match address {
-            VIC_REGISTERS_START..VIC_REGISTERS_END => self.vic.read(address),
+            VIC_REGISTERS_START..VIC_REGISTERS_END => self.vic.read_byte(address),
             _ => self.memory[address as usize],
         }
     }
@@ -45,7 +45,7 @@ impl Addressable for Bus {
             .iter()
             .for_each(|watchpoint| watchpoint.on_write(address, value));
         match address {
-            VIC_REGISTERS_START..VIC_REGISTERS_END => self.vic.write(address, value),
+            VIC_REGISTERS_START..VIC_REGISTERS_END => self.vic.write_byte(address, value),
             _ => self.memory[address as usize] = value,
         }
     }

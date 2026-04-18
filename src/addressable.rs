@@ -36,3 +36,13 @@ impl std::fmt::Debug for dyn Addressable + '_ {
         f.write_str("dyn Addressable")
     }
 }
+
+pub struct UnimplementedAddressable;
+
+impl Addressable for UnimplementedAddressable {
+    fn read_byte(&self, _address: u16) -> u8 {
+        0xFF
+    }
+
+    fn write_byte(&mut self, _address: u16, _value: u8) {}
+}
