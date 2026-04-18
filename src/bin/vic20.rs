@@ -30,10 +30,11 @@ fn main() {
     let mut bus = Bus::default();
     let interrupt_handler = DefaultInterruptHandler;
     bus.load_standard_roms_from_data_dir();
-    bus.add_watchpoint_at(0x1E00);
+    bus.add_watchpoint_at(0x0288);
+    bus.add_watchpoint_at(0x0289);
+    cpu.add_breakpoint_address(0xFDD2);
     let reset_vector = bus.read_word(0xFFFC);
     cpu.reset(reset_vector);
-    // cpu.add_breakpoint_address(0xE5E8);
     loop {
         cpu.step(&mut bus, &interrupt_handler);
         bus.step_devices();

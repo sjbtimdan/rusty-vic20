@@ -68,7 +68,7 @@ impl CPU6502 {
         self.total_cycles += 1;
         if self.total_cycles - self.last_performance_log_cycle >= PERFORMANCE_LOG_INTERVAL_CYCLES {
             let elapsed = self.last_performance_log_instant.elapsed();
-            println!(
+            info!(
                 "Executed {} cycles in {:.3} ms",
                 PERFORMANCE_LOG_INTERVAL_CYCLES,
                 elapsed.as_secs_f64() * 1_000.0

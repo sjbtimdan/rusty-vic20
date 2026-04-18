@@ -35,7 +35,7 @@ impl Addressable for Bus {
     fn read_byte(&self, address: u16) -> u8 {
         match address {
             VIC_REGISTERS_START..VIC_REGISTERS_END => self.vic.read_byte(address),
-            _ => self.memory[address as usize],
+            _ => self.memory.read_byte(address),
         }
     }
 
@@ -45,7 +45,7 @@ impl Addressable for Bus {
             .for_each(|watchpoint| watchpoint.on_write(address, value));
         match address {
             VIC_REGISTERS_START..VIC_REGISTERS_END => self.vic.write_byte(address, value),
-            _ => self.memory[address as usize] = value,
+            _ => self.memory.write_byte(address, value),
         }
     }
 }
@@ -56,7 +56,7 @@ impl Bus {
     }
 
     pub fn step_devices(&mut self) {
-        self.vic.step(&mut self.memory);
+        self.vic.step(&self.memory);
     }
 
     pub fn load_standard_roms_from_data_dir(&mut self) {

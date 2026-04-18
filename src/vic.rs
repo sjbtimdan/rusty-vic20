@@ -21,20 +21,20 @@ impl Default for VIC {
 }
 
 impl VIC {
-    pub fn step(&self, memory: &[u8; 65536]) {
+    pub fn step(&mut self, _memory: &[u8; 65536]) {
         self.cycle_count += 1;
-        if self.cycle_count.is_multiple_of(10_000) {
-            let screen_ram = &memory[SCREEN_RAM_START as usize..SCREEN_RAM_END as usize];
-            for (i, (&old_byte, &new_byte)) in self.screen_ram.iter().zip(screen_ram.iter()).enumerate() {
-                if old_byte != new_byte {
-                    println!(
-                        "Screen RAM changed at offset {:04X}: {:02X} -> {:02X}",
-                        i, old_byte, new_byte
-                    );
-                }
-            }
-            self.screen_ram.clone_from_slice(screen_ram);
-        }
+        // if self.cycle_count.is_multiple_of(10_000) {
+        //     let screen_ram = &memory[SCREEN_RAM_START as usize..SCREEN_RAM_END as usize];
+        //     for (i, (&old_byte, &new_byte)) in self.screen_ram.iter().zip(screen_ram.iter()).enumerate() {
+        //         if old_byte != new_byte {
+        //             println!(
+        //                 "Screen RAM changed at offset {:04X}: {:02X} -> {:02X}",
+        //                 i, old_byte, new_byte
+        //             );
+        //         }
+        //     }
+        //     self.screen_ram.clone_from_slice(screen_ram);
+        // }
     }
 
     pub fn render_frame(&self, memory: &[u8; 65536]) -> Vec<u32> {
