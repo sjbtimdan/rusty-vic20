@@ -4,7 +4,7 @@ use std::fs;
 
 pub struct Bus {
     memory: Memory,
-    pub vic: VIC,
+    vic: VIC,
     watchpoints: Vec<MemoryWriteWatchpoint>,
 }
 

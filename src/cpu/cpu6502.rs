@@ -17,7 +17,7 @@ use std::time::Instant;
 const PERFORMANCE_LOG_INTERVAL_CYCLES: u64 = 1_000_000;
 
 pub struct CPU6502 {
-    pub registers: Registers,
+    registers: Registers,
     current_instruction_info: Option<InstructionInfo>,
     cycle_count: u8,
     operands_index: usize,
