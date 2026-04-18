@@ -23,10 +23,9 @@ pub const VIC_REGISTERS_END: u16 = 0x9010;
 
 impl Default for Bus {
     fn default() -> Self {
-        let memory = [0; 65536];
         Self {
-            memory,
-            vic: VIC::new(Box::new(memory)),
+            memory: [0; 65536],
+            vic: VIC::default(),
             watchpoints: vec![],
         }
     }
@@ -54,6 +53,10 @@ impl Addressable for Bus {
 impl Bus {
     pub fn add_watchpoint_at(&mut self, address: u16) {
         self.watchpoints.push(MemoryWriteWatchpoint::new(address));
+    }
+
+    pub fn step_devices(&mut self) {
+        self.vic.step(&mut self.memory);
     }
 
     pub fn load_standard_roms_from_data_dir(&mut self) {

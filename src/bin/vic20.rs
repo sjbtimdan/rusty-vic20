@@ -36,6 +36,7 @@ fn main() {
     // cpu.add_breakpoint_address(0xE5E8);
     loop {
         cpu.step(&mut bus, &interrupt_handler);
+        bus.step_devices();
         if !tick_duration.is_zero() {
             thread::sleep(tick_duration);
         }

@@ -1,34 +1,24 @@
 use crate::{
     addressable::Addressable,
-    bus::*,
+    bus::{CHARACTER_ROM_END, CHARACTER_ROM_START, COLOUR_RAM_END, COLOUR_RAM_START, SCREEN_RAM_END, SCREEN_RAM_START},
     screen::{PAL_HEIGHT, PAL_WIDTH},
 };
 
+#[derive(Default)]
 pub struct VIC {
     registers: [u8; 16],
-    memory: Box<[u8; 65536]>,
 }
 
 impl VIC {
-    pub fn new(memory: Box<[u8; 65536]>) -> Self {
-        Self {
-            registers: [0; 16],
-            memory,
-        }
+    pub fn step(&mut self, _memory: &[u8; 65536]) {
+        // For now, the VIC doesn't have any internal state or timing, so this is a no-op.
+        // In the future, we could add support for raster interrupts and other features that require timing.
     }
 
-    pub fn border_colour(&self) -> u8 {
-        self.registers[0xF] & 0x0F
-    }
-
-    pub fn set_border_color(&mut self, value: u8) {
-        self.registers[0x0F] = value & 0x0F;
-    }
-
-    pub fn render_frame(&self) -> Vec<u32> {
-        let screen_ram = &self.memory[SCREEN_RAM_START as usize..SCREEN_RAM_END as usize];
-        let color_ram = &self.memory[COLOUR_RAM_START..=COLOUR_RAM_END];
-        let char_rom = &self.memory[CHARACTER_ROM_START..=CHARACTER_ROM_END];
+    pub fn render_frame(&self, memory: &[u8; 65536]) -> Vec<u32> {
+        let screen_ram = &memory[SCREEN_RAM_START as usize..SCREEN_RAM_END as usize];
+        let color_ram = &memory[COLOUR_RAM_START..=COLOUR_RAM_END];
+        let char_rom = &memory[CHARACTER_ROM_START..=CHARACTER_ROM_END];
         let width = PAL_WIDTH;
         let height = PAL_HEIGHT;
         let mut framebuffer = Vec::with_capacity(width * height);

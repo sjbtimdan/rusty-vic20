@@ -64,7 +64,7 @@ impl CPU6502 {
         self.breakpoints.push(breakpoint);
     }
 
-    pub fn step(&mut self, memory: &mut dyn Addressable, interrupt_handler: &dyn InterruptHandler) {
+    pub fn step(&mut self, memory: &mut impl Addressable, interrupt_handler: &impl InterruptHandler) {
         self.total_cycles += 1;
         if self.total_cycles - self.last_performance_log_cycle >= PERFORMANCE_LOG_INTERVAL_CYCLES {
             let elapsed = self.last_performance_log_instant.elapsed();
