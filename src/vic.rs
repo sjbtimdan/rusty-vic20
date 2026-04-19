@@ -1,23 +1,16 @@
 use crate::{
     addressable::Addressable,
     bus::{CHARACTER_ROM_END, CHARACTER_ROM_START, COLOUR_RAM_END, COLOUR_RAM_START, SCREEN_RAM_END, SCREEN_RAM_START},
-    screen::{PAL_HEIGHT, PAL_WIDTH},
+    screen::renderer::{
+        ACTIVE_HEIGHT, ACTIVE_WIDTH, BORDER_LEFT, BORDER_TOP, CHAR_HEIGHT, CHAR_WIDTH, PAL_HEIGHT, PAL_WIDTH,
+        TEXT_COLUMNS,
+    },
 };
 
+#[derive(Default)]
 pub struct VIC {
     registers: [u8; 16],
     cycle_count: u64,
-    screen_ram: [u8; (SCREEN_RAM_END - SCREEN_RAM_START) as usize],
-}
-
-impl Default for VIC {
-    fn default() -> Self {
-        Self {
-            registers: [0; 16],
-            cycle_count: 0,
-            screen_ram: [0; (SCREEN_RAM_END - SCREEN_RAM_START) as usize],
-        }
-    }
 }
 
 impl VIC {
@@ -51,13 +44,17 @@ impl VIC {
                 let colour_index = if self.is_border(x, y) {
                     border_color
                 } else {
-                    let row = y / 8;
-                    let col = x / 8;
-                    let idx = row * 22 + col;
+                    let active_x = x - BORDER_LEFT;
+                    let active_y = y - BORDER_TOP;
+                    let row = active_y / CHAR_HEIGHT;
+                    let col = active_x / CHAR_WIDTH;
+                    let idx = row * TEXT_COLUMNS + col;
                     let char_code = screen_ram[idx];
                     let fg_color = color_ram[idx] & 0x0F;
-                    let bitmap_row = &char_rom[char_code as usize * 8..(char_code as usize + 1) * 8][y % 8];
-                    let bit = (bitmap_row >> (7 - (x % 8))) & 1;
+                    let bitmap_row = &char_rom
+                        [char_code as usize * CHAR_HEIGHT..(char_code as usize + 1) * CHAR_HEIGHT]
+                        [active_y % CHAR_HEIGHT];
+                    let bit = (bitmap_row >> (7 - (active_x % CHAR_WIDTH))) & 1;
                     if bit == 1 { fg_color } else { background_color }
                 };
                 framebuffer.push(self.palette(colour_index));
@@ -67,7 +64,7 @@ impl VIC {
     }
 
     fn is_border(&self, x: usize, y: usize) -> bool {
-        !(16..160).contains(&x) || !(16..168).contains(&y)
+        x < BORDER_LEFT || y < BORDER_TOP || x >= BORDER_LEFT + ACTIVE_WIDTH || y >= BORDER_TOP + ACTIVE_HEIGHT
     }
 
     fn palette(&self, index: u8) -> u32 {
