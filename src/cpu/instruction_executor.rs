@@ -558,6 +558,43 @@ mod tests {
         );
     }
 
+    #[rstest]
+    #[case(0x0F, 0xC0, true, true, true)]
+    #[case(0x40, 0x40, false, true, false)]
+    #[case(0x80, 0x80, false, false, true)]
+    #[case(0xFF, 0x00, true, false, false)]
+    fn test_bit(
+        mut registers: Registers,
+        mut memory: Memory,
+        #[case] a: u8,
+        #[case] operand: u8,
+        #[case] zero: bool,
+        #[case] overflow: bool,
+        #[case] negative: bool,
+    ) {
+        let operand_resolution = Unimock::new(
+            OperandResolutionMock::resolve_value
+                .each_call(matching!(_, _, _))
+                .returns(operand),
+        );
+        registers.a = a;
+        registers.status = ZERO_FLAG_BITMASK | OVERFLOW_FLAG_BITMASK | NEGATIVE_FLAG_BITMASK;
+
+        execute_instruction(
+            &mut registers,
+            &mut memory,
+            Instruction::BIT,
+            &operand_resolution,
+            &[operand],
+            &NoOpInterruptHandler,
+        );
+
+        assert_eq!(registers.a, a, "BIT should not modify the accumulator");
+        assert_eq!(registers.is_flag_set(ZERO_FLAG_BITMASK), zero, "zero flag");
+        assert_eq!(registers.is_flag_set(OVERFLOW_FLAG_BITMASK), overflow, "overflow flag");
+        assert_eq!(registers.is_flag_set(NEGATIVE_FLAG_BITMASK), negative, "negative flag");
+    }
+
     // transfer: (instruction, src_value, expected_dest, zero, negative)
     #[rstest]
     #[case(0x42, false, false)]
