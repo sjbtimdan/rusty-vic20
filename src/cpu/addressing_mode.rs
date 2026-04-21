@@ -22,6 +22,7 @@ pub trait OperandResolution {
     fn is_accumulator(&self) -> bool;
     fn resolve_value(&self, registers: &Registers, memory: &dyn Addressable, operands: &[u8]) -> u8;
     fn resolve_address(&self, registers: &Registers, memory: &dyn Addressable, operands: &[u8]) -> u16;
+    fn crosses_page_boundary(&self, registers: &Registers, memory: &dyn Addressable, operands: &[u8]) -> bool;
 }
 
 impl AddressingMode {
@@ -105,6 +106,28 @@ impl OperandResolution for AddressingMode {
                 memory.read_word(ptr)
             }
             _ => unimplemented!("Addressing mode {:?} not implemented for store", self),
+        }
+    }
+
+    fn crosses_page_boundary(&self, registers: &Registers, memory: &dyn Addressable, operands: &[u8]) -> bool {
+        match self {
+            AddressingMode::AbsoluteX => {
+                let base = (operands[1] as u16) << 8 | operands[0] as u16;
+                let address = base.wrapping_add(registers.x as u16);
+                (base & 0xFF00) != (address & 0xFF00)
+            }
+            AddressingMode::AbsoluteY => {
+                let base = (operands[1] as u16) << 8 | operands[0] as u16;
+                let address = base.wrapping_add(registers.y as u16);
+                (base & 0xFF00) != (address & 0xFF00)
+            }
+            AddressingMode::IndexedIndirect => false,
+            AddressingMode::IndirectIndexed => {
+                let base = memory.read_zero_page_word(operands[0]);
+                let address = base.wrapping_add(registers.y as u16);
+                (base & 0xFF00) != (address & 0xFF00)
+            }
+            _ => false,
         }
     }
 }

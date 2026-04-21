@@ -75,6 +75,44 @@ impl Instruction {
                 | Instruction::BVS
         )
     }
+
+    pub fn has_page_cross_cycle_penalty(&self, mode: &AddressingMode) -> bool {
+        match mode {
+            AddressingMode::AbsoluteX => matches!(
+                self,
+                Instruction::ADC
+                    | Instruction::AND
+                    | Instruction::CMP
+                    | Instruction::EOR
+                    | Instruction::LDA
+                    | Instruction::LDY
+                    | Instruction::ORA
+                    | Instruction::SBC
+            ),
+            AddressingMode::AbsoluteY => matches!(
+                self,
+                Instruction::ADC
+                    | Instruction::AND
+                    | Instruction::CMP
+                    | Instruction::EOR
+                    | Instruction::LDA
+                    | Instruction::LDX
+                    | Instruction::ORA
+                    | Instruction::SBC
+            ),
+            AddressingMode::IndirectIndexed => matches!(
+                self,
+                Instruction::ADC
+                    | Instruction::AND
+                    | Instruction::CMP
+                    | Instruction::EOR
+                    | Instruction::LDA
+                    | Instruction::ORA
+                    | Instruction::SBC
+            ),
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,6 +1,7 @@
 use crate::{
     addressable::Addressable,
     cpu::{
+        addressing_mode::OperandResolution,
         instruction_executor::{DefaultInstructionExecutor, InstructionExecutor},
         instructions::{Instruction, InstructionInfo, decode},
         interrupt_handler::InterruptHandler,
@@ -19,6 +20,7 @@ const PERFORMANCE_LOG_INTERVAL_CYCLES: u64 = 1_000_000;
 pub struct CPU6502 {
     registers: Registers,
     current_instruction_info: Option<InstructionInfo>,
+    cycle_count_at_end_of_this_instruction: u8,
     cycle_count: u8,
     operands_index: usize,
     operands_buffer: [u8; 2],
@@ -36,6 +38,7 @@ impl Default for CPU6502 {
             registers,
             cycle_count: 0,
             current_instruction_info: None,
+            cycle_count_at_end_of_this_instruction: 0,
             operands_index: 0,
             operands_buffer: [0; 2],
             instruction_executor: Box::new(DefaultInstructionExecutor),
@@ -79,8 +82,10 @@ impl CPU6502 {
         self.cycle_count += 1;
         if self.current_instruction_info.is_none() {
             let opcode = memory.read_byte(self.registers.pc);
-            self.current_instruction_info = Some(decode(opcode));
+            let current_instruction_info = decode(opcode);
+            self.current_instruction_info = Some(current_instruction_info);
             self.operands_index = 0;
+            self.cycle_count_at_end_of_this_instruction = self.cycle_count + current_instruction_info.cycles - 1;
         } else {
             let Some(instruction_info) = &self.current_instruction_info else {
                 panic!("Expected current_instruction_info to be Some");
@@ -89,8 +94,18 @@ impl CPU6502 {
                 self.operands_buffer[self.operands_index] =
                     memory.read_byte(self.registers.pc + 1 + self.operands_index as u16);
                 self.operands_index += 1;
+                if self.operands_index == instruction_info.mode.operand_count()
+                    && instruction_info
+                        .instruction
+                        .has_page_cross_cycle_penalty(&instruction_info.mode)
+                    && instruction_info
+                        .mode
+                        .crosses_page_boundary(&self.registers, memory, &self.operands_buffer)
+                {
+                    self.cycle_count_at_end_of_this_instruction += 1;
+                }
             }
-            if self.cycle_count == instruction_info.cycles {
+            if self.cycle_count == self.cycle_count_at_end_of_this_instruction {
                 self.breakpoints.iter().for_each(|bp| bp.on_hit(self.registers.pc));
                 let debug_log = if log_enabled!(log::Level::Info) {
                     Some(line_debug_log(
@@ -168,10 +183,22 @@ mod tests {
         [0; 65536]
     }
 
+    #[fixture]
+    fn cpu() -> CPU6502 {
+        CPU6502::default()
+    }
+
+    #[fixture]
+    fn interrupt_handler() -> DefaultInterruptHandler {
+        DefaultInterruptHandler
+    }
+
     #[rstest]
-    fn test_inx_executes_after_two_steps(mut memory: [u8; 65536]) {
-        let mut cpu = CPU6502::default();
-        let interrupt_handler = DefaultInterruptHandler;
+    fn test_inx_executes_after_two_steps(
+        mut memory: [u8; 65536],
+        mut cpu: CPU6502,
+        interrupt_handler: DefaultInterruptHandler,
+    ) {
         cpu.registers.pc = 0x8000;
         memory[0x8000] = 0xE8; // INX opcode
 
@@ -185,9 +212,11 @@ mod tests {
     }
 
     #[rstest]
-    fn test_lda_immediate_executes_after_two_cycles(mut memory: [u8; 65536]) {
-        let mut cpu = CPU6502::default();
-        let interrupt_handler = DefaultInterruptHandler;
+    fn test_lda_immediate_executes_after_two_cycles(
+        mut memory: [u8; 65536],
+        mut cpu: CPU6502,
+        interrupt_handler: DefaultInterruptHandler,
+    ) {
         cpu.registers.pc = 0x8000;
         memory[0x8000] = 0xA9; // LDA immediate opcode
         memory[0x8001] = 0x20; // LDA immediate operand
@@ -199,5 +228,62 @@ mod tests {
         cpu.step(&mut memory, &interrupt_handler);
         assert_eq!(cpu.registers.a, 0x20, "LDA immediate should load operand");
         assert_eq!(cpu.registers.pc, 0x8002, "Program counter should advance by 2");
+    }
+
+    #[rstest]
+    fn test_lda_absolute_x_executes_after_four_cycles_without_page_crossing(
+        mut memory: [u8; 65536],
+        mut cpu: CPU6502,
+        interrupt_handler: DefaultInterruptHandler,
+    ) {
+        cpu.registers.pc = 0x8000;
+        cpu.registers.x = 0x01;
+        memory[0x8000] = 0xBD; // LDA absolute,X opcode
+        memory[0x8001] = 0x10; // low byte
+        memory[0x8002] = 0x20; // high byte
+        memory[0x2011] = 0x42; // target value
+
+        for cycle in 1..4 {
+            cpu.step(&mut memory, &interrupt_handler);
+            assert_eq!(
+                cpu.registers.a, 0x00,
+                "LDA absolute,X should not execute on cycle {cycle}"
+            );
+            assert_eq!(cpu.registers.pc, 0x8000, "PC should not advance before execution");
+        }
+
+        cpu.step(&mut memory, &interrupt_handler);
+        assert_eq!(cpu.registers.a, 0x42, "LDA absolute,X should load on cycle 4");
+        assert_eq!(cpu.registers.pc, 0x8003, "Program counter should advance by 3");
+    }
+
+    #[rstest]
+    fn test_lda_absolute_x_executes_after_five_cycles_when_crossing_page_boundary(
+        mut memory: [u8; 65536],
+        mut cpu: CPU6502,
+        interrupt_handler: DefaultInterruptHandler,
+    ) {
+        cpu.registers.pc = 0x8000;
+        cpu.registers.x = 0x01;
+        memory[0x8000] = 0xBD; // LDA absolute,X opcode
+        memory[0x8001] = 0xFF; // low byte
+        memory[0x8002] = 0x20; // high byte
+        memory[0x2100] = 0x99; // target value after page crossing
+
+        for cycle in 1..5 {
+            cpu.step(&mut memory, &interrupt_handler);
+            assert_eq!(
+                cpu.registers.a, 0x00,
+                "LDA absolute,X should not execute on cycle {cycle}"
+            );
+            assert_eq!(cpu.registers.pc, 0x8000, "PC should not advance before execution");
+        }
+
+        cpu.step(&mut memory, &interrupt_handler);
+        assert_eq!(
+            cpu.registers.a, 0x99,
+            "LDA absolute,X should load on cycle 5 when crossing a page"
+        );
+        assert_eq!(cpu.registers.pc, 0x8003, "Program counter should advance by 3");
     }
 }
