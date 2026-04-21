@@ -1,6 +1,6 @@
 use log::error;
 use pixels::{Pixels, SurfaceTexture};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use winit::{
     application::ApplicationHandler,
@@ -14,15 +14,25 @@ use crate::screen::renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH, PAL_HEIGHT, PAL_WIDTH
 
 const FRAME_TIME: Duration = Duration::from_nanos(1_000_000_000 / 50);
 
+pub struct SharedVideoState {
+    pub screen_rgba: Vec<u32>,
+    pub border_rgba: u32,
+}
+
 #[derive(Default)]
 pub struct DisplayApp {
     window: Option<Arc<Window>>,
     pixels: Option<Pixels<'static>>,
+    shared_video_state: Option<Arc<Mutex<SharedVideoState>>>,
     screen_rgba: Vec<u32>,
     border_rgba: u32,
 }
 
 impl DisplayApp {
+    pub fn set_shared_video_state(&mut self, shared_video_state: Arc<Mutex<SharedVideoState>>) {
+        self.shared_video_state = Some(shared_video_state);
+    }
+
     pub fn set_border_rgba(&mut self, border_rgba: u32) {
         self.border_rgba = border_rgba;
     }
@@ -86,6 +96,20 @@ impl ApplicationHandler for DisplayApp {
                 let Some(pixels) = self.pixels.as_mut() else {
                     return;
                 };
+
+                if let Some(shared_video_state) = self.shared_video_state.as_ref() {
+                    let state = match shared_video_state.lock() {
+                        Ok(guard) => guard,
+                        Err(poisoned) => poisoned.into_inner(),
+                    };
+
+                    self.border_rgba = state.border_rgba;
+                    if self.screen_rgba.len() == state.screen_rgba.len() {
+                        self.screen_rgba.copy_from_slice(&state.screen_rgba);
+                    } else {
+                        self.screen_rgba.clone_from(&state.screen_rgba);
+                    }
+                }
 
                 let frame = pixels.frame_mut();
                 display_vic20_screen(frame, self.border_rgba, &self.screen_rgba);

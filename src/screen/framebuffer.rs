@@ -1,4 +1,4 @@
-use super::renderer::{TEXT_COLUMNS, TEXT_ROWS};
+use crate::screen::renderer::{TEXT_COLUMNS, TEXT_ROWS};
 
 pub type Glyph = [u8; 8];
 pub const SCREEN_GLYPH_COUNT: usize = TEXT_COLUMNS * TEXT_ROWS;

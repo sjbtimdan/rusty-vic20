@@ -59,6 +59,14 @@ impl Bus {
         self.vic.step(&self.memory);
     }
 
+    pub fn render_active_screen(&self) -> Vec<u32> {
+        self.vic.render_active_screen(&self.memory)
+    }
+
+    pub fn border_rgba(&self) -> u32 {
+        self.vic.border_rgba()
+    }
+
     pub fn load_standard_roms_from_data_dir(&mut self) {
         let data_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/data");
         let basic_rom = fs::read(format!("{}/basic.901486-01.bin", data_dir)).expect("Missing basic_rom");
