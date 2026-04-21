@@ -36,6 +36,12 @@ impl DisplayApp {
         );
         self.screen_rgba = screen_rgba;
     }
+
+    pub fn request_redraw(&self) {
+        if let Some(window) = self.window.as_ref() {
+            window.request_redraw();
+        }
+    }
 }
 
 impl ApplicationHandler for DisplayApp {

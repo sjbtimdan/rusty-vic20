@@ -53,12 +53,10 @@ fn main() {
         .spawn(move || run_vic20_loop(tick_duration))
         .expect("failed to spawn VIC-20 core thread");
 
-    loop {
-        let event_loop = EventLoop::new().expect("failed to create event loop");
-        let mut app = DisplayApp::default();
-        let frame = vec![0_u32; 32384];
-        app.set_screen_rgba(frame);
-        app.set_border_rgba(0x0044AAFF);
-        event_loop.run_app(&mut app).expect("event loop run failed");
-    }
+    let event_loop = EventLoop::new().expect("failed to create event loop");
+    let mut app = DisplayApp::default();
+    let frame = vec![0_u32; 32384];
+    app.set_screen_rgba(frame);
+    app.set_border_rgba(0x0044AAFF);
+    event_loop.run_app(&mut app).expect("event loop run failed");
 }
