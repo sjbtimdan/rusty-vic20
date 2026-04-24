@@ -8,8 +8,7 @@ pub struct Bus {
     watchpoints: Vec<MemoryWriteWatchpoint>,
 }
 
-pub const SCREEN_RAM_START: u16 = 0x1E00;
-pub const SCREEN_RAM_END: u16 = 0x2000;
+pub const SCREEN_RAM_SIZE: usize = 512;
 pub const COLOUR_RAM_START: usize = 0x9400;
 pub const COLOUR_RAM_END: usize = 0x97FF;
 pub const CHARACTER_ROM_START: usize = 0x8000;
@@ -51,8 +50,8 @@ impl Addressable for Bus {
 }
 
 impl Bus {
-    pub fn add_watchpoint_at(&mut self, address: u16) {
-        self.watchpoints.push(MemoryWriteWatchpoint::new(address));
+    pub fn add_watchpoint(&mut self, watchpoint: MemoryWriteWatchpoint) {
+        self.watchpoints.push(watchpoint);
     }
 
     pub fn step_devices(&mut self) {

@@ -6,6 +6,7 @@ use rusty_vic20::{
         display::{DisplayApp, SharedVideoState},
         renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH},
     },
+    tools::debug::MemoryWriteWatchpoint,
 };
 use std::env;
 use std::sync::{Arc, Mutex};
@@ -13,7 +14,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 use winit::event_loop::EventLoop;
 
-const DEFAULT_TICK_MICROS: u64 = 1;
+const DEFAULT_TICK_MICROS: u64 = 0;
 const FRAME_PUBLISH_INTERVAL: Duration = Duration::from_millis(20);
 
 fn parse_tick_duration() -> Duration {
@@ -31,6 +32,7 @@ fn run_vic20_loop(tick_duration: Duration, shared_video_state: Arc<Mutex<SharedV
     let interrupt_handler = DefaultInterruptHandler;
     let mut last_frame_publish = Instant::now();
 
+    bus.add_watchpoint(MemoryWriteWatchpoint::watch_address_range(0x9000, 0x900F)); // Watch all screen RAM writes
     bus.load_standard_roms_from_data_dir();
     let reset_vector = bus.read_word(0xFFFC);
     cpu.reset(reset_vector);

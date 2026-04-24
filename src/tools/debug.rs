@@ -21,17 +21,25 @@ impl Breakpoint for LoggingAddressBreakpoint {
 }
 
 pub struct MemoryWriteWatchpoint {
-    address: u16,
+    address: Box<dyn Fn(u16) -> bool>,
 }
 
 impl MemoryWriteWatchpoint {
-    pub fn new(address: u16) -> MemoryWriteWatchpoint {
-        MemoryWriteWatchpoint { address }
+    pub fn watch_address(address: u16) -> MemoryWriteWatchpoint {
+        MemoryWriteWatchpoint {
+            address: Box::new(move |addr| addr == address),
+        }
+    }
+
+    pub fn watch_address_range(start: u16, end: u16) -> MemoryWriteWatchpoint {
+        MemoryWriteWatchpoint {
+            address: Box::new(move |addr| addr >= start && addr <= end),
+        }
     }
 
     pub fn on_write(&self, address: u16, value: u8) {
-        if address == self.address {
-            println!("Watchpoint: Write of 0x{:02X} to 0x{:04X}", value, self.address);
+        if (self.address)(address) {
+            println!("Watchpoint: Write of 0x{:02X} to 0x{:04X}", value, address);
         }
     }
 }

@@ -1,13 +1,25 @@
 use crate::{
     addressable::Addressable,
-    bus::{CHARACTER_ROM_END, CHARACTER_ROM_START, COLOUR_RAM_END, COLOUR_RAM_START, SCREEN_RAM_END, SCREEN_RAM_START},
+    bus::{CHARACTER_ROM_END, CHARACTER_ROM_START, COLOUR_RAM_END, COLOUR_RAM_START, SCREEN_RAM_SIZE},
     screen::renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH, CHAR_HEIGHT, CHAR_WIDTH, TEXT_COLUMNS},
 };
 
-#[derive(Default)]
 pub struct VIC {
     registers: [u8; 16],
     cycle_count: u64,
+}
+
+impl Default for VIC {
+    fn default() -> Self {
+        let mut vic = Self {
+            registers: [0; 16],
+            cycle_count: 0,
+        };
+        vic.registers[0x03] = 0x1E;
+        vic.registers[0x05] = 0x80;
+        vic.registers[0x0F] = 0x0E;
+        vic
+    }
 }
 
 impl VIC {
@@ -16,7 +28,8 @@ impl VIC {
     }
 
     pub fn render_active_screen(&self, memory: &[u8; 65536]) -> Vec<u32> {
-        let screen_ram = &memory[SCREEN_RAM_START as usize..SCREEN_RAM_END as usize];
+        let screen_ram_start = self.screen_ram_start() as usize;
+        let screen_ram = &memory[screen_ram_start..screen_ram_start + SCREEN_RAM_SIZE];
         let color_ram = &memory[COLOUR_RAM_START..=COLOUR_RAM_END];
         let char_rom = &memory[CHARACTER_ROM_START..=CHARACTER_ROM_END];
         let background_color = self.registers[0x0E] & 0x0F;
@@ -44,6 +57,13 @@ impl VIC {
     pub fn border_rgba(&self) -> u32 {
         let border_color = self.registers[0x0F] & 0x0F;
         self.palette(border_color)
+    }
+
+    fn screen_ram_start(&self) -> u16 {
+        // S = 4* (PEEK (36866) AND 128) + 64* (PEEK (36869) AND 112)
+        let m_36866 = self.registers[0x02] as u16;
+        let m_36869 = self.registers[0x05] as u16;
+        4 * (m_36866 & 0x80) + 64 * (m_36869 & 0x70)
     }
 
     fn palette(&self, index: u8) -> u32 {
