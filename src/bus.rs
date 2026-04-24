@@ -53,7 +53,7 @@ impl Bus {
     }
 
     pub fn step_devices(&mut self) {
-        self.vic.step(&self.memory);
+        self.vic.step();
     }
 
     pub fn render_active_screen(&self) -> Vec<u32> {

@@ -23,11 +23,8 @@ impl Default for VIC {
 }
 
 impl VIC {
-    pub fn step(&mut self, memory: &[u8; 65536]) {
+    pub fn step(&mut self) {
         self.cycle_count += 1;
-        if self.cycle_count % 100 == 0 {
-            self.render_active_screen(memory);
-        }
     }
 
     #[must_use]
