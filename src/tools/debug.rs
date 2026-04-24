@@ -1,3 +1,5 @@
+use log::info;
+
 pub trait Breakpoint {
     fn on_hit(&self, address: u16);
 }
@@ -15,7 +17,7 @@ impl LoggingAddressBreakpoint {
 impl Breakpoint for LoggingAddressBreakpoint {
     fn on_hit(&self, address: u16) {
         if address == self.address {
-            println!("Breakpoint: 0x{:04X}", self.address);
+            info!("Breakpoint: 0x{:04X}", self.address);
         }
     }
 }

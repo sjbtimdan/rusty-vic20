@@ -1,6 +1,6 @@
 use crate::{
     addressable::Addressable,
-    bus::{CHARACTER_ROM_END, CHARACTER_ROM_START, COLOUR_RAM_END, COLOUR_RAM_START, SCREEN_RAM_SIZE},
+    bus::{CHARACTER_ROM_END, CHARACTER_ROM_START, SCREEN_RAM_SIZE},
     screen::renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH, CHAR_HEIGHT, CHAR_WIDTH, TEXT_COLUMNS},
 };
 
@@ -23,16 +23,21 @@ impl Default for VIC {
 }
 
 impl VIC {
-    pub fn step(&mut self, _memory: &[u8; 65536]) {
+    pub fn step(&mut self, memory: &[u8; 65536]) {
         self.cycle_count += 1;
+        if self.cycle_count % 100 == 0 {
+            self.render_active_screen(memory);
+        }
     }
 
+    #[must_use]
     pub fn render_active_screen(&self, memory: &[u8; 65536]) -> Vec<u32> {
         let screen_ram_start = self.screen_ram_start() as usize;
         let screen_ram = &memory[screen_ram_start..screen_ram_start + SCREEN_RAM_SIZE];
-        let color_ram = &memory[COLOUR_RAM_START..=COLOUR_RAM_END];
+        let colour_ram_start = self.colour_ram_start() as usize;
+        let colour_ram = &memory[colour_ram_start..=colour_ram_start + SCREEN_RAM_SIZE];
         let char_rom = &memory[CHARACTER_ROM_START..=CHARACTER_ROM_END];
-        let background_color = self.registers[0x0E] & 0x0F;
+        let background_colour = self.registers[0x0E] & 0x0F;
         let mut framebuffer = Vec::with_capacity(ACTIVE_WIDTH * ACTIVE_HEIGHT);
 
         for active_y in 0..ACTIVE_HEIGHT {
@@ -41,16 +46,15 @@ impl VIC {
                 let col = active_x / CHAR_WIDTH;
                 let idx = row * TEXT_COLUMNS + col;
                 let char_code = screen_ram[idx];
-                let fg_color = color_ram[idx] & 0x0F;
+                let fg_color = colour_ram[idx] & 0x0F;
                 let bitmap_row = &char_rom[char_code as usize * CHAR_HEIGHT..(char_code as usize + 1) * CHAR_HEIGHT]
                     [active_y % CHAR_HEIGHT];
                 let bit = (bitmap_row >> (7 - (active_x % CHAR_WIDTH))) & 1;
-                let colour_index = if bit == 1 { fg_color } else { background_color };
+                let colour_index = if bit == 1 { fg_color } else { background_colour };
 
                 framebuffer.push(self.palette(colour_index));
             }
         }
-
         framebuffer
     }
 
@@ -64,6 +68,12 @@ impl VIC {
         let m_36866 = self.registers[0x02] as u16;
         let m_36869 = self.registers[0x05] as u16;
         4 * (m_36866 & 0x80) + 64 * (m_36869 & 0x70)
+    }
+
+    fn colour_ram_start(&self) -> u16 {
+        // C = 37888 + 4* (PEEK (36866) AND 128)
+        let m_36866 = self.registers[0x02] as u16;
+        0x9400 + 4 * (m_36866 & 0x80)
     }
 
     fn palette(&self, index: u8) -> u32 {

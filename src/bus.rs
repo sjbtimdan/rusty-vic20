@@ -9,8 +9,6 @@ pub struct Bus {
 }
 
 pub const SCREEN_RAM_SIZE: usize = 512;
-pub const COLOUR_RAM_START: usize = 0x9400;
-pub const COLOUR_RAM_END: usize = 0x97FF;
 pub const CHARACTER_ROM_START: usize = 0x8000;
 pub const CHARACTER_ROM_END: usize = 0x8FFF;
 pub const BASIC_ROM_START: usize = 0xC000;
