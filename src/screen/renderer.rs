@@ -59,6 +59,28 @@ fn write_rgba_bytes(bytes: &mut [u8], rgba: u32) {
     bytes[3] = (rgba & 0xFF) as u8;
 }
 
+pub fn palette(index: u8) -> u32 {
+    match index {
+        0 => 0x000000FF,  // black
+        1 => 0xFFFFFFFF,  // white
+        2 => 0x880000FF,  // red
+        3 => 0xAAFFEEFF,  // cyan
+        4 => 0xCC44CCFF,  // purple
+        5 => 0x00CC55FF,  // green
+        6 => 0x0000AAFF,  // blue
+        7 => 0xEEEE77FF,  // yellow
+        8 => 0xDD8855FF,  // orange
+        9 => 0xFFBB77FF,  // light orange
+        10 => 0xFF7777FF, // pink
+        11 => 0xCCFFFFFF, // light cyan
+        12 => 0xFFBBFFFF, // light purple
+        13 => 0xAAFF66FF, // light green
+        14 => 0x7777FFFF, // light blue
+        15 => 0xFFFFBBFF, // light yellow
+        _ => 0x000000FF,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

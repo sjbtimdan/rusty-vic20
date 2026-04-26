@@ -1,7 +1,7 @@
 use crate::{
     addressable::Addressable,
     bus::{CHARACTER_ROM_END, CHARACTER_ROM_START, SCREEN_RAM_SIZE},
-    screen::renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH, CHAR_HEIGHT, CHAR_WIDTH, TEXT_COLUMNS},
+    screen::renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH, CHAR_HEIGHT, CHAR_WIDTH, TEXT_COLUMNS, palette},
 };
 
 pub struct VIC {
@@ -34,7 +34,7 @@ impl VIC {
         let colour_ram_start = self.colour_ram_start() as usize;
         let colour_ram = &memory[colour_ram_start..=colour_ram_start + SCREEN_RAM_SIZE];
         let char_rom = &memory[CHARACTER_ROM_START..=CHARACTER_ROM_END];
-        let background_colour = self.registers[0x0E] & 0x0F;
+        let background_colour = self.background_colour();
         let mut framebuffer = Vec::with_capacity(ACTIVE_WIDTH * ACTIVE_HEIGHT);
 
         for active_y in 0..ACTIVE_HEIGHT {
@@ -49,15 +49,15 @@ impl VIC {
                 let bit = (bitmap_row >> (7 - (active_x % CHAR_WIDTH))) & 1;
                 let colour_index = if bit == 1 { fg_color } else { background_colour };
 
-                framebuffer.push(self.palette(colour_index));
+                framebuffer.push(palette(colour_index));
             }
         }
         framebuffer
     }
 
     pub fn border_rgba(&self) -> u32 {
-        let border_color = self.registers[0x0F] & 0x0F;
-        self.palette(border_color)
+        let border_color = self.registers[0x0F] & 0x07;
+        palette(border_color)
     }
 
     fn screen_ram_start(&self) -> u16 {
@@ -73,26 +73,8 @@ impl VIC {
         0x9400 + 4 * (m_36866 & 0x80)
     }
 
-    fn palette(&self, index: u8) -> u32 {
-        match index {
-            0 => 0x000000FF,  // black
-            1 => 0xFFFFFFFF,  // white
-            2 => 0x880000FF,  // red
-            3 => 0x00FFFFFF,  // cyan
-            4 => 0xAA00AAFF,  // purple
-            5 => 0x00AA00FF,  // green
-            6 => 0x0000AAFF,  // blue
-            7 => 0xAAAA00FF,  // yellow
-            8 => 0xFF8800FF,  // orange
-            9 => 0x884400FF,  // brown
-            10 => 0xFFAAAAFF, // light red
-            11 => 0x444444FF, // dark gray
-            12 => 0x888888FF, // medium gray
-            13 => 0xAAFFAAFF, // light green
-            14 => 0xAAAAFFFF, // light blue
-            15 => 0xCCCCCCFF, // light gray
-            _ => 0x000000FF,
-        }
+    fn background_colour(&self) -> u8 {
+        (self.registers[0x0F] & 0xF0) >> 4
     }
 }
 
