@@ -6,5 +6,6 @@ pub mod memory;
 pub mod scheduled_operation;
 pub mod screen;
 pub mod tools;
+pub mod via2;
 pub mod vic;
 pub mod virtual_clock;

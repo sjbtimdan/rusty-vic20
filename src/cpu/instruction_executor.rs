@@ -13,7 +13,7 @@ use crate::{
 
 pub trait InstructionExecutor {
     fn execute_instruction(
-        &mut self,
+        &self,
         registers: &mut Registers,
         memory: &mut dyn Addressable,
         instruction: Instruction,
@@ -23,12 +23,11 @@ pub trait InstructionExecutor {
     ) -> bool;
 }
 
-#[derive(Default)]
 pub struct DefaultInstructionExecutor;
 
 impl InstructionExecutor for DefaultInstructionExecutor {
     fn execute_instruction(
-        &mut self,
+        &self,
         registers: &mut Registers,
         memory: &mut dyn Addressable,
         instruction: Instruction,
@@ -81,7 +80,7 @@ fn execute_instruction(
             // Set interrupt disable flag
             registers.set_flag(INTERRUPT_FLAG_BITMASK, true);
             // Dispatch to IRQ/BRK vector
-            interrupt_handler.handle_interrupt(registers, memory);
+            interrupt_handler.handle_interrupt(memory);
         }
         Instruction::BIT => {
             let value = operand_resolution.resolve_value(registers, memory, operands);
@@ -371,7 +370,7 @@ mod tests {
     use super::*;
     use crate::cpu::addressing_mode::OperandResolutionMock;
     use crate::cpu::instructions::*;
-    use crate::cpu::interrupt_handler::{InterruptHandler, InterruptHandlerMock};
+    use crate::cpu::interrupt_handler::{InterruptHandlerMock, NoOpInterruptHandler};
     use crate::cpu::registers::*;
     use crate::memory::Memory;
     use unimock::Unimock;
@@ -384,11 +383,6 @@ mod tests {
     #[fixture]
     fn memory() -> Memory {
         crate::memory::default()
-    }
-
-    struct NoOpInterruptHandler;
-    impl InterruptHandler for NoOpInterruptHandler {
-        fn handle_interrupt(&self, _registers: &mut Registers, _memory: &mut dyn crate::addressable::Addressable) {}
     }
 
     // adc_binary: (a, operand, carry_in, expected, carry, overflow, zero, negative)
@@ -1248,7 +1242,7 @@ mod tests {
         let operand_resolution = Unimock::new(());
         let interrupt_handler = Unimock::new(
             InterruptHandlerMock::handle_interrupt
-                .each_call(matching!(_, _))
+                .each_call(matching!(_))
                 .returns(()),
         );
         execute_instruction(

@@ -1,10 +1,14 @@
-use crate::{addressable::Addressable, memory::Memory, tools::debug::MemoryWriteWatchpoint, vic::VIC};
+use crate::{
+    addressable::Addressable, cpu::cpu6502::CPU6502, memory::Memory, tools::debug::MemoryWriteWatchpoint, via2::VIA2,
+    vic::VIC,
+};
 use log::info;
 use std::fs;
 
 pub struct Bus {
     memory: Memory,
     vic: VIC,
+    via2: VIA2,
     watchpoints: Vec<MemoryWriteWatchpoint>,
 }
 
@@ -23,6 +27,7 @@ impl Default for Bus {
         Self {
             memory: [0; 65536],
             vic: VIC::default(),
+            via2: VIA2::default(),
             watchpoints: vec![],
         }
     }
@@ -52,8 +57,9 @@ impl Bus {
         self.watchpoints.push(watchpoint);
     }
 
-    pub fn step_devices(&mut self) {
+    pub fn step_devices(&mut self, cpu: &mut CPU6502) {
         self.vic.step();
+        self.via2.step(cpu, &mut self.memory);
     }
 
     pub fn render_active_screen(&self) -> Vec<u32> {

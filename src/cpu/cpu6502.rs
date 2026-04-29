@@ -2,9 +2,9 @@ use crate::{
     addressable::Addressable,
     cpu::{
         addressing_mode::OperandResolution,
-        instruction_executor::{DefaultInstructionExecutor, InstructionExecutor},
+        instruction_executor::InstructionExecutor,
         instructions::{Instruction, InstructionInfo, decode},
-        interrupt_handler::InterruptHandler,
+        interrupt_handler::NoOpInterruptHandler,
         registers::{DECIMAL_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK, Registers},
     },
     tools::{
@@ -24,7 +24,6 @@ pub struct CPU6502 {
     cycle_count: u8,
     operands_index: usize,
     operands_buffer: [u8; 2],
-    instruction_executor: Box<dyn InstructionExecutor>,
     total_cycles: u64,
     last_performance_log_cycle: u64,
     last_performance_log_instant: Instant,
@@ -42,7 +41,6 @@ impl Default for CPU6502 {
             cycle_count_at_end_of_this_instruction: 0,
             operands_index: 0,
             operands_buffer: [0; 2],
-            instruction_executor: Box::new(DefaultInstructionExecutor),
             total_cycles: 0,
             last_performance_log_cycle: 0,
             last_performance_log_instant: Instant::now(),
@@ -61,24 +59,23 @@ impl CPU6502 {
         registers.pc = reset_vector;
     }
 
-    pub fn interrupt(&mut self, memory: &mut impl Addressable, interrupt_handler: &impl InterruptHandler) {
+    pub fn interrupt(&mut self, memory: &mut impl Addressable) {
         if self.registers.is_flag_set(INTERRUPT_FLAG_BITMASK) {
             return;
         }
         if self.current_instruction_info.is_none() {
-            self.do_interrupt(memory, interrupt_handler);
+            self.do_interrupt(memory);
         } else {
             self.interrupt_requested = true;
         }
     }
 
-    fn do_interrupt(&mut self, memory: &mut impl Addressable, interrupt_handler: &impl InterruptHandler) {
+    fn do_interrupt(&mut self, memory: &mut impl Addressable) {
         memory.write_word(0x0100 + self.registers.sp as u16, self.registers.pc);
         memory.write_byte(0x0100 + self.registers.sp.wrapping_sub(2) as u16, self.registers.status);
         self.registers.sp = self.registers.sp.wrapping_sub(3);
         self.registers.set_flag(INTERRUPT_FLAG_BITMASK, true);
         self.registers.pc = memory.read_word(0xFFFE);
-        self.step(memory, interrupt_handler);
     }
 
     pub fn add_breakpoint_address(&mut self, address: u16) {
@@ -89,9 +86,10 @@ impl CPU6502 {
         self.breakpoints.push(breakpoint);
     }
 
-    pub fn step(&mut self, memory: &mut impl Addressable, interrupt_handler: &impl InterruptHandler) {
+    pub fn step(&mut self, memory: &mut impl Addressable, instruction_executor: &impl InstructionExecutor) {
+        let interrupt_handler = NoOpInterruptHandler;
         if self.interrupt_requested && self.current_instruction_info.is_none() {
-            self.do_interrupt(memory, interrupt_handler);
+            self.do_interrupt(memory);
             self.interrupt_requested = false;
             return;
         }
@@ -146,13 +144,13 @@ impl CPU6502 {
                 };
                 let pc_before = self.registers.pc;
                 let expected_next_pc = pc_before.wrapping_add(1 + instruction_info.mode.operand_count() as u16);
-                let increment_pc = self.instruction_executor.execute_instruction(
+                let increment_pc = instruction_executor.execute_instruction(
                     &mut self.registers,
                     memory,
                     instruction_info.instruction,
                     &instruction_info.mode,
                     &self.operands_buffer,
-                    interrupt_handler,
+                    &interrupt_handler,
                 );
                 if increment_pc {
                     self.registers
@@ -201,8 +199,9 @@ fn log_instruction_result(
 
 #[cfg(test)]
 mod tests {
+    use crate::cpu::instruction_executor;
+
     use super::*;
-    use crate::cpu::interrupt_handler::DefaultInterruptHandler;
     use rstest::{fixture, rstest};
 
     #[fixture]
@@ -215,54 +214,42 @@ mod tests {
         CPU6502::default()
     }
 
-    #[fixture]
-    fn interrupt_handler() -> DefaultInterruptHandler {
-        DefaultInterruptHandler
-    }
-
     #[rstest]
-    fn test_inx_executes_after_two_steps(
-        mut memory: [u8; 65536],
-        mut cpu: CPU6502,
-        interrupt_handler: DefaultInterruptHandler,
-    ) {
+    fn test_inx_executes_after_two_steps(mut memory: [u8; 65536], mut cpu: CPU6502) {
+        let instruction_executor: instruction_executor::DefaultInstructionExecutor =
+            instruction_executor::DefaultInstructionExecutor;
         cpu.registers.pc = 0x8000;
         memory[0x8000] = 0xE8; // INX opcode
 
-        cpu.step(&mut memory, &interrupt_handler);
+        cpu.step(&mut memory, &instruction_executor);
         assert_eq!(cpu.registers.x, 0x00, "INX should not execute on first cycle");
         assert_eq!(cpu.registers.pc, 0x8000, "PC should not advance on first cycle");
 
-        cpu.step(&mut memory, &interrupt_handler);
+        cpu.step(&mut memory, &instruction_executor);
         assert_eq!(cpu.registers.x, 0x01, "INX should execute on second cycle");
         assert_eq!(cpu.registers.pc, 0x8001, "Program counter should advance by 1");
     }
 
     #[rstest]
-    fn test_lda_immediate_executes_after_two_cycles(
-        mut memory: [u8; 65536],
-        mut cpu: CPU6502,
-        interrupt_handler: DefaultInterruptHandler,
-    ) {
+    fn test_lda_immediate_executes_after_two_cycles(mut memory: [u8; 65536], mut cpu: CPU6502) {
+        let instruction_executor = instruction_executor::DefaultInstructionExecutor;
         cpu.registers.pc = 0x8000;
         memory[0x8000] = 0xA9; // LDA immediate opcode
         memory[0x8001] = 0x20; // LDA immediate operand
 
-        cpu.step(&mut memory, &interrupt_handler);
+        cpu.step(&mut memory, &instruction_executor);
         assert_eq!(cpu.registers.a, 0x00, "LDA should not execute on first cycle");
         assert_eq!(cpu.registers.pc, 0x8000, "PC should not advance on first cycle");
 
-        cpu.step(&mut memory, &interrupt_handler);
+        cpu.step(&mut memory, &instruction_executor);
         assert_eq!(cpu.registers.a, 0x20, "LDA immediate should load operand");
         assert_eq!(cpu.registers.pc, 0x8002, "Program counter should advance by 2");
     }
 
     #[rstest]
-    fn test_lda_absolute_x_executes_after_four_cycles_without_page_crossing(
-        mut memory: [u8; 65536],
-        mut cpu: CPU6502,
-        interrupt_handler: DefaultInterruptHandler,
-    ) {
+    fn test_lda_absolute_x_executes_after_four_cycles_without_page_crossing(mut memory: [u8; 65536], mut cpu: CPU6502) {
+        let instruction_executor: instruction_executor::DefaultInstructionExecutor =
+            instruction_executor::DefaultInstructionExecutor;
         cpu.registers.pc = 0x8000;
         cpu.registers.x = 0x01;
         memory[0x8000] = 0xBD; // LDA absolute,X opcode
@@ -271,7 +258,7 @@ mod tests {
         memory[0x2011] = 0x42; // target value
 
         for cycle in 1..4 {
-            cpu.step(&mut memory, &interrupt_handler);
+            cpu.step(&mut memory, &instruction_executor);
             assert_eq!(
                 cpu.registers.a, 0x00,
                 "LDA absolute,X should not execute on cycle {cycle}"
@@ -279,7 +266,7 @@ mod tests {
             assert_eq!(cpu.registers.pc, 0x8000, "PC should not advance before execution");
         }
 
-        cpu.step(&mut memory, &interrupt_handler);
+        cpu.step(&mut memory, &instruction_executor);
         assert_eq!(cpu.registers.a, 0x42, "LDA absolute,X should load on cycle 4");
         assert_eq!(cpu.registers.pc, 0x8003, "Program counter should advance by 3");
     }
@@ -288,7 +275,6 @@ mod tests {
     fn test_lda_absolute_x_executes_after_five_cycles_when_crossing_page_boundary(
         mut memory: [u8; 65536],
         mut cpu: CPU6502,
-        interrupt_handler: DefaultInterruptHandler,
     ) {
         cpu.registers.pc = 0x8000;
         cpu.registers.x = 0x01;
@@ -297,8 +283,11 @@ mod tests {
         memory[0x8002] = 0x20; // high byte
         memory[0x2100] = 0x99; // target value after page crossing
 
+        let instruction_executor: instruction_executor::DefaultInstructionExecutor =
+            instruction_executor::DefaultInstructionExecutor;
+
         for cycle in 1..5 {
-            cpu.step(&mut memory, &interrupt_handler);
+            cpu.step(&mut memory, &instruction_executor);
             assert_eq!(
                 cpu.registers.a, 0x00,
                 "LDA absolute,X should not execute on cycle {cycle}"
@@ -306,7 +295,7 @@ mod tests {
             assert_eq!(cpu.registers.pc, 0x8000, "PC should not advance before execution");
         }
 
-        cpu.step(&mut memory, &interrupt_handler);
+        cpu.step(&mut memory, &instruction_executor);
         assert_eq!(
             cpu.registers.a, 0x99,
             "LDA absolute,X should load on cycle 5 when crossing a page"

@@ -1,7 +1,7 @@
 use rusty_vic20::{
     addressable::Addressable,
     bus::Bus,
-    cpu::{cpu6502::CPU6502, interrupt_handler::DefaultInterruptHandler},
+    cpu::{cpu6502::CPU6502, instruction_executor},
     screen::{
         display::{DisplayApp, SharedVideoState},
         renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH},
@@ -29,8 +29,8 @@ fn parse_tick_duration() -> Duration {
 fn run_vic20_loop(tick_duration: Duration, shared_video_state: Arc<Mutex<SharedVideoState>>) {
     let mut cpu = CPU6502::default();
     let mut bus = Bus::default();
-    let interrupt_handler = DefaultInterruptHandler;
     let mut last_frame_publish = Instant::now();
+    let instruction_executor = instruction_executor::DefaultInstructionExecutor;
 
     bus.load_standard_roms_from_data_dir();
     let reset_vector = bus.read_word(0xFFFC);
@@ -40,8 +40,8 @@ fn run_vic20_loop(tick_duration: Duration, shared_video_state: Arc<Mutex<SharedV
     // bus.add_watchpoint(MemoryWriteWatchpoint::watch_address_range(0x1E00, 0x1E00+22)); // Watch writes to first byte of screen RAM
 
     loop {
-        cpu.step(&mut bus, &interrupt_handler);
-        bus.step_devices();
+        cpu.step(&mut bus, &instruction_executor);
+        bus.step_devices(&mut cpu);
 
         if last_frame_publish.elapsed() >= FRAME_PUBLISH_INTERVAL {
             let latest_screen_rgba = bus.render_active_screen();
