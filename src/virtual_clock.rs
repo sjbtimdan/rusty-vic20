@@ -12,3 +12,23 @@ impl Clock for SystemClock {
         Instant::now()
     }
 }
+
+pub struct MockClock {
+    pub now: Instant,
+}
+
+impl MockClock {
+    pub fn new(now: Instant) -> Self {
+        Self { now }
+    }
+
+    pub fn advance(&mut self, by: std::time::Duration) {
+        self.now += by;
+    }
+}
+
+impl Clock for MockClock {
+    fn now(&self) -> Instant {
+        self.now
+    }
+}
