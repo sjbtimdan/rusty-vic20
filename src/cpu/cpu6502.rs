@@ -29,6 +29,7 @@ pub struct CPU6502 {
     last_performance_log_cycle: u64,
     last_performance_log_instant: Instant,
     breakpoints: Vec<Box<dyn Breakpoint>>,
+    interrupt_requested: bool,
 }
 
 impl Default for CPU6502 {
@@ -46,6 +47,7 @@ impl Default for CPU6502 {
             last_performance_log_cycle: 0,
             last_performance_log_instant: Instant::now(),
             breakpoints: vec![],
+            interrupt_requested: false,
         }
     }
 }
@@ -59,6 +61,26 @@ impl CPU6502 {
         registers.pc = reset_vector;
     }
 
+    pub fn interrupt(&mut self, memory: &mut impl Addressable, interrupt_handler: &impl InterruptHandler) {
+        if self.registers.is_flag_set(INTERRUPT_FLAG_BITMASK) {
+            return;
+        }
+        if self.current_instruction_info.is_none() {
+            self.do_interrupt(memory, interrupt_handler);
+        } else {
+            self.interrupt_requested = true;
+        }
+    }
+
+    fn do_interrupt(&mut self, memory: &mut impl Addressable, interrupt_handler: &impl InterruptHandler) {
+        memory.write_word(0x0100 + self.registers.sp as u16, self.registers.pc);
+        memory.write_byte(0x0100 + self.registers.sp.wrapping_sub(2) as u16, self.registers.status);
+        self.registers.sp = self.registers.sp.wrapping_sub(3);
+        self.registers.set_flag(INTERRUPT_FLAG_BITMASK, true);
+        self.registers.pc = memory.read_word(0xFFFE);
+        self.step(memory, interrupt_handler);
+    }
+
     pub fn add_breakpoint_address(&mut self, address: u16) {
         self.add_breakpoint(Box::new(LoggingAddressBreakpoint::new(address)));
     }
@@ -68,6 +90,11 @@ impl CPU6502 {
     }
 
     pub fn step(&mut self, memory: &mut impl Addressable, interrupt_handler: &impl InterruptHandler) {
+        if self.interrupt_requested && self.current_instruction_info.is_none() {
+            self.do_interrupt(memory, interrupt_handler);
+            self.interrupt_requested = false;
+            return;
+        }
         self.total_cycles += 1;
         if self.total_cycles - self.last_performance_log_cycle >= PERFORMANCE_LOG_INTERVAL_CYCLES {
             let elapsed = self.last_performance_log_instant.elapsed();
