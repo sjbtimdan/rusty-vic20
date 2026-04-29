@@ -25,6 +25,25 @@ struct KeyboardApp {
     state: KeyboardState,
 }
 
+#[derive(Copy, Clone)]
+struct FrameSize {
+    width: usize,
+    height: usize,
+}
+
+#[derive(Copy, Clone)]
+struct Point {
+    x: i32,
+    y: i32,
+}
+
+#[derive(Copy, Clone)]
+struct Rect {
+    origin: Point,
+    width: i32,
+    height: i32,
+}
+
 impl KeyboardApp {
     fn new() -> Self {
         let keyboard = load_from_memory_with_format(KEYBOARD_PNG, ImageFormat::Png)
@@ -60,10 +79,15 @@ impl KeyboardApp {
             return;
         };
 
+        let frame_size = FrameSize {
+            width: self.image_width as usize,
+            height: self.image_height as usize,
+        };
+
         let frame = pixels.frame_mut();
         frame.copy_from_slice(&self.image_rgba);
 
-        let w = self.image_width as usize;
+        let w = frame_size.width;
 
         // Solid blue on mouse-held key.
         if let Some(held) = self.state.held_key.clone() {
@@ -107,21 +131,25 @@ impl KeyboardApp {
 
         draw_rect(
             frame,
-            self.image_width as usize,
-            self.image_height as usize,
-            8,
-            (self.image_height as i32) - 58,
-            (self.image_width as i32) - 16,
-            50,
+            frame_size,
+            Rect {
+                origin: Point {
+                    x: 8,
+                    y: (self.image_height as i32) - 58,
+                },
+                width: (self.image_width as i32) - 16,
+                height: 50,
+            },
             [12, 12, 12, 220],
         );
 
         draw_text(
             frame,
-            self.image_width as usize,
-            self.image_height as usize,
-            16,
-            (self.image_height as i32) - 49,
+            frame_size,
+            Point {
+                x: 16,
+                y: (self.image_height as i32) - 49,
+            },
             &self.state.status_message.clone(),
             [255, 255, 255, 255],
             2,
@@ -130,10 +158,11 @@ impl KeyboardApp {
         let held = self.state.held_key.as_deref().unwrap_or("(none)");
         draw_text(
             frame,
-            self.image_width as usize,
-            self.image_height as usize,
-            16,
-            (self.image_height as i32) - 28,
+            frame_size,
+            Point {
+                x: 16,
+                y: (self.image_height as i32) - 28,
+            },
             &format!("HELD: {held}"),
             [255, 220, 120, 255],
             2,
@@ -266,18 +295,18 @@ fn tint_region(frame: &mut [u8], width: usize, region: &KeyRegion, color: [u8; 3
     }
 }
 
-fn draw_rect(frame: &mut [u8], width: usize, height: usize, x: i32, y: i32, rect_w: i32, rect_h: i32, color: [u8; 4]) {
-    for dy in 0..rect_h {
-        let py = y + dy;
-        if py < 0 || py >= height as i32 {
+fn draw_rect(frame: &mut [u8], frame_size: FrameSize, rect: Rect, color: [u8; 4]) {
+    for dy in 0..rect.height {
+        let py = rect.origin.y + dy;
+        if py < 0 || py >= frame_size.height as i32 {
             continue;
         }
-        for dx in 0..rect_w {
-            let px = x + dx;
-            if px < 0 || px >= width as i32 {
+        for dx in 0..rect.width {
+            let px = rect.origin.x + dx;
+            if px < 0 || px >= frame_size.width as i32 {
                 continue;
             }
-            let idx = ((py as usize) * width + (px as usize)) * 4;
+            let idx = ((py as usize) * frame_size.width + (px as usize)) * 4;
             frame[idx] = color[0];
             frame[idx + 1] = color[1];
             frame[idx + 2] = color[2];
@@ -286,12 +315,12 @@ fn draw_rect(frame: &mut [u8], width: usize, height: usize, x: i32, y: i32, rect
     }
 }
 
-fn draw_text(frame: &mut [u8], width: usize, height: usize, x: i32, y: i32, text: &str, color: [u8; 4], scale: i32) {
-    let mut cursor_x = x;
+fn draw_text(frame: &mut [u8], frame_size: FrameSize, origin: Point, text: &str, color: [u8; 4], scale: i32) {
+    let mut cursor_x = origin.x;
     for ch in text.chars() {
         let c = ch.to_ascii_uppercase();
         if c == '\n' {
-            cursor_x = x;
+            cursor_x = origin.x;
             continue;
         }
 
@@ -302,11 +331,11 @@ fn draw_text(frame: &mut [u8], width: usize, height: usize, x: i32, y: i32, text
                         for sy in 0..scale {
                             for sx in 0..scale {
                                 let px = cursor_x + (col * scale) + sx;
-                                let py = y + (row as i32 * scale) + sy;
-                                if px < 0 || py < 0 || px >= width as i32 || py >= height as i32 {
+                                let py = origin.y + (row as i32 * scale) + sy;
+                                if px < 0 || py < 0 || px >= frame_size.width as i32 || py >= frame_size.height as i32 {
                                     continue;
                                 }
-                                let idx = ((py as usize) * width + (px as usize)) * 4;
+                                let idx = ((py as usize) * frame_size.width + (px as usize)) * 4;
                                 frame[idx] = color[0];
                                 frame[idx + 1] = color[1];
                                 frame[idx + 2] = color[2];
