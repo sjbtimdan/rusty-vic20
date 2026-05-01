@@ -4,8 +4,8 @@ use crate::{
         addressing_mode::OperandResolution,
         instruction_executor::InstructionExecutor,
         instructions::{Instruction, InstructionInfo, decode},
-        interrupt_handler::NoOpInterruptHandler,
-        registers::{DECIMAL_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK, Registers},
+        interrupt_handler::InterruptHandler,
+        registers::{BREAK_FLAG_BITMASK, DECIMAL_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK, Registers},
     },
     tools::{
         debug::{Breakpoint, LoggingAddressBreakpoint},
@@ -17,9 +17,44 @@ use std::time::Instant;
 
 const PERFORMANCE_LOG_INTERVAL_CYCLES: u64 = 1_000_000;
 
-pub struct CPU6502 {
-    registers: Registers,
+#[derive(Clone, Copy, Default)]
+pub struct InstructionTracking {
     current_instruction_info: Option<InstructionInfo>,
+    interrupt_requested: bool,
+}
+impl InterruptHandler for InstructionTracking {
+    fn handle_interrupt(&mut self, registers: &mut Registers, memory: &mut dyn Addressable, is_break: bool) {
+        if !is_break && registers.is_flag_set(INTERRUPT_FLAG_BITMASK) {
+            return;
+        }
+        if is_break || self.current_instruction_info.is_none() {
+            self.current_instruction_info = None;
+            self.do_interrupt(registers, memory, is_break);
+        } else {
+            self.interrupt_requested = true;
+        }
+    }
+}
+
+impl InstructionTracking {
+    fn do_interrupt(&mut self, registers: &mut Registers, memory: &mut dyn Addressable, is_break: bool) {
+        let return_address = if is_break {
+            registers.pc.wrapping_add(1)
+        } else {
+            registers.pc
+        };
+        memory.write_word(0x0100 + registers.sp as u16, return_address);
+        memory.write_byte(0x0100 + registers.sp.wrapping_sub(2) as u16, registers.status);
+        registers.sp = registers.sp.wrapping_sub(3);
+        registers.pc = memory.read_word(0xFFFE);
+        registers.set_flag(INTERRUPT_FLAG_BITMASK, true);
+        registers.set_flag(BREAK_FLAG_BITMASK, is_break);
+        self.interrupt_requested = false;
+    }
+}
+
+pub struct CPU6502 {
+    pub registers: Registers,
     cycle_count_at_end_of_this_instruction: u8,
     cycle_count: u8,
     operands_index: usize,
@@ -28,7 +63,7 @@ pub struct CPU6502 {
     last_performance_log_cycle: u64,
     last_performance_log_instant: Instant,
     breakpoints: Vec<Box<dyn Breakpoint>>,
-    interrupt_requested: bool,
+    pub instruction_tracking: InstructionTracking,
 }
 
 impl Default for CPU6502 {
@@ -37,7 +72,6 @@ impl Default for CPU6502 {
         Self {
             registers,
             cycle_count: 0,
-            current_instruction_info: None,
             cycle_count_at_end_of_this_instruction: 0,
             operands_index: 0,
             operands_buffer: [0; 2],
@@ -45,7 +79,7 @@ impl Default for CPU6502 {
             last_performance_log_cycle: 0,
             last_performance_log_instant: Instant::now(),
             breakpoints: vec![],
-            interrupt_requested: false,
+            instruction_tracking: InstructionTracking::default(),
         }
     }
 }
@@ -57,25 +91,7 @@ impl CPU6502 {
         registers.set_flag(INTERRUPT_FLAG_BITMASK, true);
         registers.sp = 0xFD;
         registers.pc = reset_vector;
-    }
-
-    pub fn interrupt(&mut self, memory: &mut impl Addressable) {
-        if self.registers.is_flag_set(INTERRUPT_FLAG_BITMASK) {
-            return;
-        }
-        if self.current_instruction_info.is_none() {
-            self.do_interrupt(memory);
-        } else {
-            self.interrupt_requested = true;
-        }
-    }
-
-    fn do_interrupt(&mut self, memory: &mut impl Addressable) {
-        memory.write_word(0x0100 + self.registers.sp as u16, self.registers.pc);
-        memory.write_byte(0x0100 + self.registers.sp.wrapping_sub(2) as u16, self.registers.status);
-        self.registers.sp = self.registers.sp.wrapping_sub(3);
-        self.registers.set_flag(INTERRUPT_FLAG_BITMASK, true);
-        self.registers.pc = memory.read_word(0xFFFE);
+        self.instruction_tracking = InstructionTracking::default();
     }
 
     pub fn add_breakpoint_address(&mut self, address: u16) {
@@ -87,10 +103,11 @@ impl CPU6502 {
     }
 
     pub fn step(&mut self, memory: &mut impl Addressable, instruction_executor: &impl InstructionExecutor) {
-        let interrupt_handler = NoOpInterruptHandler;
-        if self.interrupt_requested && self.current_instruction_info.is_none() {
-            self.do_interrupt(memory);
-            self.interrupt_requested = false;
+        if self.instruction_tracking.interrupt_requested && self.instruction_tracking.current_instruction_info.is_none()
+        {
+            self.instruction_tracking
+                .do_interrupt(&mut self.registers, memory, false);
+            self.instruction_tracking.interrupt_requested = false;
             return;
         }
         self.total_cycles += 1;
@@ -105,14 +122,14 @@ impl CPU6502 {
             self.last_performance_log_instant = Instant::now();
         }
         self.cycle_count += 1;
-        if self.current_instruction_info.is_none() {
+        if self.instruction_tracking.current_instruction_info.is_none() {
             let opcode = memory.read_byte(self.registers.pc);
             let current_instruction_info = decode(opcode);
-            self.current_instruction_info = Some(current_instruction_info);
+            self.instruction_tracking.current_instruction_info = Some(current_instruction_info);
             self.operands_index = 0;
             self.cycle_count_at_end_of_this_instruction = self.cycle_count + current_instruction_info.cycles - 1;
         } else {
-            let Some(instruction_info) = &self.current_instruction_info else {
+            let Some(instruction_info) = &self.instruction_tracking.current_instruction_info.clone() else {
                 panic!("Expected current_instruction_info to be Some");
             };
             if self.operands_index < instruction_info.mode.operand_count() {
@@ -150,7 +167,7 @@ impl CPU6502 {
                     instruction_info.instruction,
                     &instruction_info.mode,
                     &self.operands_buffer,
-                    &interrupt_handler,
+                    &mut self.instruction_tracking,
                 );
                 if increment_pc {
                     self.registers
@@ -158,12 +175,12 @@ impl CPU6502 {
                 }
                 log_instruction_result(
                     debug_log,
-                    instruction_info.instruction,
+                    &instruction_info.instruction,
                     pc_before,
                     self.registers.pc,
                     expected_next_pc,
                 );
-                self.current_instruction_info = None;
+                self.instruction_tracking.current_instruction_info = None;
                 self.cycle_count = 0;
             }
         }
@@ -185,7 +202,7 @@ fn line_debug_log(
 
 fn log_instruction_result(
     debug_log: Option<String>,
-    instruction: Instruction,
+    instruction: &Instruction,
     pc_before: u16,
     actual_pc: u16,
     expected_next_pc: u16,

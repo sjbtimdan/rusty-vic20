@@ -59,7 +59,8 @@ impl Bus {
 
     pub fn step_devices(&mut self, cpu: &mut CPU6502) {
         self.vic.step();
-        self.via2.step(cpu, &mut self.memory);
+        self.via2
+            .step(&mut cpu.registers, &mut self.memory, &mut cpu.instruction_tracking);
     }
 
     pub fn render_active_screen(&self) -> Vec<u32> {
