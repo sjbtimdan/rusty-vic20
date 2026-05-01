@@ -1,5 +1,6 @@
 pub mod addressable;
 pub mod bus;
+pub mod controller;
 pub mod cpu;
 pub mod keyboard;
 pub mod memory;

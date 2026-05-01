@@ -1,5 +1,7 @@
 //! Keyboard layout, click/hold/flash state machine — no GUI dependencies.
 
+pub mod display;
+
 use crate::virtual_clock::{Clock, SystemClock};
 use std::collections::HashSet;
 use std::time::{Duration, Instant};

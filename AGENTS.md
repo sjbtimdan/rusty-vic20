@@ -29,12 +29,15 @@ Guidance for AI coding agents working in this repository.
 - `src/cpu/`: 6502 execution core (decode, execute, interrupts, registers).
 - `src/vic.rs` and `src/screen/`: video logic and display path.
 - `src/via2.rs`: VIA timer/interrupt behavior (still WIP).
-- `src/bin/vic20.rs`: app entrypoint and threading model.
+- `src/bin/vic20.rs`: thin CLI entrypoint, passes tick duration to controller.
+- `src/controller.rs`: main `ApplicationHandler` managing both screen + keyboard windows, dispatches events by `WindowId`, owns emulator thread.
+- `src/keyboard/mod.rs`: keyboard state machine (key regions, click/hold/flash, physical key mapping).
+- `src/keyboard/display.rs`: interactive keyboard overlay window rendering.
 
 ## Platform and Threading Constraints
 
 - Keep `winit` event loop on the main thread (especially important on macOS).
-- CPU/bus stepping may run on a worker thread; share framebuffer state via synchronization primitives.
+- CPU/bus stepping may run on a worker thread; share framebuffer and keyboard state via `Arc<Mutex<>>` wrappers around `SharedVideoState` and `KeyboardState`.
 - Favor short lock hold times around shared frame state updates.
 
 ## Known Pitfalls
