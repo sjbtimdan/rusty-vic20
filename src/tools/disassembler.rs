@@ -49,7 +49,7 @@ pub fn disassemble_instruction(
 ) -> String {
     let name = format!("{:?}", instruction_info.instruction);
     let operand_str = match instruction_info.mode {
-        AddressingMode::Implied => return name,
+        AddressingMode::Implied | AddressingMode::ImpliedBreak => return name,
         AddressingMode::Accumulator => "A".to_string(),
         AddressingMode::Immediate => format!("#${:02X}", operands[0]),
         AddressingMode::ZeroPage => format!("${:02X}", operands[0]),

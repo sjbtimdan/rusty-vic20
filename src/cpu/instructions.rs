@@ -144,7 +144,7 @@ pub const BNE_RELATIVE: InstructionInfo = info(0xD0, Instruction::BNE, Addressin
 // can take extra cycles depending on runtime conditions.
 pub const fn decode(opcode: u8) -> InstructionInfo {
     match opcode {
-        0x00 => info(0x00, Instruction::BRK, AddressingMode::Implied, 7),
+        0x00 => BRK_IMPLIED,
         0x01 => info(0x01, Instruction::ORA, AddressingMode::IndexedIndirect, 6),
         0x05 => info(0x05, Instruction::ORA, AddressingMode::ZeroPage, 3),
         0x06 => info(0x06, Instruction::ASL, AddressingMode::ZeroPage, 5),
@@ -296,21 +296,5 @@ pub const fn decode(opcode: u8) -> InstructionInfo {
         0xFD => info(0xFD, Instruction::SBC, AddressingMode::AbsoluteX, 4),
         0xFE => info(0xFE, Instruction::INC, AddressingMode::AbsoluteX, 7),
         _ => illegal(opcode),
-    }
-}
-
-pub const fn length_for(mode: AddressingMode) -> usize {
-    match mode {
-        AddressingMode::Implied | AddressingMode::Accumulator => 1,
-        AddressingMode::Immediate
-        | AddressingMode::ZeroPage
-        | AddressingMode::ZeroPageX
-        | AddressingMode::ZeroPageY
-        | AddressingMode::Relative
-        | AddressingMode::IndexedIndirect
-        | AddressingMode::IndirectIndexed => 2,
-        AddressingMode::Absolute | AddressingMode::AbsoluteX | AddressingMode::AbsoluteY | AddressingMode::Indirect => {
-            3
-        }
     }
 }

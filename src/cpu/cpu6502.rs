@@ -12,7 +12,7 @@ use crate::{
         disassembler::disassemble_instruction,
     },
 };
-use log::{info, log_enabled};
+use log::{debug, log_enabled};
 use std::time::Instant;
 
 const PERFORMANCE_LOG_INTERVAL_CYCLES: u64 = 1_000_000;
@@ -31,6 +31,10 @@ impl InterruptHandler for InstructionTracking {
             self.current_instruction_info = None;
             self.do_interrupt(registers, memory, is_break);
         } else {
+            debug!(
+                "Interrupt requested during instruction execution at PC=0x{:04X}, will be handled after current instruction completes",
+                registers.pc
+            );
             self.interrupt_requested = true;
         }
     }
@@ -38,11 +42,21 @@ impl InterruptHandler for InstructionTracking {
 
 impl InstructionTracking {
     fn do_interrupt(&mut self, registers: &mut Registers, memory: &mut dyn Addressable, is_break: bool) {
+        debug!("Handling interrupt (is_break={is_break}) at PC=0x{:04X}", registers.pc);
         let return_address = if is_break {
-            registers.pc.wrapping_add(1)
+            registers.pc.wrapping_add(2)
         } else {
             registers.pc
         };
+        // TODO THIS SHOULD BE PART OF STEP AS EACH TAKES CYCLES
+        // Cycle 1: Internal opcode fetch (effectively forced to $00).
+        // Cycle 2: Dummy read (the CPU reads the next byte of the program but does not increment the PC).
+        // Cycle 3: Push PC High to stack.
+        // Cycle 4: Push PC Low to stack.
+        // Cycle 5: Push Status Register (Bit 4 must be 0, Bit 5 must be 1) or both 1 for BRK
+        // Cycle 6: Load low byte of vector from $FFFE.
+        // Cycle 7: Load high byte of vector from $FFFF.
+        // Post-Interrupt: Set the I (Interrupt Disable) flag to 1 internally so the handler isn't immediately interrupted by the same signal.
         memory.write_word(0x0100 + registers.sp as u16, return_address);
         memory.write_byte(0x0100 + registers.sp.wrapping_sub(2) as u16, registers.status);
         registers.sp = registers.sp.wrapping_sub(3);
@@ -88,7 +102,7 @@ impl CPU6502 {
     pub fn reset(&mut self, reset_vector: u16) {
         let registers = &mut self.registers;
         registers.set_flag(DECIMAL_FLAG_BITMASK, false);
-        registers.set_flag(INTERRUPT_FLAG_BITMASK, true);
+        registers.set_flag(INTERRUPT_FLAG_BITMASK, false);
         registers.sp = 0xFD;
         registers.pc = reset_vector;
         self.instruction_tracking = InstructionTracking::default();
@@ -113,7 +127,7 @@ impl CPU6502 {
         self.total_cycles += 1;
         if self.total_cycles - self.last_performance_log_cycle >= PERFORMANCE_LOG_INTERVAL_CYCLES {
             let elapsed = self.last_performance_log_instant.elapsed();
-            info!(
+            debug!(
                 "Executed {} cycles in {:.3} ms",
                 PERFORMANCE_LOG_INTERVAL_CYCLES,
                 elapsed.as_secs_f64() * 1_000.0
@@ -210,7 +224,7 @@ fn log_instruction_result(
     if let Some(debug_log) = debug_log {
         let branch_taken = instruction.is_branch() && actual_pc != expected_next_pc;
         let branch_marker = if branch_taken { " (*)" } else { "" };
-        info!("@0x{:04X}: {}{}", pc_before, debug_log, branch_marker);
+        debug!("@0x{:04X}: {}{}", pc_before, debug_log, branch_marker);
     }
 }
 

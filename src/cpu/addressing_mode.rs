@@ -2,6 +2,7 @@ use crate::{addressable::Addressable, cpu::registers::Registers};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AddressingMode {
+    ImpliedBreak,
     Implied,
     Accumulator,
     Immediate,
@@ -29,7 +30,8 @@ impl AddressingMode {
     pub fn operand_count(&self) -> usize {
         match self {
             AddressingMode::Implied | AddressingMode::Accumulator => 0,
-            AddressingMode::Immediate
+            AddressingMode::ImpliedBreak
+            | AddressingMode::Immediate
             | AddressingMode::ZeroPage
             | AddressingMode::ZeroPageX
             | AddressingMode::ZeroPageY
@@ -51,6 +53,7 @@ impl OperandResolution for AddressingMode {
 
     fn resolve_value(&self, registers: &Registers, memory: &dyn Addressable, operands: &[u8]) -> u8 {
         match self {
+            AddressingMode::ImpliedBreak => 0,
             AddressingMode::Immediate => operands[0],
             AddressingMode::ZeroPage => memory.read_zero_page_byte(operands[0]),
             AddressingMode::ZeroPageX => memory.read_zero_page_byte(operands[0].wrapping_add(registers.x)),

@@ -11,3 +11,10 @@ https://ia803208.us.archive.org/24/items/VIC-20_Machine_Code/VIC-20_Machine_Code
 
 # ROM Disassembly
 https://www.mdawson.net/vic20chrome/vic20/docs/kernel_disassembly.txt
+
+# Interrupts
+https://eden.mose.org.uk/download/Commodore%20Interrupts.pdf
+https://jefftranter.blogspot.com/2012/03/6522-via-experiment-2.html
+
+# Programming
+https://www.vic-20.it/computes_second_book_of_VIC.pdf

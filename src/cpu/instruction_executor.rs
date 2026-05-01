@@ -5,8 +5,8 @@ use crate::{
         instructions::Instruction,
         interrupt_handler::InterruptHandler,
         registers::{
-            BREAK_FLAG_BITMASK, CARRY_FLAG_BITMASK, DECIMAL_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK,
-            NEGATIVE_FLAG_BITMASK, OVERFLOW_FLAG_BITMASK, Registers, UNUSED_FLAG_BITMASK, ZERO_FLAG_BITMASK,
+            BREAK_FLAG_BITMASK, CARRY_FLAG_BITMASK, DECIMAL_FLAG_BITMASK, NEGATIVE_FLAG_BITMASK, OVERFLOW_FLAG_BITMASK,
+            Registers, UNUSED_FLAG_BITMASK, ZERO_FLAG_BITMASK,
         },
     },
 };

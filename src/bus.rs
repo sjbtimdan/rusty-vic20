@@ -21,6 +21,8 @@ pub const KERNEL_ROM_START: usize = 0xE000;
 pub const KERNEL_ROM_END: usize = 0xFFFF;
 pub const VIC_REGISTERS_START: u16 = 0x9000;
 pub const VIC_REGISTERS_END: u16 = 0x9010;
+pub const VIA2_REGISTERS_START: u16 = 0x9120;
+pub const VIA2_REGISTERS_END: u16 = 0x9130;
 
 impl Default for Bus {
     fn default() -> Self {
@@ -37,6 +39,7 @@ impl Addressable for Bus {
     fn read_byte(&self, address: u16) -> u8 {
         match address {
             VIC_REGISTERS_START..VIC_REGISTERS_END => self.vic.read_byte(address),
+            VIA2_REGISTERS_START..VIA2_REGISTERS_END => self.via2.read_byte(address),
             _ => self.memory.read_byte(address),
         }
     }
@@ -47,6 +50,7 @@ impl Addressable for Bus {
             .for_each(|watchpoint| watchpoint.on_write(address, value));
         match address {
             VIC_REGISTERS_START..VIC_REGISTERS_END => self.vic.write_byte(address, value),
+            VIA2_REGISTERS_START..VIA2_REGISTERS_END => self.via2.write_byte(address, value),
             _ => self.memory.write_byte(address, value),
         }
     }

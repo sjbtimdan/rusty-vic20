@@ -37,7 +37,12 @@ fn run_vic20_loop(tick_duration: Duration, shared_video_state: Arc<Mutex<SharedV
     cpu.reset(reset_vector);
 
     // cpu.add_breakpoint_address(0xE404);
-    // bus.add_watchpoint(MemoryWriteWatchpoint::watch_address_range(0x1E00, 0x1E00+22)); // Watch writes to first byte of screen RAM
+    bus.add_watchpoint(rusty_vic20::tools::debug::MemoryWriteWatchpoint::watch_address_range(
+        0x9120, 0x09130,
+    )); // Watch writes to first byte of screen RAM
+    bus.add_watchpoint(rusty_vic20::tools::debug::MemoryWriteWatchpoint::watch_address_range(
+        0xA2, 0xA3,
+    )); // Watch writes to first byte of screen RAM
 
     loop {
         cpu.step(&mut bus, &instruction_executor);
