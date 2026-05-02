@@ -19,6 +19,16 @@ const IFR_CA1: u8 = 0x02;
 const IFR_CA2: u8 = 0x01;
 const IFR_IRQ: u8 = 0x80;
 
+// Offsets
+#[allow(dead_code)]
+const PORT_B_OFFSET: usize = 0x00;
+#[allow(dead_code)]
+const PORT_A_OFFSET: usize = 0x01;
+#[allow(dead_code)]
+const DATA_DIRECTION_B_OFFSET: usize = 0x02;
+#[allow(dead_code)]
+const DATA_DIRECTION_A_OFFSET: usize = 0x03;
+
 pub struct VIA2 {
     registers: [Cell<u8>; 16],
     t1_counter: Cell<u16>,
@@ -143,5 +153,39 @@ impl Addressable for VIA2 {
                 self.registers[offset].set(value);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::{fixture, rstest};
+
+    fn addr(offset: usize) -> u16 {
+        VIA2_REGISTERS_START + offset as u16
+    }
+
+    #[fixture]
+    fn via() -> VIA2 {
+        VIA2::default()
+    }
+
+    #[rstest]
+    #[case(PORT_B_OFFSET)]
+    #[case(PORT_A_OFFSET)]
+    #[case(DATA_DIRECTION_B_OFFSET)]
+    #[case(DATA_DIRECTION_A_OFFSET)]
+    fn read_byte_returns_default_zero(via: VIA2, #[case] offset: usize) {
+        assert_eq!(via.read_byte(addr(offset)), 0);
+    }
+
+    #[rstest]
+    #[case(PORT_B_OFFSET)]
+    #[case(PORT_A_OFFSET)]
+    #[case(DATA_DIRECTION_B_OFFSET)]
+    #[case(DATA_DIRECTION_A_OFFSET)]
+    fn write_byte_stores_value_readable_back(mut via: VIA2, #[case] offset: usize) {
+        via.write_byte(addr(offset), 0xAB);
+        assert_eq!(via.read_byte(addr(offset)), 0xAB);
     }
 }
