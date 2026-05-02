@@ -7,6 +7,30 @@ pub const DEBUG_WINDOW_BYTES: usize = 256;
 pub type SharedMemory = Arc<Mutex<[u8; 65536]>>;
 pub type PendingWrites = Arc<Mutex<Vec<(u16, u8)>>>;
 
+#[derive(Clone, Copy, Debug)]
+pub struct SharedRegisters {
+    pub a: u8,
+    pub x: u8,
+    pub y: u8,
+    pub sp: u8,
+    pub pc: u16,
+    pub status: u8,
+}
+
+pub type SharedRegistersState = Arc<Mutex<SharedRegisters>>;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum RegisterField {
+    A,
+    X,
+    Y,
+    SP,
+    PC,
+    Status,
+}
+
+pub type PendingRegisterWrites = Arc<Mutex<Vec<(RegisterField, u16)>>>;
+
 pub struct DebugState {
     pub start_address: u16,
     pub selected_offset: Option<usize>,
@@ -21,6 +45,7 @@ pub enum DebugMode {
     Browse,
     EditingAddress,
     EditingByte,
+    EditingRegister(RegisterField),
 }
 
 impl Default for DebugState {
@@ -56,6 +81,11 @@ impl DebugState {
         self.mode = DebugMode::Browse;
     }
 
+    pub fn start_register_edit(&mut self, field: RegisterField) {
+        self.mode = DebugMode::EditingRegister(field);
+        self.edit_byte_input.clear();
+    }
+
     pub fn commit_byte_edit(&mut self) -> Option<(u16, u8)> {
         if let Ok(value) = u8::from_str_radix(&self.edit_byte_input, 16) {
             let offset = self.selected_offset?;
@@ -64,6 +94,28 @@ impl DebugState {
             self.selected_offset = None;
             self.mode = DebugMode::Browse;
             return Some((address, value));
+        }
+        self.edit_byte_input.clear();
+        self.mode = DebugMode::Browse;
+        None
+    }
+
+    pub fn commit_register_edit(&mut self) -> Option<(RegisterField, u16)> {
+        if self.edit_byte_input.is_empty() {
+            self.mode = DebugMode::Browse;
+            return None;
+        }
+        if let Ok(value) = u16::from_str_radix(&self.edit_byte_input, 16)
+            && let DebugMode::EditingRegister(field) = self.mode
+        {
+            let clamped = match field {
+                RegisterField::PC => value,
+                RegisterField::Status => value & 0xFF,
+                _ => value & 0xFF,
+            };
+            self.edit_byte_input.clear();
+            self.mode = DebugMode::Browse;
+            return Some((field, clamped));
         }
         self.edit_byte_input.clear();
         self.mode = DebugMode::Browse;

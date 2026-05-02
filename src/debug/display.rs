@@ -10,7 +10,7 @@ use winit::{
     window::Window,
 };
 
-use super::{DebugMode, DebugState, SharedMemory};
+use super::{DebugMode, DebugState, PendingRegisterWrites, RegisterField, SharedMemory, SharedRegistersState};
 
 const WINDOW_TITLE: &str = "VIC-20 Debug";
 
@@ -31,7 +31,22 @@ const COLS: usize = 16;
 const ROWS: usize = 16;
 
 const PIXEL_WIDTH: u32 = (ASCII_COL_X + 16 * CHAR_W * SCALE + MARGIN) as u32;
-const PIXEL_HEIGHT: u32 = 220;
+const PIXEL_HEIGHT: u32 = 270;
+
+const REG_LINE1_Y: i32 = DATA_START_Y + ROWS as i32 * ROW_H + ROW_H * 3;
+const REG_LINE2_Y: i32 = REG_LINE1_Y + ROW_H;
+
+const REG_A_X: i32 = MARGIN;
+const REG_X_X: i32 = REG_A_X + 5 * CHAR_W * SCALE;
+const REG_Y_X: i32 = REG_X_X + 5 * CHAR_W * SCALE;
+const REG_SP_X: i32 = REG_Y_X + 5 * CHAR_W * SCALE;
+const REG_PC_X: i32 = REG_SP_X + 6 * CHAR_W * SCALE;
+const REG_SR_X: i32 = REG_PC_X + 8 * CHAR_W * SCALE;
+
+const REG_VALUE_COLOR: [u8; 4] = [200, 200, 200, 255];
+const REG_LABEL_COLOR: [u8; 4] = [100, 100, 100, 255];
+const FLAG_SET_COLOR: [u8; 4] = [255, 200, 100, 255];
+const FLAG_CLEAR_COLOR: [u8; 4] = [80, 80, 80, 255];
 
 const BG_COLOR: [u8; 4] = [30, 30, 30, 255];
 const HEADER_COLOR: [u8; 4] = [100, 100, 100, 255];
@@ -98,6 +113,8 @@ impl DebugWindow {
         state: &mut DebugState,
         memory: &SharedMemory,
         pending_writes: &super::PendingWrites,
+        registers: &SharedRegistersState,
+        pending_register_writes: &PendingRegisterWrites,
     ) {
         match event {
             WindowEvent::CloseRequested => {
@@ -110,7 +127,7 @@ impl DebugWindow {
                     error!("debug resize_surface failed: {err}");
                 }
             }
-            WindowEvent::RedrawRequested => self.draw(state, memory),
+            WindowEvent::RedrawRequested => self.draw(state, memory, registers),
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor_pos = Some((position.x, position.y));
             }
@@ -122,7 +139,13 @@ impl DebugWindow {
                 self.handle_mouse_click(state);
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
-                self.handle_key(state, &event.logical_key, event.text.as_deref(), pending_writes);
+                self.handle_key(
+                    state,
+                    &event.logical_key,
+                    event.text.as_deref(),
+                    pending_writes,
+                    pending_register_writes,
+                );
                 if let Some(window) = self.window.as_ref() {
                     window.request_redraw();
                 }
@@ -146,11 +169,25 @@ impl DebugWindow {
         let col = (px as i32 - HEX_COL_X) / (3 * CHAR_W * SCALE);
         if row >= 0 && row < ROWS as i32 && col >= 0 && col < COLS as i32 {
             state.selected_offset = Some((row as usize) * COLS + col as usize);
+            return;
+        }
+
+        if py as i32 >= REG_LINE1_Y
+            && (py as i32) < REG_LINE1_Y + ROW_H
+            && let Some(field) = reg_field_at_x(px as i32)
+        {
+            state.start_register_edit(field);
         }
     }
 
-    #[allow(clippy::collapsible_else_if)]
-    fn handle_key(&self, state: &mut DebugState, key: &Key, text: Option<&str>, pending_writes: &super::PendingWrites) {
+    fn handle_key(
+        &self,
+        state: &mut DebugState,
+        key: &Key,
+        text: Option<&str>,
+        pending_writes: &super::PendingWrites,
+        pending_register_writes: &PendingRegisterWrites,
+    ) {
         match state.mode {
             DebugMode::Browse => match key {
                 Key::Named(winit::keyboard::NamedKey::ArrowUp) => {
@@ -256,10 +293,34 @@ impl DebugWindow {
                     }
                 }
             },
+            DebugMode::EditingRegister(_) => match key {
+                Key::Named(winit::keyboard::NamedKey::Enter) => {
+                    if let Some((field, val)) = state.commit_register_edit()
+                        && let Ok(mut writes) = pending_register_writes.lock()
+                    {
+                        writes.push((field, val));
+                    }
+                }
+                Key::Named(winit::keyboard::NamedKey::Escape) => {
+                    state.cancel_input();
+                }
+                Key::Named(winit::keyboard::NamedKey::Backspace) => {
+                    state.edit_byte_input.pop();
+                }
+                _ => {
+                    if let Some(text) = text {
+                        for c in text.chars() {
+                            if c.is_ascii_hexdigit() {
+                                state.edit_byte_input.push(c);
+                            }
+                        }
+                    }
+                }
+            },
         }
     }
 
-    pub fn draw(&mut self, state: &DebugState, memory: &SharedMemory) {
+    pub fn draw(&mut self, state: &DebugState, memory: &SharedMemory, registers: &SharedRegistersState) {
         let Some(pixels) = self.pixels.as_mut() else {
             return;
         };
@@ -329,6 +390,13 @@ impl DebugWindow {
 
         draw_status_line(frame, state);
 
+        let regs = match registers.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        draw_registers(frame, state, &regs);
+        drop(regs);
+
         drop(mem);
 
         if let Err(err) = pixels.render() {
@@ -382,6 +450,7 @@ fn draw_status_line(frame: &mut [u8], state: &DebugState) {
         }
         DebugMode::EditingAddress => "Enter hex address (Enter: confirm, Esc: cancel)",
         DebugMode::EditingByte => "",
+        DebugMode::EditingRegister(_) => "",
     };
     draw_str(frame, x, y, msg, HEADER_COLOR);
 
@@ -393,6 +462,33 @@ fn draw_status_line(frame: &mut [u8], state: &DebugState) {
         let ex = edit_x + prefix.len() as i32 * CHAR_W * SCALE;
         let val = &state.edit_byte_input;
         let bg_w = (2.max(val.len() as i32 + 1)) * CHAR_W * SCALE + 4;
+        fill_rect_at(frame, PIXEL_WIDTH as usize, ex, edit_y - 1, bg_w, ROW_H, INPUT_BG);
+        if !val.is_empty() {
+            draw_str(frame, ex + 2, edit_y, val, [220u8, 220, 100, 255]);
+        }
+        draw_str(
+            frame,
+            ex + bg_w + 4,
+            edit_y,
+            " (Enter: write, Esc: cancel)",
+            HEADER_COLOR,
+        );
+    } else if let DebugMode::EditingRegister(field) = state.mode {
+        let edit_y = y;
+        let edit_x = ADDR_COL_X;
+        let label = match field {
+            RegisterField::A => "A",
+            RegisterField::X => "X",
+            RegisterField::Y => "Y",
+            RegisterField::SP => "SP",
+            RegisterField::PC => "PC",
+            RegisterField::Status => "SR",
+        };
+        let prefix = format!("Edit {label}: $");
+        draw_str(frame, edit_x, edit_y, &prefix, [220u8, 220, 100, 255]);
+        let ex = edit_x + prefix.len() as i32 * CHAR_W * SCALE;
+        let val = &state.edit_byte_input;
+        let bg_w = (4.max(val.len() as i32 + 1)) * CHAR_W * SCALE + 4;
         fill_rect_at(frame, PIXEL_WIDTH as usize, ex, edit_y - 1, bg_w, ROW_H, INPUT_BG);
         if !val.is_empty() {
             draw_str(frame, ex + 2, edit_y, val, [220u8, 220, 100, 255]);
@@ -469,5 +565,121 @@ fn draw_char(pixels: &mut [u8], x: i32, y: i32, ch: char, color: [u8; 4]) {
                 }
             }
         }
+    }
+}
+
+fn draw_registers(frame: &mut [u8], state: &DebugState, regs: &super::SharedRegisters) {
+    let y = REG_LINE1_Y;
+    let rw = PIXEL_WIDTH as usize;
+
+    let editing_field = if let DebugMode::EditingRegister(f) = state.mode {
+        Some(f)
+    } else {
+        None
+    };
+
+    macro_rules! hl {
+        ($f:expr, $x:expr, $w:expr) => {
+            if editing_field == Some($f) {
+                fill_rect_at(frame, rw, $x, y, ($w) * CHAR_W * SCALE, ROW_H, HIGHLIGHT_COLOR);
+            }
+        };
+    }
+
+    hl!(RegisterField::A, REG_A_X, 4);
+    draw_str(frame, REG_A_X, y, "A:", REG_LABEL_COLOR);
+    draw_str(
+        frame,
+        REG_A_X + 2 * CHAR_W * SCALE,
+        y,
+        &format!("{:02X}", regs.a),
+        REG_VALUE_COLOR,
+    );
+
+    hl!(RegisterField::X, REG_X_X, 4);
+    draw_str(frame, REG_X_X, y, "X:", REG_LABEL_COLOR);
+    draw_str(
+        frame,
+        REG_X_X + 2 * CHAR_W * SCALE,
+        y,
+        &format!("{:02X}", regs.x),
+        REG_VALUE_COLOR,
+    );
+
+    hl!(RegisterField::Y, REG_Y_X, 4);
+    draw_str(frame, REG_Y_X, y, "Y:", REG_LABEL_COLOR);
+    draw_str(
+        frame,
+        REG_Y_X + 2 * CHAR_W * SCALE,
+        y,
+        &format!("{:02X}", regs.y),
+        REG_VALUE_COLOR,
+    );
+
+    hl!(RegisterField::SP, REG_SP_X, 5);
+    draw_str(frame, REG_SP_X, y, "SP:", REG_LABEL_COLOR);
+    draw_str(
+        frame,
+        REG_SP_X + 3 * CHAR_W * SCALE,
+        y,
+        &format!("{:02X}", regs.sp),
+        REG_VALUE_COLOR,
+    );
+
+    hl!(RegisterField::PC, REG_PC_X, 7);
+    draw_str(frame, REG_PC_X, y, "PC:", REG_LABEL_COLOR);
+    draw_str(
+        frame,
+        REG_PC_X + 3 * CHAR_W * SCALE,
+        y,
+        &format!("{:04X}", regs.pc),
+        REG_VALUE_COLOR,
+    );
+
+    hl!(RegisterField::Status, REG_SR_X, 4);
+    draw_str(frame, REG_SR_X, y, "SR:", REG_LABEL_COLOR);
+    draw_str(
+        frame,
+        REG_SR_X + 3 * CHAR_W * SCALE,
+        y,
+        &format!("{:02X}", regs.status),
+        REG_VALUE_COLOR,
+    );
+
+    let fy = REG_LINE2_Y;
+    let flags = [
+        ('N', regs.status & 0x80 != 0),
+        ('V', regs.status & 0x40 != 0),
+        ('-', true),
+        ('B', regs.status & 0x10 != 0),
+        ('D', regs.status & 0x08 != 0),
+        ('I', regs.status & 0x04 != 0),
+        ('Z', regs.status & 0x02 != 0),
+        ('C', regs.status & 0x01 != 0),
+    ];
+    let mut fx = REG_SR_X;
+    for (ch, set) in &flags {
+        let color = if *set { FLAG_SET_COLOR } else { FLAG_CLEAR_COLOR };
+        draw_char(frame, fx, fy, *ch, color);
+        fx += CHAR_W * SCALE;
+    }
+}
+
+fn reg_field_at_x(px: i32) -> Option<RegisterField> {
+    let check = |x: i32, w_chars: i32| px >= x && px < x + w_chars * CHAR_W * SCALE;
+    if check(REG_A_X, 4) {
+        Some(RegisterField::A)
+    } else if check(REG_X_X, 4) {
+        Some(RegisterField::X)
+    } else if check(REG_Y_X, 4) {
+        Some(RegisterField::Y)
+    } else if check(REG_SP_X, 5) {
+        Some(RegisterField::SP)
+    } else if check(REG_PC_X, 7) {
+        Some(RegisterField::PC)
+    } else if check(REG_SR_X, 4) {
+        Some(RegisterField::Status)
+    } else {
+        None
     }
 }
