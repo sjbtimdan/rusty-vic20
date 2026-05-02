@@ -313,7 +313,7 @@ fn compare(registers: &mut Registers, reg: u8, value: u8) {
     registers.update_zero_and_negative(result);
 }
 
-fn stack_push(registers: &mut Registers, memory: &mut dyn Addressable, value: u8) {
+pub fn stack_push(registers: &mut Registers, memory: &mut dyn Addressable, value: u8) {
     memory.write_byte(0x0100 + registers.sp as u16, value);
     registers.sp = registers.sp.wrapping_sub(1);
 }

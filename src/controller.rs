@@ -2,6 +2,7 @@ use crate::{
     addressable::Addressable,
     bus::Bus,
     cpu::{cpu6502::CPU6502, instruction_executor},
+    debug::{DebugState, PendingWrites, SharedMemory, display::DebugWindow},
     keyboard::{KeyboardState, display::KeyboardWindow},
     screen::{
         display::{ScreenWindow, SharedVideoState},
@@ -21,12 +22,17 @@ use winit::{
 
 const FRAME_TIME: Duration = Duration::from_nanos(1_000_000_000 / 50);
 const FRAME_PUBLISH_INTERVAL: Duration = Duration::from_millis(20);
+const MEMORY_PUBLISH_INTERVAL: Duration = Duration::from_millis(200);
 
 pub struct Vic20Controller {
     screen: ScreenWindow,
     keyboard: KeyboardWindow,
+    debug: DebugWindow,
     shared_video_state: Arc<Mutex<SharedVideoState>>,
     keyboard_state: Arc<Mutex<KeyboardState>>,
+    debug_state: Arc<Mutex<DebugState>>,
+    shared_memory: SharedMemory,
+    pending_writes: PendingWrites,
     tick_duration: Duration,
     vic_thread: Option<JoinHandle<()>>,
 }
@@ -36,11 +42,15 @@ impl Vic20Controller {
         Self {
             screen: ScreenWindow::default(),
             keyboard: KeyboardWindow::default(),
+            debug: DebugWindow::default(),
             shared_video_state: Arc::new(Mutex::new(SharedVideoState {
                 screen_rgba: vec![0_u32; ACTIVE_WIDTH * ACTIVE_HEIGHT],
                 border_rgba: 0x0044AAFF,
             })),
             keyboard_state: Arc::new(Mutex::new(KeyboardState::new())),
+            debug_state: Arc::new(Mutex::new(DebugState::new())),
+            shared_memory: Arc::new(Mutex::new([0u8; 65536])),
+            pending_writes: Arc::new(Mutex::new(Vec::new())),
             tick_duration,
             vic_thread: None,
         }
@@ -53,19 +63,27 @@ impl Vic20Controller {
 
     fn spawn_emulator(&mut self) {
         let shared_video_state = Arc::clone(&self.shared_video_state);
+        let shared_memory = Arc::clone(&self.shared_memory);
+        let pending_writes = Arc::clone(&self.pending_writes);
         let tick_duration = self.tick_duration;
 
         let handle = thread::Builder::new()
             .name("vic20-core-loop".to_string())
-            .spawn(move || Self::run_emulator(shared_video_state, tick_duration))
+            .spawn(move || Self::run_emulator(shared_video_state, shared_memory, pending_writes, tick_duration))
             .expect("failed to spawn VIC-20 core thread");
         self.vic_thread = Some(handle);
     }
 
-    fn run_emulator(shared_video_state: Arc<Mutex<SharedVideoState>>, tick_duration: Duration) {
+    fn run_emulator(
+        shared_video_state: Arc<Mutex<SharedVideoState>>,
+        shared_memory: SharedMemory,
+        pending_writes: PendingWrites,
+        tick_duration: Duration,
+    ) {
         let mut cpu = CPU6502::default();
         let mut bus = Bus::default();
         let mut last_frame_publish = Instant::now();
+        let mut last_memory_publish = Instant::now();
         let instruction_executor = instruction_executor::DefaultInstructionExecutor;
 
         bus.load_standard_roms_from_data_dir();
@@ -73,6 +91,17 @@ impl Vic20Controller {
         cpu.reset(reset_vector);
 
         loop {
+            // Apply any pending writes from the debugger
+            {
+                let mut writes = match pending_writes.lock() {
+                    Ok(guard) => guard,
+                    Err(poisoned) => poisoned.into_inner(),
+                };
+                for (addr, value) in writes.drain(..) {
+                    bus.write_byte(addr, value);
+                }
+            }
+
             cpu.step(&mut bus, &instruction_executor);
             bus.step_devices(&mut cpu);
 
@@ -88,6 +117,15 @@ impl Vic20Controller {
                 last_frame_publish = Instant::now();
             }
 
+            if last_memory_publish.elapsed() >= MEMORY_PUBLISH_INTERVAL {
+                let mut mem = match shared_memory.lock() {
+                    Ok(guard) => guard,
+                    Err(poisoned) => poisoned.into_inner(),
+                };
+                bus.copy_memory_to(&mut mem);
+                last_memory_publish = Instant::now();
+            }
+
             if !tick_duration.is_zero() {
                 thread::sleep(tick_duration);
             }
@@ -99,6 +137,7 @@ impl ApplicationHandler for Vic20Controller {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         self.screen.create(event_loop);
         self.keyboard.create(event_loop);
+        self.debug.create(event_loop);
         self.spawn_emulator();
     }
 
@@ -129,6 +168,20 @@ impl ApplicationHandler for Vic20Controller {
                     self.keyboard.handle_event(event_loop, event, &mut state);
                 }
             }
+        } else if Some(window_id) == self.debug.window_id() {
+            let mut state = match self.debug_state.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            match event {
+                WindowEvent::RedrawRequested => {
+                    self.debug.draw(&state, &self.shared_memory);
+                }
+                _ => {
+                    self.debug
+                        .handle_event(event_loop, event, &mut state, &self.shared_memory, &self.pending_writes);
+                }
+            }
         }
     }
 
@@ -152,5 +205,6 @@ impl ApplicationHandler for Vic20Controller {
 
         self.screen.request_redraw();
         self.keyboard.request_redraw();
+        self.debug.request_redraw();
     }
 }

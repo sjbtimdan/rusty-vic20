@@ -75,6 +75,10 @@ impl Bus {
         self.vic.border_rgba()
     }
 
+    pub fn copy_memory_to(&self, dest: &mut [u8; 65536]) {
+        dest.copy_from_slice(&self.memory);
+    }
+
     pub fn load_standard_roms_from_data_dir(&mut self) {
         let data_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/data");
         let basic_rom = fs::read(format!("{}/basic.901486-01.bin", data_dir)).expect("Missing basic_rom");

@@ -2,10 +2,10 @@ use crate::{
     addressable::Addressable,
     cpu::{
         addressing_mode::OperandResolution,
-        instruction_executor::InstructionExecutor,
+        instruction_executor::{InstructionExecutor, stack_push},
         instructions::{Instruction, InstructionInfo, decode},
         interrupt_handler::InterruptHandler,
-        registers::{BREAK_FLAG_BITMASK, DECIMAL_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK, Registers},
+        registers::{BREAK_FLAG_BITMASK, DECIMAL_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK, Registers, UNUSED_FLAG_BITMASK},
     },
     tools::{
         debug::{Breakpoint, LoggingAddressBreakpoint},
@@ -48,18 +48,10 @@ impl InstructionTracking {
         } else {
             registers.pc
         };
-        // TODO THIS SHOULD BE PART OF STEP AS EACH TAKES CYCLES
-        // Cycle 1: Internal opcode fetch (effectively forced to $00).
-        // Cycle 2: Dummy read (the CPU reads the next byte of the program but does not increment the PC).
-        // Cycle 3: Push PC High to stack.
-        // Cycle 4: Push PC Low to stack.
-        // Cycle 5: Push Status Register (Bit 4 must be 0, Bit 5 must be 1) or both 1 for BRK
-        // Cycle 6: Load low byte of vector from $FFFE.
-        // Cycle 7: Load high byte of vector from $FFFF.
-        // Post-Interrupt: Set the I (Interrupt Disable) flag to 1 internally so the handler isn't immediately interrupted by the same signal.
-        memory.write_word(0x0100 + registers.sp as u16, return_address);
-        memory.write_byte(0x0100 + registers.sp.wrapping_sub(2) as u16, registers.status);
-        registers.sp = registers.sp.wrapping_sub(3);
+        let status_to_push = (registers.status | UNUSED_FLAG_BITMASK) & if is_break { !0 } else { !BREAK_FLAG_BITMASK };
+        stack_push(registers, memory, (return_address >> 8) as u8);
+        stack_push(registers, memory, return_address as u8);
+        stack_push(registers, memory, status_to_push);
         registers.pc = memory.read_word(0xFFFE);
         registers.set_flag(INTERRUPT_FLAG_BITMASK, true);
         registers.set_flag(BREAK_FLAG_BITMASK, is_break);
