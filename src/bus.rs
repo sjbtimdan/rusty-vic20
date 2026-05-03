@@ -67,11 +67,11 @@ impl Bus {
             .step(&mut cpu.registers, &mut self.memory, &mut cpu.instruction_tracking);
     }
 
-    pub fn render_active_screen(&self) -> Vec<u32> {
+    pub fn render_active_screen(&self) -> Vec<u8> {
         self.vic.render_active_screen(&self.memory)
     }
 
-    pub fn border_rgba(&self) -> u32 {
+    pub fn border_rgba(&self) -> [u8; 4] {
         self.vic.border_rgba()
     }
 

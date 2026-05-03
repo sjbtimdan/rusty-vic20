@@ -5,6 +5,11 @@ use rusty_vic20::{
     screen::renderer::{ACTIVE_WIDTH, CHAR_HEIGHT, CHAR_WIDTH, palette},
 };
 
+fn pixel_at(fb: &[u8], x: usize, y: usize) -> [u8; 4] {
+    let idx = (y * ACTIVE_WIDTH + x) * 4;
+    fb[idx..idx + 4].try_into().unwrap()
+}
+
 #[test]
 fn check_cursor_render() {
     let steps = 3_000_000;
@@ -30,10 +35,8 @@ fn check_cursor_render() {
         for x in 0..8 {
             let px = cursor_col * CHAR_WIDTH + x;
             let py = cursor_line * CHAR_HEIGHT + y;
-            let idx = py * ACTIVE_WIDTH + px;
-            let color = fb[idx];
+            let color = pixel_at(&fb, px, py);
             let is_white = color == palette(1);
-            let _is_bg = color == palette(0);
             eprint!(
                 "{}",
                 if is_white {
@@ -52,8 +55,7 @@ fn check_cursor_render() {
     eprintln!("Text '*' at (0,0):");
     for y in 0..8 {
         for x in 0..8 {
-            let idx = y * ACTIVE_WIDTH + x;
-            let color = fb[idx];
+            let color = pixel_at(&fb, x, y);
             eprint!(
                 "{}",
                 if color == palette(1) {
@@ -68,7 +70,7 @@ fn check_cursor_render() {
         eprintln!();
     }
 
-    eprintln!("Palette 0 (BLACK): {:08X}", palette(0));
-    eprintln!("Palette 1 (WHITE): {:08X}", palette(1));
-    eprintln!("Palette 6 (BLUE):  {:08X}", palette(6));
+    eprintln!("Palette 0 (BLACK): {:02X?}", palette(0));
+    eprintln!("Palette 1 (WHITE): {:02X?}", palette(1));
+    eprintln!("Palette 6 (BLUE):  {:02X?}", palette(6));
 }

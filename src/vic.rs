@@ -32,20 +32,20 @@ impl VIC {
     }
 
     #[must_use]
-    pub fn render_active_screen(&self, memory: &[u8; 65536]) -> Vec<u32> {
+    pub fn render_active_screen(&self, memory: &[u8; 65536]) -> Vec<u8> {
         let screen_ram_start = self.screen_ram_start() as usize;
         let screen_ram = &memory[screen_ram_start..screen_ram_start + SCREEN_RAM_SIZE];
         let colour_ram_start = self.colour_ram_start() as usize;
         let colour_ram = &memory[colour_ram_start..=colour_ram_start + SCREEN_RAM_SIZE];
         let char_rom = &memory[CHARACTER_ROM_START..=CHARACTER_ROM_END];
         let background_colour = self.background_colour();
-        let mut framebuffer = Vec::with_capacity(ACTIVE_WIDTH * ACTIVE_HEIGHT);
+        let mut framebuffer = Vec::with_capacity(ACTIVE_WIDTH * ACTIVE_HEIGHT * 4);
 
         for active_y in 0..ACTIVE_HEIGHT {
             for active_x in 0..ACTIVE_WIDTH {
                 let colour_index =
                     self.colour_index(screen_ram, colour_ram, char_rom, background_colour, active_y, active_x);
-                framebuffer.push(palette(colour_index));
+                framebuffer.extend_from_slice(&palette(colour_index));
             }
         }
         framebuffer
@@ -71,7 +71,7 @@ impl VIC {
         if bit == 1 { fg_color } else { background_colour }
     }
 
-    pub fn border_rgba(&self) -> u32 {
+    pub fn border_rgba(&self) -> [u8; 4] {
         let border_color = self.screen_control & 0x07;
         palette(border_color)
     }
@@ -144,8 +144,9 @@ mod tests {
         mem
     }
 
-    fn pixel_at(framebuffer: &[u32], x: usize, y: usize) -> u32 {
-        framebuffer[y * ACTIVE_WIDTH + x]
+    fn pixel_at(framebuffer: &[u8], x: usize, y: usize) -> [u8; 4] {
+        let idx = (y * ACTIVE_WIDTH + x) * 4;
+        framebuffer[idx..idx + 4].try_into().unwrap()
     }
 
     #[rstest]

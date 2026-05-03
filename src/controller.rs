@@ -71,8 +71,8 @@ impl Vic20Controller {
 
     fn spawn_emulator(tick_duration: Duration) -> (JoinHandle<()>, SharedState) {
         let video = Arc::new(Mutex::new(SharedVideoState {
-            screen_rgba: vec![0_u32; ACTIVE_WIDTH * ACTIVE_HEIGHT],
-            border_rgba: 0x0044AAFF,
+            screen_rgba: vec![0_u8; ACTIVE_WIDTH * ACTIVE_HEIGHT * 4],
+            border_rgba: [0x00, 0x44, 0xAA, 0xFF],
         }));
         let memory: SharedMemory = Arc::new(Mutex::new([0u8; 65536]));
         let pending_writes: PendingWrites = Arc::new(Mutex::new(Vec::new()));
