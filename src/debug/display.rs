@@ -435,6 +435,14 @@ fn draw_address_bar(frame: &mut [u8], state: &DebugState) {
         let addr_str = format!("{:04X}", state.start_address);
         draw_str(frame, input_x + 2, y, &addr_str, ADDR_COLOR);
     }
+
+    if let Some(offset) = state.selected_offset {
+        let sel_addr = state.start_address.wrapping_add(offset as u16);
+        let sel_x = input_x + bg_w + 8;
+        draw_str(frame, sel_x, y, "\u{2192}", [140u8, 140, 140, 255]);
+        let sel_str = format!("{:04X}", sel_addr);
+        draw_str(frame, sel_x + CHAR_W * SCALE + 2, y, &sel_str, [220u8, 220, 100, 255]);
+    }
 }
 
 fn draw_status_line(frame: &mut [u8], state: &DebugState) {

@@ -16,6 +16,7 @@ https://reversing.pl/literatura/tekst_h/Synertek%20SY6522%20Programming%20Refere
 # VIC chip
 https://raw.githubusercontent.com/cbmeeks/VIC-20/master/6561.txt
 https://www.mdawson.net/vic20chrome/display/mos_6560_6561_vic.pdf
+https://techtinkering.com/articles/code-and-data-in-display-memory-on-the-vic-20/
 
 # ROM Disassembly
 https://www.mdawson.net/vic20chrome/vic20/docs/kernel_disassembly.txt
@@ -26,3 +27,4 @@ https://jefftranter.blogspot.com/2012/03/6522-via-experiment-2.html
 
 # Programming
 https://www.vic-20.it/computes_second_book_of_VIC.pdf
+http://cini.classiccmp.org/pdf/Commodore/VIC-20%20User%27s%20Manual.pdf
