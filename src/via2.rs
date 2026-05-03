@@ -5,18 +5,6 @@ use crate::{
 use std::cell::Cell;
 
 const IFR_TIMER1: u8 = 0x40;
-#[allow(dead_code)]
-const IFR_TIMER2: u8 = 0x20;
-#[allow(dead_code)]
-const IFR_CB1: u8 = 0x10;
-#[allow(dead_code)]
-const IFR_CB2: u8 = 0x08;
-#[allow(dead_code)]
-const IFR_SR: u8 = 0x04;
-#[allow(dead_code)]
-const IFR_CA1: u8 = 0x02;
-#[allow(dead_code)]
-const IFR_CA2: u8 = 0x01;
 const IFR_IRQ: u8 = 0x80;
 
 // Offsets
@@ -35,22 +23,21 @@ const AUXILIARY_CONTROL_OFFSET: usize = 0x0B;
 const PERIPHERAL_CONTROL_OFFSET: usize = 0x0C;
 const IFR_OFFSET: usize = 0x0D;
 const IER_OFFSET: usize = 0x0E;
+const PORTA_HANDSHAKE_OFFSET: usize = 0x0F;
 
 pub struct VIA2 {
-    registers: [Cell<u8>; 16],
     pb: u8,
     pa: u8,
     ddrb: u8,
     ddra: u8,
-    timer1_latch_lo: Cell<u8>,
-    timer1_latch_hi: Cell<u8>,
-    timer1_counter_lo: Cell<u8>,
-    timer1_counter_hi: Cell<u8>,
     timer2_counter_lo: u8,
     timer2_counter_hi: u8,
     shift_register: u8,
     auxiliary_control: u8,
     peripheral_control: u8,
+    ifr: Cell<u8>,
+    ier: u8,
+    port_a_handshake: u8,
     t1_counter: Cell<u16>,
     t1_latch: Cell<u16>,
 }
@@ -58,20 +45,18 @@ pub struct VIA2 {
 impl Default for VIA2 {
     fn default() -> Self {
         Self {
-            registers: std::array::from_fn(|_| Cell::new(0)),
             pb: 0,
             pa: 0,
             ddrb: 0,
             ddra: 0,
-            timer1_latch_lo: Cell::new(0x00),
-            timer1_latch_hi: Cell::new(0x00),
-            timer1_counter_lo: Cell::new(0x00),
-            timer1_counter_hi: Cell::new(0x00),
             timer2_counter_lo: 0,
             timer2_counter_hi: 0,
             shift_register: 0,
             auxiliary_control: 0,
             peripheral_control: 0,
+            ifr: Cell::new(0),
+            ier: 0,
+            port_a_handshake: 0,
             t1_counter: Cell::new(0x0000),
             t1_latch: Cell::new(0x0000),
         }
@@ -96,29 +81,21 @@ impl VIA2 {
         let counter = self.t1_counter.get();
         if counter == 0 {
             self.t1_counter.set(self.t1_latch.get());
-            self.registers[IFR_OFFSET].set(self.registers[IFR_OFFSET].get() | IFR_TIMER1);
+            self.ifr.set(self.ifr.get() | IFR_TIMER1);
         } else {
             self.t1_counter.set(counter - 1);
         }
     }
 
-    fn t1_latch(&self) -> u16 {
-        ((self.timer1_latch_hi.get() as u16) << 8) | self.timer1_latch_lo.get() as u16
-    }
-
     fn update_ifr_irq(&self) {
-        let ifr = self.registers[IFR_OFFSET].get();
-        let ier = self.registers[IER_OFFSET].get();
-        let active = (ifr & 0x7F) & (ier & 0x7F);
-        if active != 0 {
-            self.registers[IFR_OFFSET].set(ifr | IFR_IRQ);
-        } else {
-            self.registers[IFR_OFFSET].set(ifr & !IFR_IRQ);
-        }
+        let ifr = self.ifr.get();
+        let active = (ifr & 0x7F) & (self.ier & 0x7F);
+        let next_irq = if active != 0 { ifr | IFR_IRQ } else { ifr & !IFR_IRQ };
+        self.ifr.set(next_irq);
     }
 
     fn ifr_byte(&self) -> u8 {
-        self.registers[IFR_OFFSET].get()
+        self.ifr.get()
     }
 }
 
@@ -131,8 +108,8 @@ impl Addressable for VIA2 {
             DATA_DIRECTION_A_OFFSET => self.ddra,
             DATA_DIRECTION_B_OFFSET => self.ddrb,
             TIMER1_LATCH_LO_OFFSET => {
-                let ifr = self.registers[IFR_OFFSET].get();
-                self.registers[IFR_OFFSET].set(ifr & !IFR_TIMER1);
+                let ifr = self.ifr.get();
+                self.ifr.set(ifr & !IFR_TIMER1);
                 self.update_ifr_irq();
                 (self.t1_counter.get() & 0xFF) as u8
             }
@@ -145,12 +122,13 @@ impl Addressable for VIA2 {
             AUXILIARY_CONTROL_OFFSET => self.auxiliary_control,
             PERIPHERAL_CONTROL_OFFSET => self.peripheral_control,
             IFR_OFFSET => {
-                let ifr = self.registers[IFR_OFFSET].get();
-                let ier = self.registers[IER_OFFSET].get();
-                let active = (ifr & 0x7F) & (ier & 0x7F);
+                let ifr = self.ifr.get();
+                let active = (ifr & 0x7F) & (self.ier & 0x7F);
                 if active != 0 { ifr | IFR_IRQ } else { ifr & !IFR_IRQ }
             }
-            _ => self.registers[offset].get(),
+            IER_OFFSET => self.ier,
+            PORTA_HANDSHAKE_OFFSET => self.port_a_handshake,
+            _ => panic!("Invalid VIA2 register read at address {:04X}", address),
         }
     }
 
@@ -168,8 +146,8 @@ impl Addressable for VIA2 {
                 self.t1_latch
                     .set((self.t1_latch.get() & 0x00FF) | ((value as u16) << 8));
                 self.t1_counter.set(self.t1_latch.get());
-                let ifr = self.registers[IFR_OFFSET].get();
-                self.registers[IFR_OFFSET].set(ifr & !IFR_TIMER1);
+                let ifr = self.ifr.get();
+                self.ifr.set(ifr & !IFR_TIMER1);
                 self.update_ifr_irq();
             }
             TIMER1_COUNTER_HI_OFFSET => {
@@ -185,25 +163,23 @@ impl Addressable for VIA2 {
             AUXILIARY_CONTROL_OFFSET => self.auxiliary_control = value,
             PERIPHERAL_CONTROL_OFFSET => self.peripheral_control = value,
             IFR_OFFSET => {
-                let ifr = self.registers[IFR_OFFSET].get();
+                let ifr = self.ifr.get();
                 if value & IFR_IRQ != 0 {
-                    self.registers[IFR_OFFSET].set(ifr | (value & 0x7F));
+                    self.ifr.set(ifr | (value & 0x7F));
                 } else {
-                    self.registers[IFR_OFFSET].set(ifr & !(value & 0x7F));
+                    self.ifr.set(ifr & !(value & 0x7F));
                 }
                 self.update_ifr_irq();
             }
             IER_OFFSET => {
-                let ier = self.registers[IER_OFFSET].get();
                 if value & IFR_IRQ != 0 {
-                    self.registers[IER_OFFSET].set(ier | (value & 0x7F));
+                    self.ier |= value & 0x7F;
                 } else {
-                    self.registers[IER_OFFSET].set(ier & !(value & 0x7F));
+                    self.ier &= !(value & 0x7F);
                 }
             }
-            _ => {
-                self.registers[offset].set(value);
-            }
+            PORTA_HANDSHAKE_OFFSET => self.port_a_handshake = value,
+            _ => panic!("Invalid VIA2 register write at address {:04X}", address),
         }
     }
 }
@@ -241,6 +217,7 @@ mod tests {
     #[case(AUXILIARY_CONTROL_OFFSET)]
     #[case(PERIPHERAL_CONTROL_OFFSET)]
     #[case(IFR_OFFSET)]
+    #[case(PORTA_HANDSHAKE_OFFSET)]
     fn read_byte_returns_default_zero(via: VIA2, #[case] offset: usize) {
         assert_eq!(via.read_byte(addr(offset)), 0);
     }
@@ -257,6 +234,7 @@ mod tests {
     #[case(SHIFT_REGISTER_OFFSET)]
     #[case(AUXILIARY_CONTROL_OFFSET)]
     #[case(PERIPHERAL_CONTROL_OFFSET)]
+    #[case(PORTA_HANDSHAKE_OFFSET)]
     // #[case(IFR_OFFSET)]
     fn write_byte_stores_value_readable_back(mut via: VIA2, #[case] offset: usize) {
         via.write_byte(addr(offset), 0xAB);
@@ -266,19 +244,19 @@ mod tests {
     #[rstest]
     fn read_byte_timer1_counter_lo_returns_counter_and_clears_ifr_timer1(via: VIA2) {
         via.t1_counter.set(0x1234);
-        via.registers[IFR_OFFSET].set(IFR_TIMER1);
+        via.ifr.set(IFR_TIMER1);
         let value = via.read_byte(addr(TIMER1_LATCH_LO_OFFSET));
         assert_eq!(value, 0x34);
-        assert_eq!(via.registers[IFR_OFFSET].get() & IFR_TIMER1, 0);
+        assert_eq!(via.ifr.get() & IFR_TIMER1, 0);
     }
 
     #[rstest]
     fn write_byte_timer1_latch_hi_sets_counter_and_clears_ifr_timer1(mut via: VIA2) {
         via.t1_latch.set(0x5678);
-        via.registers[IFR_OFFSET].set(IFR_TIMER1);
+        via.ifr.set(IFR_TIMER1);
         via.write_byte(addr(TIMER1_LATCH_HI_OFFSET), 0x56);
         assert_eq!(via.t1_counter.get(), 0x5678);
-        assert_eq!(via.registers[IFR_OFFSET].get() & IFR_TIMER1, 0);
+        assert_eq!(via.ifr.get() & IFR_TIMER1, 0);
     }
 
     /// Each step decrements the running timer1 counter by one cycle.
@@ -307,7 +285,7 @@ mod tests {
         );
         assert_eq!(via.t1_counter.get(), 100);
         assert_eq!(
-            via.registers[IFR_OFFSET].get() & IFR_TIMER1,
+            via.ifr.get() & IFR_TIMER1,
             IFR_TIMER1,
             "IFR_TIMER1 should be set after underflow"
         );
@@ -319,7 +297,7 @@ mod tests {
     fn step_calls_interrupt_handler_when_timer1_irq_enabled(mut via: VIA2) {
         via.t1_counter.set(0);
         via.t1_latch.set(100);
-        via.registers[IER_OFFSET].set(IFR_TIMER1);
+        via.ier |= IFR_TIMER1;
         let mut handler = Unimock::new(
             InterruptHandlerMock::handle_interrupt
                 .each_call(matching!(_, _, false))
@@ -342,8 +320,8 @@ mod tests {
             &mut NoOpInterruptHandler,
         );
         // IFR_TIMER1 is flagged but IFR_IRQ should be clear (no enabled sources).
-        assert_eq!(via.registers[IFR_OFFSET].get() & IFR_TIMER1, IFR_TIMER1);
-        assert_eq!(via.registers[IFR_OFFSET].get() & IFR_IRQ, 0);
+        assert_eq!(via.ifr.get() & IFR_TIMER1, IFR_TIMER1);
+        assert_eq!(via.ifr.get() & IFR_IRQ, 0);
     }
 
     /// Even when IFR_TIMER1 is already set from a previous underflow,
@@ -351,8 +329,8 @@ mod tests {
     #[rstest]
     fn step_handles_already_pending_timer1_irq(mut via: VIA2) {
         via.t1_counter.set(1); // won't underflow this step
-        via.registers[IFR_OFFSET].set(IFR_TIMER1); // left over from earlier event
-        via.registers[IER_OFFSET].set(IFR_TIMER1);
+        via.ifr.set(IFR_TIMER1); // left over from earlier event
+        via.ier |= IFR_TIMER1;
         let mut handler = Unimock::new(
             InterruptHandlerMock::handle_interrupt
                 .each_call(matching!(_, _, false))
