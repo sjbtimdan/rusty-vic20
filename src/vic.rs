@@ -1,23 +1,27 @@
 use crate::{
     addressable::Addressable,
-    bus::{CHARACTER_ROM_END, CHARACTER_ROM_START, SCREEN_RAM_SIZE},
+    bus::{CHARACTER_ROM_END, CHARACTER_ROM_START, SCREEN_RAM_SIZE, VIC_REGISTERS_START},
     screen::renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH, CHAR_HEIGHT, CHAR_WIDTH, TEXT_COLUMNS, palette},
 };
 
+const SCREEN_CONTROL_OFFSET: usize = 0x0F;
+
 pub struct VIC {
-    registers: [u8; 16],
+    registers: [u8; 15],
+    screen_control: u8,
     cycle_count: u64,
 }
 
 impl Default for VIC {
     fn default() -> Self {
         let mut vic = Self {
-            registers: [0; 16],
+            registers: [0; 15],
+            screen_control: 0,
             cycle_count: 0,
         };
         vic.registers[0x03] = 0x1E;
         vic.registers[0x05] = 0x80;
-        vic.registers[0x0F] = 0x0E;
+        vic.screen_control = 0x0E;
         vic
     }
 }
@@ -57,29 +61,33 @@ impl VIC {
     }
 
     pub fn border_rgba(&self) -> u32 {
-        let border_color = self.registers[0x0F] & 0x07;
+        let border_color = self.screen_control & 0x07;
         palette(border_color)
     }
 
     fn screen_ram_start(&self) -> u16 {
-        // S = 4* (PEEK (36866) AND 128) + 64* (PEEK (36869) AND 112)
+        // S = 4 * (PEEK (36866) AND 128) + 64 * (PEEK (36869) AND 112)
         let m_36866 = self.registers[0x02] as u16;
         let m_36869 = self.registers[0x05] as u16;
         4 * (m_36866 & 0x80) + 64 * (m_36869 & 0x70)
     }
 
     fn colour_ram_start(&self) -> u16 {
-        // C = 37888 + 4* (PEEK (36866) AND 128)
+        // C = 37888 + 4 * (PEEK (36866) AND 128)
         let m_36866 = self.registers[0x02] as u16;
         0x9400 + 4 * (m_36866 & 0x80)
     }
 
     fn background_colour(&self) -> u8 {
-        (self.registers[0x0F] & 0xF0) >> 4
+        (self.screen_control & 0xF0) >> 4
+    }
+
+    fn reverse_mode(&self) -> bool {
+        (self.screen_control & 0x08) != 0
     }
 
     fn reverse_colors(&self, char_code: u8, fg: u8, bg: u8) -> (u8, u8) {
-        let reverse_mode = (self.registers[0x0F] & 0x08) != 0;
+        let reverse_mode = self.reverse_mode();
         if reverse_mode && (char_code & 0x80) != 0 {
             (bg, fg)
         } else {
@@ -90,20 +98,36 @@ impl VIC {
 
 impl Addressable for VIC {
     fn read_byte(&self, address: u16) -> u8 {
-        self.registers[address as usize - 0x9000]
+        let offset = address as usize - VIC_REGISTERS_START as usize;
+        match offset {
+            SCREEN_CONTROL_OFFSET => self.screen_control,
+            _ => self.registers[offset],
+        }
     }
 
     fn write_byte(&mut self, address: u16, value: u8) {
-        self.registers[address as usize - 0x9000] = value;
+        let offset = address as usize - VIC_REGISTERS_START as usize;
+        match offset {
+            SCREEN_CONTROL_OFFSET => self.screen_control = value,
+            _ => self.registers[offset] = value,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::{fixture, rstest};
 
     const SCREEN_COLOR: u8 = 2;
     const BACKGROUND_COLOR: u8 = 4;
+
+    #[fixture]
+    fn vic() -> VIC {
+        let mut vic = VIC::default();
+        vic.screen_control = (BACKGROUND_COLOR << 4) | SCREEN_COLOR;
+        vic
+    }
 
     fn build_memory(char_code: u8, fg_color: u8) -> [u8; 65536] {
         let mut mem = [0u8; 65536];
@@ -122,57 +146,51 @@ mod tests {
         mem
     }
 
-    fn build_vic(reverse_on: bool) -> VIC {
-        let mut vic = VIC::default();
-        let reg_f = (BACKGROUND_COLOR << 4) | if reverse_on { 0x08 } else { 0x00 };
-        vic.registers[0x0F] = reg_f;
-        vic
+    fn set_reverse_mode(vic: &mut VIC) {
+        let reg_f = (vic.screen_control & 0xF0) | 0x08;
+        vic.screen_control = reg_f;
     }
 
     fn pixel_at(framebuffer: &[u32], x: usize, y: usize) -> u32 {
         framebuffer[y * ACTIVE_WIDTH + x]
     }
 
-    #[test]
-    fn reverse_mode_off_char_without_bit7_uses_fg() {
-        let vic = build_vic(false);
+    #[rstest]
+    fn reverse_mode_off_char_without_bit7_uses_fg(vic: VIC) {
         let mem = build_memory(0x01, SCREEN_COLOR);
         let fb = vic.render_active_screen(&mem);
 
         assert_eq!(pixel_at(&fb, 0, 0), palette(SCREEN_COLOR));
     }
 
-    #[test]
-    fn reverse_mode_off_char_with_bit7_uses_fg() {
-        let vic = build_vic(false);
+    #[rstest]
+    fn reverse_mode_off_char_with_bit7_uses_fg(vic: VIC) {
         let mem = build_memory(0x81, SCREEN_COLOR);
         let fb = vic.render_active_screen(&mem);
 
         assert_eq!(pixel_at(&fb, 0, 0), palette(SCREEN_COLOR));
     }
 
-    #[test]
-    fn reverse_mode_on_char_without_bit7_uses_fg() {
-        let vic = build_vic(true);
+    #[rstest]
+    fn reverse_mode_on_char_without_bit7_uses_fg(vic: VIC) {
         let mem = build_memory(0x01, SCREEN_COLOR);
         let fb = vic.render_active_screen(&mem);
 
         assert_eq!(pixel_at(&fb, 0, 0), palette(SCREEN_COLOR));
     }
 
-    #[test]
-    fn reverse_mode_on_char_with_bit7_uses_bg() {
-        let vic = build_vic(true);
+    #[rstest]
+    fn reverse_mode_on_char_with_bit7_uses_bg(mut vic: VIC) {
+        set_reverse_mode(&mut vic);
         let mem = build_memory(0x81, SCREEN_COLOR);
         let fb = vic.render_active_screen(&mem);
 
         assert_eq!(pixel_at(&fb, 0, 0), palette(BACKGROUND_COLOR));
     }
 
-    #[test]
-    fn reverse_mode_on_bg_pixels_become_fg() {
-        let mut vic = build_vic(true);
-        vic.registers[0x0F] = (BACKGROUND_COLOR << 4) | 0x08;
+    #[rstest]
+    fn reverse_mode_on_bg_pixels_become_fg(mut vic: VIC) {
+        set_reverse_mode(&mut vic);
 
         let mut mem = [0u8; 65536];
         let char_code: u8 = 0x81;
@@ -186,10 +204,9 @@ mod tests {
         assert_eq!(pixel_at(&fb, 0, 0), palette(SCREEN_COLOR));
     }
 
-    #[test]
-    fn reverse_mode_on_both_fg_and_bg_swap() {
-        let mut vic = build_vic(true);
-        vic.registers[0x0F] = (BACKGROUND_COLOR << 4) | 0x08;
+    #[rstest]
+    fn reverse_mode_on_both_fg_and_bg_swap(mut vic: VIC) {
+        set_reverse_mode(&mut vic);
 
         let mut mem = [0u8; 65536];
         let char_code: u8 = 0x81;
@@ -202,5 +219,52 @@ mod tests {
         let fb = vic.render_active_screen(&mem);
         assert_eq!(pixel_at(&fb, 0, 0), palette(BACKGROUND_COLOR));
         assert_eq!(pixel_at(&fb, 1, 0), palette(SCREEN_COLOR));
+    }
+
+    #[rstest]
+    #[case(0, 0x00)]
+    #[case(1, 0x00)]
+    #[case(2, 0x00)]
+    #[case(3, 0x1E)]
+    #[case(4, 0x00)]
+    #[case(5, 0x80)]
+    #[case(6, 0x00)]
+    #[case(7, 0x00)]
+    #[case(8, 0x00)]
+    #[case(9, 0x00)]
+    #[case(10, 0x00)]
+    #[case(11, 0x00)]
+    #[case(12, 0x00)]
+    #[case(13, 0x00)]
+    #[case(14, 0x00)]
+    #[case(SCREEN_CONTROL_OFFSET, 0x0E)]
+    fn vic_register_reset_value(#[case] offset: usize, #[case] expected: u8) {
+        let vic = VIC::default();
+        let address = VIC_REGISTERS_START + (offset as u16);
+        assert_eq!(vic.read_byte(address), expected);
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(1)]
+    #[case(2)]
+    #[case(3)]
+    #[case(4)]
+    #[case(5)]
+    #[case(6)]
+    #[case(7)]
+    #[case(8)]
+    #[case(9)]
+    #[case(10)]
+    #[case(11)]
+    #[case(12)]
+    #[case(13)]
+    #[case(14)]
+    #[case(SCREEN_CONTROL_OFFSET)]
+    fn vic_read_returns_last_written_value(mut vic: VIC, #[case] offset: usize) {
+        let address = VIC_REGISTERS_START + (offset as u16);
+        let value = 50;
+        vic.write_byte(address, value);
+        assert_eq!(vic.read_byte(address), value);
     }
 }

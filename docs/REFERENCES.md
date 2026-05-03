@@ -13,6 +13,10 @@ https://ia803208.us.archive.org/24/items/VIC-20_Machine_Code/VIC-20_Machine_Code
 ### Effects of reading/writing registers
 https://reversing.pl/literatura/tekst_h/Synertek%20SY6522%20Programming%20Reference.pdf
 
+# VIC chip
+https://raw.githubusercontent.com/cbmeeks/VIC-20/master/6561.txt
+https://www.mdawson.net/vic20chrome/display/mos_6560_6561_vic.pdf
+
 # ROM Disassembly
 https://www.mdawson.net/vic20chrome/vic20/docs/kernel_disassembly.txt
 
