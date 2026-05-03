@@ -7,13 +7,16 @@ Still a WIP.
 - [x] 6502 CPU core.
 - [x] VIC chip, rendering VIC-20 text from screen memory.
 - [x] On screen VIC-20 keyboard
-- [ ] VIA1 and 2 chips (driving interrupts, etc)
-- [ ] Joystick support
+- [X] VIA 2 chip (driving interrupts, etc)
+- [X] Integration testing.
+- [ ] Keyboard interaction.
+- [ ] Speed control.
+- [ ] Sound.
 - [ ] Lightpen
 - [ ] Load programs from cassette or binary data.
-- [ ] Sound.
 - [ ] Accurate emulation down to the cycle and raster level.
-- [ ] Integration testing.
+- [ ] VIA 1 chip
+- [ ] Joystick support
 
 ## Vic 20
 ```

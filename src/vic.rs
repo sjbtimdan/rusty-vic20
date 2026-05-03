@@ -43,21 +43,32 @@ impl VIC {
 
         for active_y in 0..ACTIVE_HEIGHT {
             for active_x in 0..ACTIVE_WIDTH {
-                let row = active_y / CHAR_HEIGHT;
-                let col = active_x / CHAR_WIDTH;
-                let idx = row * TEXT_COLUMNS + col;
-                let char_code = screen_ram[idx];
-                let fg_color = colour_ram[idx] & 0x0F;
-                let (fg_color, background_colour) = self.reverse_colors(char_code, fg_color, background_colour);
-                let bitmap_row = &char_rom[char_code as usize * CHAR_HEIGHT..(char_code as usize + 1) * CHAR_HEIGHT]
-                    [active_y % CHAR_HEIGHT];
-                let bit = (bitmap_row >> (7 - (active_x % CHAR_WIDTH))) & 1;
-                let colour_index = if bit == 1 { fg_color } else { background_colour };
-
+                let colour_index =
+                    self.colour_index(screen_ram, colour_ram, char_rom, background_colour, active_y, active_x);
                 framebuffer.push(palette(colour_index));
             }
         }
         framebuffer
+    }
+
+    fn colour_index(
+        &self,
+        screen_ram: &[u8],
+        colour_ram: &[u8],
+        char_rom: &[u8],
+        background_colour: u8,
+        active_y: usize,
+        active_x: usize,
+    ) -> u8 {
+        let row = active_y / CHAR_HEIGHT;
+        let col = active_x / CHAR_WIDTH;
+        let idx = row * TEXT_COLUMNS + col;
+        let char_code = screen_ram[idx];
+        let fg_color = colour_ram[idx] & 0x0F;
+        let bitmap_row =
+            &char_rom[char_code as usize * CHAR_HEIGHT..(char_code as usize + 1) * CHAR_HEIGHT][active_y % CHAR_HEIGHT];
+        let bit = (bitmap_row >> (7 - (active_x % CHAR_WIDTH))) & 1;
+        if bit == 1 { fg_color } else { background_colour }
     }
 
     pub fn border_rgba(&self) -> u32 {
@@ -80,19 +91,6 @@ impl VIC {
 
     fn background_colour(&self) -> u8 {
         (self.screen_control & 0xF0) >> 4
-    }
-
-    fn reverse_mode(&self) -> bool {
-        (self.screen_control & 0x08) != 0
-    }
-
-    fn reverse_colors(&self, char_code: u8, fg: u8, bg: u8) -> (u8, u8) {
-        let reverse_mode = self.reverse_mode();
-        if reverse_mode && (char_code & 0x80) != 0 {
-            (bg, fg)
-        } else {
-            (fg, bg)
-        }
     }
 }
 
@@ -146,11 +144,6 @@ mod tests {
         mem
     }
 
-    fn set_reverse_mode(vic: &mut VIC) {
-        let reg_f = (vic.screen_control & 0xF0) | 0x08;
-        vic.screen_control = reg_f;
-    }
-
     fn pixel_at(framebuffer: &[u32], x: usize, y: usize) -> u32 {
         framebuffer[y * ACTIVE_WIDTH + x]
     }
@@ -161,64 +154,6 @@ mod tests {
         let fb = vic.render_active_screen(&mem);
 
         assert_eq!(pixel_at(&fb, 0, 0), palette(SCREEN_COLOR));
-    }
-
-    #[rstest]
-    fn reverse_mode_off_char_with_bit7_uses_fg(vic: VIC) {
-        let mem = build_memory(0x81, SCREEN_COLOR);
-        let fb = vic.render_active_screen(&mem);
-
-        assert_eq!(pixel_at(&fb, 0, 0), palette(SCREEN_COLOR));
-    }
-
-    #[rstest]
-    fn reverse_mode_on_char_without_bit7_uses_fg(vic: VIC) {
-        let mem = build_memory(0x01, SCREEN_COLOR);
-        let fb = vic.render_active_screen(&mem);
-
-        assert_eq!(pixel_at(&fb, 0, 0), palette(SCREEN_COLOR));
-    }
-
-    #[rstest]
-    fn reverse_mode_on_char_with_bit7_uses_bg(mut vic: VIC) {
-        set_reverse_mode(&mut vic);
-        let mem = build_memory(0x81, SCREEN_COLOR);
-        let fb = vic.render_active_screen(&mem);
-
-        assert_eq!(pixel_at(&fb, 0, 0), palette(BACKGROUND_COLOR));
-    }
-
-    #[rstest]
-    fn reverse_mode_on_bg_pixels_become_fg(mut vic: VIC) {
-        set_reverse_mode(&mut vic);
-
-        let mut mem = [0u8; 65536];
-        let char_code: u8 = 0x81;
-        mem[0] = char_code;
-        mem[0x9400] = SCREEN_COLOR;
-
-        let char_offset = CHARACTER_ROM_START + char_code as usize * CHAR_HEIGHT;
-        mem[char_offset] = 0x00;
-
-        let fb = vic.render_active_screen(&mem);
-        assert_eq!(pixel_at(&fb, 0, 0), palette(SCREEN_COLOR));
-    }
-
-    #[rstest]
-    fn reverse_mode_on_both_fg_and_bg_swap(mut vic: VIC) {
-        set_reverse_mode(&mut vic);
-
-        let mut mem = [0u8; 65536];
-        let char_code: u8 = 0x81;
-        mem[0] = char_code;
-        mem[0x9400] = SCREEN_COLOR;
-
-        let char_offset = CHARACTER_ROM_START + char_code as usize * CHAR_HEIGHT;
-        mem[char_offset] = 0b10000000;
-
-        let fb = vic.render_active_screen(&mem);
-        assert_eq!(pixel_at(&fb, 0, 0), palette(BACKGROUND_COLOR));
-        assert_eq!(pixel_at(&fb, 1, 0), palette(SCREEN_COLOR));
     }
 
     #[rstest]
