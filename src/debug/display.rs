@@ -10,7 +10,9 @@ use winit::{
     window::Window,
 };
 
-use super::{DebugMode, DebugState, PendingRegisterWrites, RegisterField, SharedMemory, SharedRegistersState};
+use super::{
+    DebugMode, DebugState, PendingRegisterWrites, RegisterField, SharedMemory, SharedPerfState, SharedRegistersState,
+};
 
 const WINDOW_TITLE: &str = "VIC-20 Debug";
 
@@ -42,6 +44,9 @@ const REG_Y_X: i32 = REG_X_X + 5 * CHAR_W * SCALE;
 const REG_SP_X: i32 = REG_Y_X + 5 * CHAR_W * SCALE;
 const REG_PC_X: i32 = REG_SP_X + 6 * CHAR_W * SCALE;
 const REG_SR_X: i32 = REG_PC_X + 8 * CHAR_W * SCALE;
+
+const PERF_Y: i32 = REG_LINE2_Y + ROW_H + 4;
+const PERF_VALUE_COLOR: [u8; 4] = [140, 200, 140, 255];
 
 const REG_VALUE_COLOR: [u8; 4] = [200, 200, 200, 255];
 const REG_LABEL_COLOR: [u8; 4] = [100, 100, 100, 255];
@@ -116,6 +121,7 @@ impl DebugWindow {
         pending_writes: &super::PendingWrites,
         registers: &SharedRegistersState,
         pending_register_writes: &PendingRegisterWrites,
+        perf: &SharedPerfState,
     ) {
         match event {
             WindowEvent::CloseRequested => {
@@ -128,7 +134,7 @@ impl DebugWindow {
                     error!("debug resize_surface failed: {err}");
                 }
             }
-            WindowEvent::RedrawRequested => self.draw(state, memory, registers),
+            WindowEvent::RedrawRequested => self.draw(state, memory, registers, perf),
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor_pos = Some((position.x, position.y));
             }
@@ -321,7 +327,13 @@ impl DebugWindow {
         }
     }
 
-    pub fn draw(&mut self, state: &DebugState, memory: &SharedMemory, registers: &SharedRegistersState) {
+    pub fn draw(
+        &mut self,
+        state: &DebugState,
+        memory: &SharedMemory,
+        registers: &SharedRegistersState,
+        perf: &SharedPerfState,
+    ) {
         let Some(pixels) = self.pixels.as_mut() else {
             return;
         };
@@ -397,6 +409,8 @@ impl DebugWindow {
         };
         draw_registers(frame, state, &regs);
         drop(regs);
+
+        draw_performance_metrics(frame, perf);
 
         drop(mem);
 
@@ -690,5 +704,40 @@ fn reg_field_at_x(px: i32) -> Option<RegisterField> {
         Some(RegisterField::Status)
     } else {
         None
+    }
+}
+
+fn draw_performance_metrics(frame: &mut [u8], perf: &SharedPerfState) {
+    let metrics = match perf.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+
+    let cycles_str = if metrics.cycles_per_second >= 1_000_000.0 {
+        format!("{:.2} MHz", metrics.cycles_per_second / 1_000_000.0)
+    } else if metrics.cycles_per_second >= 1_000.0 {
+        format!("{:.1} KHz", metrics.cycles_per_second / 1_000.0)
+    } else {
+        format!("{:.0} Hz", metrics.cycles_per_second)
+    };
+
+    let fps_str = format!("{:.1}", metrics.frames_per_second);
+    let total_cycles_str = format_total(metrics.total_cycles);
+    let total_frames_str = format_total(metrics.total_frames);
+
+    let line1 = format!("CPU: {cycles_str}   FPS: {fps_str}");
+    let line2 = format!("Total: {total_cycles_str} cycles, {total_frames_str} frames");
+
+    draw_str(frame, MARGIN, PERF_Y, &line1, PERF_VALUE_COLOR);
+    draw_str(frame, MARGIN, PERF_Y + ROW_H, &line2, PERF_VALUE_COLOR);
+}
+
+fn format_total(n: u64) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    } else if n >= 1_000 {
+        format!("{:.1}K", n as f64 / 1_000.0)
+    } else {
+        format!("{}", n)
     }
 }

@@ -91,6 +91,10 @@ impl Default for CPU6502 {
 }
 
 impl CPU6502 {
+    pub fn total_cycles(&self) -> u64 {
+        self.total_cycles
+    }
+
     pub fn reset(&mut self, reset_vector: u16) {
         let registers = &mut self.registers;
         registers.set_flag(DECIMAL_FLAG_BITMASK, false);

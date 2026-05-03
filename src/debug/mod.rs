@@ -31,6 +31,27 @@ pub enum RegisterField {
 
 pub type PendingRegisterWrites = Arc<Mutex<Vec<(RegisterField, u16)>>>;
 
+#[derive(Clone, Debug)]
+pub struct SharedPerformanceMetrics {
+    pub cycles_per_second: f64,
+    pub frames_per_second: f64,
+    pub total_cycles: u64,
+    pub total_frames: u64,
+}
+
+impl Default for SharedPerformanceMetrics {
+    fn default() -> Self {
+        Self {
+            cycles_per_second: 0.0,
+            frames_per_second: 0.0,
+            total_cycles: 0,
+            total_frames: 0,
+        }
+    }
+}
+
+pub type SharedPerfState = Arc<Mutex<SharedPerformanceMetrics>>;
+
 pub struct DebugState {
     pub start_address: u16,
     pub selected_offset: Option<usize>,
