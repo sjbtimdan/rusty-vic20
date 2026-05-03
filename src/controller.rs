@@ -27,17 +27,21 @@ const FRAME_TIME: Duration = Duration::from_nanos(1_000_000_000 / 50);
 const FRAME_PUBLISH_INTERVAL: Duration = Duration::from_millis(20);
 const MEMORY_PUBLISH_INTERVAL: Duration = Duration::from_millis(200);
 
+struct SharedState {
+    video: Arc<Mutex<SharedVideoState>>,
+    memory: SharedMemory,
+    pending_writes: PendingWrites,
+    registers: SharedRegistersState,
+    pending_register_writes: PendingRegisterWrites,
+}
+
 pub struct Vic20Controller {
     screen: ScreenWindow,
     keyboard: KeyboardWindow,
     debug: DebugWindow,
-    shared_video_state: Arc<Mutex<SharedVideoState>>,
-    keyboard_state: Arc<Mutex<KeyboardState>>,
-    debug_state: Arc<Mutex<DebugState>>,
-    shared_memory: SharedMemory,
-    pending_writes: PendingWrites,
-    shared_registers: SharedRegistersState,
-    pending_register_writes: PendingRegisterWrites,
+    shared_state: Option<SharedState>,
+    keyboard_state: KeyboardState,
+    debug_state: DebugState,
     tick_duration: Duration,
     vic_thread: Option<JoinHandle<()>>,
 }
@@ -48,26 +52,16 @@ impl Vic20Controller {
             screen: ScreenWindow::default(),
             keyboard: KeyboardWindow::default(),
             debug: DebugWindow::default(),
-            shared_video_state: Arc::new(Mutex::new(SharedVideoState {
-                screen_rgba: vec![0_u32; ACTIVE_WIDTH * ACTIVE_HEIGHT],
-                border_rgba: 0x0044AAFF,
-            })),
-            keyboard_state: Arc::new(Mutex::new(KeyboardState::new())),
-            debug_state: Arc::new(Mutex::new(DebugState::new())),
-            shared_memory: Arc::new(Mutex::new([0u8; 65536])),
-            pending_writes: Arc::new(Mutex::new(Vec::new())),
-            shared_registers: Arc::new(Mutex::new(SharedRegisters {
-                a: 0,
-                x: 0,
-                y: 0,
-                sp: 0xFD,
-                pc: 0,
-                status: 0,
-            })),
-            pending_register_writes: Arc::new(Mutex::new(Vec::new())),
+            shared_state: None,
+            keyboard_state: KeyboardState::new(),
+            debug_state: DebugState::new(),
             tick_duration,
             vic_thread: None,
         }
+    }
+
+    fn shared_state(&self) -> &SharedState {
+        self.shared_state.as_ref().unwrap()
     }
 
     pub fn run(&mut self) {
@@ -75,28 +69,54 @@ impl Vic20Controller {
         event_loop.run_app(self).expect("event loop run failed");
     }
 
-    fn spawn_emulator(&mut self) {
-        let shared_video_state = Arc::clone(&self.shared_video_state);
-        let shared_memory = Arc::clone(&self.shared_memory);
-        let pending_writes = Arc::clone(&self.pending_writes);
-        let shared_registers = Arc::clone(&self.shared_registers);
-        let pending_register_writes = Arc::clone(&self.pending_register_writes);
-        let tick_duration = self.tick_duration;
+    fn spawn_emulator(tick_duration: Duration) -> (JoinHandle<()>, SharedState) {
+        let video = Arc::new(Mutex::new(SharedVideoState {
+            screen_rgba: vec![0_u32; ACTIVE_WIDTH * ACTIVE_HEIGHT],
+            border_rgba: 0x0044AAFF,
+        }));
+        let memory: SharedMemory = Arc::new(Mutex::new([0u8; 65536]));
+        let pending_writes: PendingWrites = Arc::new(Mutex::new(Vec::new()));
+        let registers: SharedRegistersState = Arc::new(Mutex::new(SharedRegisters {
+            a: 0,
+            x: 0,
+            y: 0,
+            sp: 0xFD,
+            pc: 0,
+            status: 0,
+        }));
+        let pending_register_writes: PendingRegisterWrites = Arc::new(Mutex::new(Vec::new()));
 
         let handle = thread::Builder::new()
             .name("vic20-core-loop".to_string())
-            .spawn(move || {
-                Self::run_emulator(
-                    shared_video_state,
-                    shared_memory,
-                    pending_writes,
-                    shared_registers,
-                    pending_register_writes,
-                    tick_duration,
-                )
+            .spawn({
+                let video = Arc::clone(&video);
+                let memory = Arc::clone(&memory);
+                let pending_writes = Arc::clone(&pending_writes);
+                let registers = Arc::clone(&registers);
+                let pending_register_writes = Arc::clone(&pending_register_writes);
+                move || {
+                    Self::run_emulator(
+                        video,
+                        memory,
+                        pending_writes,
+                        registers,
+                        pending_register_writes,
+                        tick_duration,
+                    )
+                }
             })
             .expect("failed to spawn VIC-20 core thread");
-        self.vic_thread = Some(handle);
+
+        (
+            handle,
+            SharedState {
+                video,
+                memory,
+                pending_writes,
+                registers,
+                pending_register_writes,
+            },
+        )
     }
 
     fn run_emulator(
@@ -195,14 +215,18 @@ impl ApplicationHandler for Vic20Controller {
         self.screen.create(event_loop);
         self.keyboard.create(event_loop);
         self.debug.create(event_loop);
-        self.spawn_emulator();
+
+        let (handle, state) = Self::spawn_emulator(self.tick_duration);
+        self.vic_thread = Some(handle);
+        self.shared_state = Some(state);
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: winit::window::WindowId, event: WindowEvent) {
         if Some(window_id) == self.screen.window_id() {
             match event {
                 WindowEvent::RedrawRequested => {
-                    let shared = match self.shared_video_state.lock() {
+                    let video_ref = Arc::clone(&self.shared_state().video);
+                    let shared = match video_ref.lock() {
                         Ok(guard) => guard,
                         Err(poisoned) => poisoned.into_inner(),
                     };
@@ -213,36 +237,32 @@ impl ApplicationHandler for Vic20Controller {
                 }
             }
         } else if Some(window_id) == self.keyboard.window_id() {
-            let mut state = match self.keyboard_state.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => poisoned.into_inner(),
-            };
             match event {
                 WindowEvent::RedrawRequested => {
-                    self.keyboard.draw(event_loop, &mut state);
+                    self.keyboard.draw(event_loop, &mut self.keyboard_state);
                 }
                 _ => {
-                    self.keyboard.handle_event(event_loop, event, &mut state);
+                    self.keyboard.handle_event(event_loop, event, &mut self.keyboard_state);
                 }
             }
         } else if Some(window_id) == self.debug.window_id() {
-            let mut state = match self.debug_state.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => poisoned.into_inner(),
-            };
+            let memory = Arc::clone(&self.shared_state().memory);
+            let registers = Arc::clone(&self.shared_state().registers);
+            let pending_writes = Arc::clone(&self.shared_state().pending_writes);
+            let pending_register_writes = Arc::clone(&self.shared_state().pending_register_writes);
             match event {
                 WindowEvent::RedrawRequested => {
-                    self.debug.draw(&state, &self.shared_memory, &self.shared_registers);
+                    self.debug.draw(&self.debug_state, &memory, &registers);
                 }
                 _ => {
                     self.debug.handle_event(
                         event_loop,
                         event,
-                        &mut state,
-                        &self.shared_memory,
-                        &self.pending_writes,
-                        &self.shared_registers,
-                        &self.pending_register_writes,
+                        &mut self.debug_state,
+                        &memory,
+                        &pending_writes,
+                        &registers,
+                        &pending_register_writes,
                     );
                 }
             }
@@ -252,13 +272,7 @@ impl ApplicationHandler for Vic20Controller {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let screen_deadline = Instant::now() + FRAME_TIME;
 
-        let keyboard_deadline = {
-            let state = match self.keyboard_state.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            self.keyboard.next_deadline(&state)
-        };
+        let keyboard_deadline = self.keyboard.next_deadline(&self.keyboard_state);
 
         let nearest = match keyboard_deadline {
             Some(kd) if kd < screen_deadline => kd,

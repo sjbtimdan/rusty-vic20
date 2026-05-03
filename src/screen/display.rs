@@ -15,22 +15,10 @@ pub struct SharedVideoState {
     pub border_rgba: u32,
 }
 
+#[derive(Default)]
 pub struct ScreenWindow {
     window: Option<Arc<Window>>,
     pixels: Option<Pixels<'static>>,
-    screen_rgba: Vec<u32>,
-    border_rgba: u32,
-}
-
-impl Default for ScreenWindow {
-    fn default() -> Self {
-        Self {
-            window: None,
-            pixels: None,
-            screen_rgba: Vec::new(),
-            border_rgba: 0x0044AAFF,
-        }
-    }
 }
 
 impl ScreenWindow {
@@ -98,15 +86,8 @@ impl ScreenWindow {
             return;
         };
 
-        self.border_rgba = shared.border_rgba;
-        if self.screen_rgba.len() == shared.screen_rgba.len() {
-            self.screen_rgba.copy_from_slice(&shared.screen_rgba);
-        } else {
-            self.screen_rgba.clone_from(&shared.screen_rgba);
-        }
-
         let frame = pixels.frame_mut();
-        display_vic20_screen(frame, self.border_rgba, &self.screen_rgba);
+        display_vic20_screen(frame, shared.border_rgba, &shared.screen_rgba);
 
         if let Err(err) = pixels.render() {
             error!("pixels render failed: {err}");
