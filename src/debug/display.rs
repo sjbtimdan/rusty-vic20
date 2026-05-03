@@ -106,6 +106,7 @@ impl DebugWindow {
         self.window.as_ref().map(|w| w.id())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn handle_event(
         &mut self,
         event_loop: &ActiveEventLoop,

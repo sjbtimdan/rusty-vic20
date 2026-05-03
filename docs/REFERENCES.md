@@ -9,6 +9,10 @@ https://www.masswerk.at/6502/6502_instruction_set.html
 # Vic 20 Machine Code & Kernel
 https://ia803208.us.archive.org/24/items/VIC-20_Machine_Code/VIC-20_Machine_Code.pdf
 
+# VIA
+### Effects of reading/writing registers
+https://reversing.pl/literatura/tekst_h/Synertek%20SY6522%20Programming%20Reference.pdf
+
 # ROM Disassembly
 https://www.mdawson.net/vic20chrome/vic20/docs/kernel_disassembly.txt
 
