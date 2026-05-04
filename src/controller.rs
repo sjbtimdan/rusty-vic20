@@ -149,23 +149,15 @@ impl Vic20Controller {
         cpu.reset(reset_vector);
 
         loop {
-            // Apply any pending writes from the debugger
-            {
-                let mut writes = match pending_writes.lock() {
-                    Ok(guard) => guard,
-                    Err(poisoned) => poisoned.into_inner(),
-                };
+            // Apply any pending writes from the debugger (non-blocking)
+            if let Ok(mut writes) = pending_writes.try_lock() {
                 for (addr, value) in writes.drain(..) {
                     bus.write_byte(addr, value);
                 }
             }
 
-            // Apply any pending register writes from the debugger
-            {
-                let mut reg_writes = match pending_register_writes.lock() {
-                    Ok(guard) => guard,
-                    Err(poisoned) => poisoned.into_inner(),
-                };
+            // Apply any pending register writes from the debugger (non-blocking)
+            if let Ok(mut reg_writes) = pending_register_writes.try_lock() {
                 for (field, value) in reg_writes.drain(..) {
                     match field {
                         crate::debug::RegisterField::A => cpu.registers.a = value as u8,
