@@ -139,7 +139,7 @@ impl CPU6502 {
             self.operands_index = 0;
             self.cycle_count_at_end_of_this_instruction = self.cycle_count + current_instruction_info.cycles - 1;
         } else {
-            let Some(instruction_info) = &self.instruction_tracking.current_instruction_info.clone() else {
+            let Some(instruction_info) = self.instruction_tracking.current_instruction_info else {
                 panic!("Expected current_instruction_info to be Some");
             };
             if self.operands_index < instruction_info.mode.operand_count() {
@@ -162,7 +162,7 @@ impl CPU6502 {
                 let debug_log = if log_enabled!(log::Level::Info) {
                     Some(line_debug_log(
                         self.total_cycles,
-                        instruction_info,
+                        &instruction_info,
                         &self.operands_buffer,
                         &self.registers,
                     ))
