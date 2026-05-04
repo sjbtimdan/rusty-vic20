@@ -31,24 +31,27 @@ impl VIC {
         self.cycle_count += 1;
     }
 
-    #[must_use]
-    pub fn render_active_screen(&self, memory: &[u8; 65536]) -> Vec<u8> {
+    pub fn render_active_screen(
+        &self,
+        memory: &[u8; 65536],
+        frame_buffer: &mut [u8; ACTIVE_HEIGHT * ACTIVE_WIDTH * 4],
+    ) {
         let screen_ram_start = self.screen_ram_start() as usize;
         let screen_ram = &memory[screen_ram_start..screen_ram_start + SCREEN_RAM_SIZE];
         let colour_ram_start = self.colour_ram_start() as usize;
         let colour_ram = &memory[colour_ram_start..=colour_ram_start + SCREEN_RAM_SIZE];
         let char_rom = &memory[CHARACTER_ROM_START..=CHARACTER_ROM_END];
         let background_colour = self.background_colour();
-        let mut framebuffer = Vec::with_capacity(ACTIVE_WIDTH * ACTIVE_HEIGHT * 4);
-
+        let mut frame_buffer_index = 0;
         for active_y in 0..ACTIVE_HEIGHT {
             for active_x in 0..ACTIVE_WIDTH {
                 let colour_index =
                     self.colour_index(screen_ram, colour_ram, char_rom, background_colour, active_y, active_x);
-                framebuffer.extend_from_slice(&palette(colour_index));
+                let colour = palette(colour_index);
+                frame_buffer[frame_buffer_index..frame_buffer_index + 4].copy_from_slice(&colour);
+                frame_buffer_index += 4;
             }
         }
-        framebuffer
     }
 
     fn colour_index(
@@ -152,7 +155,8 @@ mod tests {
     #[rstest]
     fn reverse_mode_off_char_without_bit7_uses_fg(vic: VIC) {
         let mem = build_memory(0x01, SCREEN_COLOR);
-        let fb = vic.render_active_screen(&mem);
+        let mut fb = [0_u8; ACTIVE_HEIGHT * ACTIVE_WIDTH * 4];
+        vic.render_active_screen(&mem, &mut fb);
 
         assert_eq!(pixel_at(&fb, 0, 0), palette(SCREEN_COLOR));
     }

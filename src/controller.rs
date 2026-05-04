@@ -182,13 +182,13 @@ impl Vic20Controller {
             bus.step_devices(&mut cpu);
 
             if last_frame_publish.elapsed() >= FRAME_PUBLISH_INTERVAL {
-                let latest_screen_rgba = bus.render_active_screen();
+                bus.render_active_screen();
                 let latest_border_rgba = bus.border_rgba();
                 let mut shared = match shared_video_state.lock() {
                     Ok(guard) => guard,
                     Err(poisoned) => poisoned.into_inner(),
                 };
-                shared.screen_rgba = latest_screen_rgba;
+                shared.screen_rgba = bus.frame_buffer().to_vec();
                 shared.border_rgba = latest_border_rgba;
                 last_frame_publish = Instant::now();
                 frame_count += 1;

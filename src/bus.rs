@@ -1,5 +1,10 @@
 use crate::{
-    addressable::Addressable, cpu::cpu6502::CPU6502, memory::Memory, tools::debug::MemoryWriteWatchpoint, via2::VIA2,
+    addressable::Addressable,
+    cpu::cpu6502::CPU6502,
+    memory::Memory,
+    screen::renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH},
+    tools::debug::MemoryWriteWatchpoint,
+    via2::VIA2,
     vic::VIC,
 };
 use log::info;
@@ -10,6 +15,7 @@ pub struct Bus {
     vic: VIC,
     via2: VIA2,
     watchpoints: Vec<MemoryWriteWatchpoint>,
+    frame_buffer: [u8; ACTIVE_HEIGHT * ACTIVE_WIDTH * 4],
 }
 
 pub const SCREEN_RAM_SIZE: usize = 512;
@@ -31,6 +37,7 @@ impl Default for Bus {
             vic: VIC::default(),
             via2: VIA2::default(),
             watchpoints: vec![],
+            frame_buffer: [0; ACTIVE_HEIGHT * ACTIVE_WIDTH * 4],
         }
     }
 }
@@ -67,8 +74,12 @@ impl Bus {
             .step(&mut cpu.registers, &mut self.memory, &mut cpu.instruction_tracking);
     }
 
-    pub fn render_active_screen(&self) -> Vec<u8> {
-        self.vic.render_active_screen(&self.memory)
+    pub fn render_active_screen(&mut self) {
+        self.vic.render_active_screen(&self.memory, &mut self.frame_buffer)
+    }
+
+    pub fn frame_buffer(&self) -> &[u8; ACTIVE_HEIGHT * ACTIVE_WIDTH * 4] {
+        &self.frame_buffer
     }
 
     pub fn border_rgba(&self) -> [u8; 4] {
