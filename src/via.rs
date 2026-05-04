@@ -25,7 +25,7 @@ const IFR_OFFSET: usize = 0x0D;
 const IER_OFFSET: usize = 0x0E;
 const PORTA_HANDSHAKE_OFFSET: usize = 0x0F;
 
-pub struct VIA2 {
+pub struct VIA {
     pb: u8,
     pa: u8,
     ddrb: u8,
@@ -42,7 +42,7 @@ pub struct VIA2 {
     t1_latch: Cell<u16>,
 }
 
-impl Default for VIA2 {
+impl Default for VIA {
     fn default() -> Self {
         Self {
             pb: 0,
@@ -63,7 +63,7 @@ impl Default for VIA2 {
     }
 }
 
-impl VIA2 {
+impl VIA {
     pub fn step(
         &mut self,
         registers: &mut Registers,
@@ -99,7 +99,7 @@ impl VIA2 {
     }
 }
 
-impl Addressable for VIA2 {
+impl Addressable for VIA {
     fn read_byte(&self, address: u16) -> u8 {
         let offset = address as usize - VIA2_REGISTERS_START as usize;
         match offset {
@@ -200,8 +200,8 @@ mod tests {
     }
 
     #[fixture]
-    fn via() -> VIA2 {
-        VIA2::default()
+    fn via() -> VIA {
+        VIA::default()
     }
 
     #[rstest]
@@ -218,7 +218,7 @@ mod tests {
     #[case(PERIPHERAL_CONTROL_OFFSET)]
     #[case(IFR_OFFSET)]
     #[case(PORTA_HANDSHAKE_OFFSET)]
-    fn read_byte_returns_default_zero(via: VIA2, #[case] offset: usize) {
+    fn read_byte_returns_default_zero(via: VIA, #[case] offset: usize) {
         assert_eq!(via.read_byte(addr(offset)), 0);
     }
 
@@ -236,13 +236,13 @@ mod tests {
     #[case(PERIPHERAL_CONTROL_OFFSET)]
     #[case(PORTA_HANDSHAKE_OFFSET)]
     // #[case(IFR_OFFSET)]
-    fn write_byte_stores_value_readable_back(mut via: VIA2, #[case] offset: usize) {
+    fn write_byte_stores_value_readable_back(mut via: VIA, #[case] offset: usize) {
         via.write_byte(addr(offset), 0xAB);
         assert_eq!(via.read_byte(addr(offset)), 0xAB);
     }
 
     #[rstest]
-    fn read_byte_timer1_counter_lo_returns_counter_and_clears_ifr_timer1(via: VIA2) {
+    fn read_byte_timer1_counter_lo_returns_counter_and_clears_ifr_timer1(via: VIA) {
         via.t1_counter.set(0x1234);
         via.ifr.set(IFR_TIMER1);
         let value = via.read_byte(addr(TIMER1_LATCH_LO_OFFSET));
@@ -251,7 +251,7 @@ mod tests {
     }
 
     #[rstest]
-    fn write_byte_timer1_latch_hi_sets_counter_and_clears_ifr_timer1(mut via: VIA2) {
+    fn write_byte_timer1_latch_hi_sets_counter_and_clears_ifr_timer1(mut via: VIA) {
         via.t1_latch.set(0x5678);
         via.ifr.set(IFR_TIMER1);
         via.write_byte(addr(TIMER1_LATCH_HI_OFFSET), 0x56);
@@ -261,7 +261,7 @@ mod tests {
 
     /// Each step decrements the running timer1 counter by one cycle.
     #[rstest]
-    fn step_decrements_timer1_counter(mut via: VIA2) {
+    fn step_decrements_timer1_counter(mut via: VIA) {
         via.t1_counter.set(5);
         via.t1_latch.set(100);
         via.step(
@@ -275,7 +275,7 @@ mod tests {
     /// When the counter reaches zero, the next step reloads it from the latch
     /// and sets the timer1 interrupt flag (IFR bit 6).
     #[rstest]
-    fn step_reloads_timer1_and_sets_flag_on_underflow(mut via: VIA2) {
+    fn step_reloads_timer1_and_sets_flag_on_underflow(mut via: VIA) {
         via.t1_counter.set(0);
         via.t1_latch.set(100);
         via.step(
@@ -294,7 +294,7 @@ mod tests {
     /// When timer1 underflows and IER has the timer1 bit enabled,
     /// the interrupt handler is invoked with `is_break = false`.
     #[rstest]
-    fn step_calls_interrupt_handler_when_timer1_irq_enabled(mut via: VIA2) {
+    fn step_calls_interrupt_handler_when_timer1_irq_enabled(mut via: VIA) {
         via.t1_counter.set(0);
         via.t1_latch.set(100);
         via.ier |= IFR_TIMER1;
@@ -310,7 +310,7 @@ mod tests {
     /// When timer1 underflows but IER does not have the timer1 bit enabled,
     /// the IRQ line stays low and the interrupt handler is never called.
     #[rstest]
-    fn step_does_not_raise_irq_without_ier_enable(mut via: VIA2) {
+    fn step_does_not_raise_irq_without_ier_enable(mut via: VIA) {
         via.t1_counter.set(0);
         via.t1_latch.set(100);
         // IER timer1 bit is clear (default).
@@ -327,7 +327,7 @@ mod tests {
     /// Even when IFR_TIMER1 is already set from a previous underflow,
     /// step calls the interrupt handler if the IER timer1 bit is enabled.
     #[rstest]
-    fn step_handles_already_pending_timer1_irq(mut via: VIA2) {
+    fn step_handles_already_pending_timer1_irq(mut via: VIA) {
         via.t1_counter.set(1); // won't underflow this step
         via.ifr.set(IFR_TIMER1); // left over from earlier event
         via.ier |= IFR_TIMER1;

@@ -7,6 +7,6 @@ pub mod keyboard;
 pub mod memory;
 pub mod screen;
 pub mod tools;
-pub mod via2;
+pub mod via;
 pub mod vic;
 pub mod virtual_clock;

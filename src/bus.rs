@@ -4,7 +4,7 @@ use crate::{
     memory::Memory,
     screen::renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH},
     tools::debug::MemoryWriteWatchpoint,
-    via2::VIA2,
+    via::VIA,
     vic::VIC,
 };
 use log::info;
@@ -13,7 +13,8 @@ use std::fs;
 pub struct Bus {
     memory: Memory,
     vic: VIC,
-    via2: VIA2,
+    via1: VIA,
+    via2: VIA,
     watchpoints: Vec<MemoryWriteWatchpoint>,
     frame_buffer: [u8; ACTIVE_HEIGHT * ACTIVE_WIDTH * 4],
 }
@@ -27,6 +28,8 @@ pub const KERNEL_ROM_START: usize = 0xE000;
 pub const KERNEL_ROM_END: usize = 0xFFFF;
 pub const VIC_REGISTERS_START: u16 = 0x9000;
 pub const VIC_REGISTERS_END: u16 = 0x9010;
+pub const VIA1_REGISTERS_START: u16 = 0x9110;
+pub const VIA1_REGISTERS_END: u16 = 0x9120;
 pub const VIA2_REGISTERS_START: u16 = 0x9120;
 pub const VIA2_REGISTERS_END: u16 = 0x9130;
 
@@ -35,7 +38,8 @@ impl Default for Bus {
         Self {
             memory: [0; 65536],
             vic: VIC::default(),
-            via2: VIA2::default(),
+            via1: VIA::default(),
+            via2: VIA::default(),
             watchpoints: vec![],
             frame_buffer: [0; ACTIVE_HEIGHT * ACTIVE_WIDTH * 4],
         }
@@ -46,6 +50,7 @@ impl Addressable for Bus {
     fn read_byte(&self, address: u16) -> u8 {
         match address {
             VIC_REGISTERS_START..VIC_REGISTERS_END => self.vic.read_byte(address),
+            // VIA1_REGISTERS_START..VIA1_REGISTERS_END => self.via1.read_byte(address),
             VIA2_REGISTERS_START..VIA2_REGISTERS_END => self.via2.read_byte(address),
             _ => self.memory.read_byte(address),
         }
@@ -57,6 +62,7 @@ impl Addressable for Bus {
             .for_each(|watchpoint| watchpoint.on_write(address, value));
         match address {
             VIC_REGISTERS_START..VIC_REGISTERS_END => self.vic.write_byte(address, value),
+            // VIA1_REGISTERS_START..VIA1_REGISTERS_END => self.via1.write_byte(address, value),
             VIA2_REGISTERS_START..VIA2_REGISTERS_END => self.via2.write_byte(address, value),
             _ => self.memory.write_byte(address, value),
         }
