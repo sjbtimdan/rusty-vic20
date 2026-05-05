@@ -1,6 +1,5 @@
 use rusty_vic20::controller::Vic20Controller;
-use std::env;
-use std::time::Duration;
+use std::{env, time::Duration};
 
 const DEFAULT_TICK_MICROS: u64 = 0;
 

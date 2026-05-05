@@ -1,8 +1,10 @@
 use crate::{
     addressable::Addressable,
     bus::VIA2_REGISTERS_START,
-    cpu::interrupt_handler::{Interrupt, InterruptHandler},
-    cpu::registers::Registers,
+    cpu::{
+        interrupt_handler::{Interrupt, InterruptHandler},
+        registers::Registers,
+    },
 };
 use std::cell::Cell;
 
@@ -191,8 +193,10 @@ mod tests {
     use super::*;
     use crate::{
         addressable::UnimplementedAddressable,
-        cpu::interrupt_handler::{InterruptHandlerMock, NoOpInterruptHandler},
-        cpu::registers::Registers,
+        cpu::{
+            interrupt_handler::{InterruptHandlerMock, NoOpInterruptHandler},
+            registers::Registers,
+        },
     };
     use rstest::{fixture, rstest};
     use unimock::{MockFn, Unimock, matching};

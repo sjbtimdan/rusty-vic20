@@ -11,7 +11,13 @@ use winit::{
 };
 
 use super::{
-    DebugMode, DebugState, PendingRegisterWrites, RegisterField, SharedMemory, SharedPerfState, SharedRegistersState,
+    DebugMode,
+    DebugState,
+    PendingRegisterWrites,
+    RegisterField,
+    SharedMemory,
+    SharedPerfState,
+    SharedRegistersState,
 };
 
 const WINDOW_TITLE: &str = "VIC-20 Debug";

@@ -5,8 +5,14 @@ use crate::{
         instructions::Instruction,
         interrupt_handler::{Interrupt, InterruptHandler},
         registers::{
-            BREAK_FLAG_BITMASK, CARRY_FLAG_BITMASK, DECIMAL_FLAG_BITMASK, NEGATIVE_FLAG_BITMASK, OVERFLOW_FLAG_BITMASK,
-            Registers, UNUSED_FLAG_BITMASK, ZERO_FLAG_BITMASK,
+            BREAK_FLAG_BITMASK,
+            CARRY_FLAG_BITMASK,
+            DECIMAL_FLAG_BITMASK,
+            NEGATIVE_FLAG_BITMASK,
+            OVERFLOW_FLAG_BITMASK,
+            Registers,
+            UNUSED_FLAG_BITMASK,
+            ZERO_FLAG_BITMASK,
         },
     },
 };
@@ -352,17 +358,19 @@ fn apply_shift(
 
 #[cfg(test)]
 mod tests {
-    use rstest::fixture;
-    use rstest::rstest;
-    use unimock::MockFn;
-    use unimock::matching;
+    use rstest::{fixture, rstest};
+    use unimock::{MockFn, matching};
 
     use super::*;
-    use crate::cpu::addressing_mode::OperandResolutionMock;
-    use crate::cpu::instructions::*;
-    use crate::cpu::interrupt_handler::{InterruptHandlerMock, NoOpInterruptHandler};
-    use crate::cpu::registers::*;
-    use crate::memory::Memory;
+    use crate::{
+        cpu::{
+            addressing_mode::OperandResolutionMock,
+            instructions::*,
+            interrupt_handler::{InterruptHandlerMock, NoOpInterruptHandler},
+            registers::*,
+        },
+        memory::Memory,
+    };
     use unimock::Unimock;
 
     #[fixture]

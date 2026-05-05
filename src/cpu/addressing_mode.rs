@@ -137,8 +137,7 @@ impl OperandResolution for AddressingMode {
 
 #[cfg(test)]
 mod tests {
-    use rstest::fixture;
-    use rstest::rstest;
+    use rstest::{fixture, rstest};
 
     use super::*;
     use crate::{cpu::registers::Registers, memory::*};

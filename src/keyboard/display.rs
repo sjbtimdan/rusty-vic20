@@ -2,8 +2,7 @@ use font8x8::{BASIC_FONTS, UnicodeFonts};
 use image::{ImageFormat, load_from_memory_with_format};
 use log::error;
 use pixels::{Pixels, SurfaceTexture};
-use std::sync::Arc;
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::{ElementState, MouseButton, WindowEvent},

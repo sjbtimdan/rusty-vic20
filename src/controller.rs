@@ -3,8 +3,15 @@ use crate::{
     bus::Bus,
     cpu::{cpu6502::CPU6502, instruction_executor},
     debug::{
-        DebugState, PendingRegisterWrites, PendingWrites, SharedMemory, SharedPerfState, SharedPerformanceMetrics,
-        SharedRegisters, SharedRegistersState, display::DebugWindow,
+        DebugState,
+        PendingRegisterWrites,
+        PendingWrites,
+        SharedMemory,
+        SharedPerfState,
+        SharedPerformanceMetrics,
+        SharedRegisters,
+        SharedRegistersState,
+        display::DebugWindow,
     },
     keyboard::{KeyboardState, display::KeyboardWindow},
     screen::{

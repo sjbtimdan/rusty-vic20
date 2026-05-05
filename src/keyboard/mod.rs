@@ -3,8 +3,10 @@
 pub mod display;
 
 use crate::virtual_clock::{Clock, SystemClock};
-use std::collections::HashSet;
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashSet,
+    time::{Duration, Instant},
+};
 
 pub const DOUBLE_CLICK_THRESHOLD: Duration = Duration::from_millis(350);
 pub const FLASH_DURATION: Duration = Duration::from_millis(200);
@@ -247,8 +249,10 @@ pub fn build_key_regions() -> Vec<KeyRegion> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::Cell;
-    use std::time::{Duration, Instant};
+    use std::{
+        cell::Cell,
+        time::{Duration, Instant},
+    };
 
     struct MockClock {
         time: Cell<Instant>,
