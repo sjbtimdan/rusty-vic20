@@ -1,6 +1,6 @@
 use crate::{
     addressable::Addressable,
-    cpu::cpu6502::CPU6502,
+    cpu::{cpu6502::CPU6502, interrupt_handler::Interrupt},
     memory::Memory,
     screen::renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH},
     tools::debug::MemoryWriteWatchpoint,
@@ -13,7 +13,7 @@ use std::fs;
 pub struct Bus {
     memory: Memory,
     vic: VIC,
-    _via1: VIA,
+    via1: VIA,
     via2: VIA,
     watchpoints: Vec<MemoryWriteWatchpoint>,
     frame_buffer: [u8; ACTIVE_HEIGHT * ACTIVE_WIDTH * 4],
@@ -38,7 +38,7 @@ impl Default for Bus {
         Self {
             memory: [0; 65536],
             vic: VIC::default(),
-            _via1: VIA::default(),
+            via1: VIA::default(),
             via2: VIA::default(),
             watchpoints: vec![],
             frame_buffer: [0; ACTIVE_HEIGHT * ACTIVE_WIDTH * 4],
@@ -49,9 +49,9 @@ impl Default for Bus {
 impl Addressable for Bus {
     fn read_byte(&self, address: u16) -> u8 {
         match address {
-            VIC_REGISTERS_START..VIC_REGISTERS_END => self.vic.read_byte(address),
-            // VIA1_REGISTERS_START..VIA1_REGISTERS_END => self.via1.read_byte(address),
-            VIA2_REGISTERS_START..VIA2_REGISTERS_END => self.via2.read_byte(address),
+            VIC_REGISTERS_START..VIC_REGISTERS_END => self.vic.read_byte(address - VIC_REGISTERS_START),
+            VIA1_REGISTERS_START..VIA1_REGISTERS_END => self.via1.read_byte(address - VIA1_REGISTERS_START),
+            VIA2_REGISTERS_START..VIA2_REGISTERS_END => self.via2.read_byte(address - VIA2_REGISTERS_START),
             _ => self.memory.read_byte(address),
         }
     }
@@ -61,9 +61,9 @@ impl Addressable for Bus {
             .iter()
             .for_each(|watchpoint| watchpoint.on_write(address, value));
         match address {
-            VIC_REGISTERS_START..VIC_REGISTERS_END => self.vic.write_byte(address, value),
-            // VIA1_REGISTERS_START..VIA1_REGISTERS_END => self.via1.write_byte(address, value),
-            VIA2_REGISTERS_START..VIA2_REGISTERS_END => self.via2.write_byte(address, value),
+            VIC_REGISTERS_START..VIC_REGISTERS_END => self.vic.write_byte(address - VIC_REGISTERS_START, value),
+            VIA1_REGISTERS_START..VIA1_REGISTERS_END => self.via1.write_byte(address - VIA1_REGISTERS_START, value),
+            VIA2_REGISTERS_START..VIA2_REGISTERS_END => self.via2.write_byte(address - VIA2_REGISTERS_START, value),
             _ => self.memory.write_byte(address, value),
         }
     }
@@ -76,8 +76,18 @@ impl Bus {
 
     pub fn step_devices(&mut self, cpu: &mut CPU6502) {
         self.vic.step();
-        self.via2
-            .step(&mut cpu.registers, &mut self.memory, &mut cpu.instruction_tracking);
+        self.via1.step(
+            &mut cpu.registers,
+            &mut self.memory,
+            &mut cpu.instruction_tracking,
+            Interrupt::NMI,
+        );
+        self.via2.step(
+            &mut cpu.registers,
+            &mut self.memory,
+            &mut cpu.instruction_tracking,
+            Interrupt::IRQ,
+        );
     }
 
     pub fn render_active_screen(&mut self) {

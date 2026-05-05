@@ -1,6 +1,5 @@
 use crate::{
     addressable::Addressable,
-    bus::VIA2_REGISTERS_START,
     cpu::{
         interrupt_handler::{Interrupt, InterruptHandler},
         registers::Registers,
@@ -73,11 +72,12 @@ impl VIA {
         registers: &mut Registers,
         memory: &mut dyn Addressable,
         interrupt_handler: &mut dyn InterruptHandler,
+        interrupt: Interrupt,
     ) {
         self.step_timer1();
         self.update_ifr_irq();
         if self.ifr_byte() & IFR_IRQ != 0 {
-            interrupt_handler.handle_interrupt(registers, memory, Interrupt::IRQ);
+            interrupt_handler.handle_interrupt(registers, memory, interrupt);
         }
     }
 
@@ -105,7 +105,7 @@ impl VIA {
 
 impl Addressable for VIA {
     fn read_byte(&self, address: u16) -> u8 {
-        let offset = address as usize - VIA2_REGISTERS_START as usize;
+        let offset = address as usize;
         match offset {
             PORT_A_OFFSET => self.pa,
             PORT_B_OFFSET => self.pb,
@@ -137,7 +137,7 @@ impl Addressable for VIA {
     }
 
     fn write_byte(&mut self, address: u16, value: u8) {
-        let offset = address as usize - VIA2_REGISTERS_START as usize;
+        let offset = address as usize;
         match offset {
             PORT_A_OFFSET => self.pa = value,
             PORT_B_OFFSET => self.pb = value,
@@ -194,7 +194,7 @@ mod tests {
     use crate::{
         addressable::UnimplementedAddressable,
         cpu::{
-            interrupt_handler::{InterruptHandlerMock, NoOpInterruptHandler},
+            interrupt_handler::{Interrupt, InterruptHandlerMock, NoOpInterruptHandler},
             registers::Registers,
         },
     };
@@ -202,7 +202,7 @@ mod tests {
     use unimock::{MockFn, Unimock, matching};
 
     fn addr(offset: usize) -> u16 {
-        VIA2_REGISTERS_START + offset as u16
+        offset as u16
     }
 
     #[fixture]
@@ -274,6 +274,7 @@ mod tests {
             &mut Registers::default(),
             &mut UnimplementedAddressable,
             &mut NoOpInterruptHandler,
+            Interrupt::IRQ,
         );
         assert_eq!(via.t1_counter.get(), 4);
     }
@@ -288,6 +289,7 @@ mod tests {
             &mut Registers::default(),
             &mut UnimplementedAddressable,
             &mut NoOpInterruptHandler,
+            Interrupt::IRQ,
         );
         assert_eq!(via.t1_counter.get(), 100);
         assert_eq!(
@@ -300,16 +302,21 @@ mod tests {
     /// When timer1 underflows and IER has the timer1 bit enabled,
     /// the interrupt handler is invoked with `is_break = false`.
     #[rstest]
-    fn step_calls_interrupt_handler_when_timer1_irq_enabled(mut via: VIA) {
+    fn step_calls_interrupt_handler_when_timer1_nmi_enabled(mut via: VIA) {
         via.t1_counter.set(0);
         via.t1_latch.set(100);
         via.ier |= IFR_TIMER1;
         let mut handler = Unimock::new(
             InterruptHandlerMock::handle_interrupt
-                .each_call(matching!(_, _, Interrupt::IRQ))
+                .each_call(matching!(_, _, Interrupt::NMI))
                 .returns(()),
         );
-        via.step(&mut Registers::default(), &mut UnimplementedAddressable, &mut handler);
+        via.step(
+            &mut Registers::default(),
+            &mut UnimplementedAddressable,
+            &mut handler,
+            Interrupt::NMI,
+        );
         handler.verify();
     }
 
@@ -324,6 +331,7 @@ mod tests {
             &mut Registers::default(),
             &mut UnimplementedAddressable,
             &mut NoOpInterruptHandler,
+            Interrupt::IRQ,
         );
         // IFR_TIMER1 is flagged but IFR_IRQ should be clear (no enabled sources).
         assert_eq!(via.ifr.get() & IFR_TIMER1, IFR_TIMER1);
@@ -342,7 +350,12 @@ mod tests {
                 .each_call(matching!(_, _, Interrupt::IRQ))
                 .returns(()),
         );
-        via.step(&mut Registers::default(), &mut UnimplementedAddressable, &mut handler);
+        via.step(
+            &mut Registers::default(),
+            &mut UnimplementedAddressable,
+            &mut handler,
+            Interrupt::IRQ,
+        );
         handler.verify();
     }
 }

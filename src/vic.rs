@@ -1,6 +1,6 @@
 use crate::{
     addressable::Addressable,
-    bus::{CHARACTER_ROM_END, CHARACTER_ROM_START, SCREEN_RAM_SIZE, VIC_REGISTERS_START},
+    bus::{CHARACTER_ROM_END, CHARACTER_ROM_START, SCREEN_RAM_SIZE},
     screen::renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH, CHAR_HEIGHT, CHAR_WIDTH, TEXT_COLUMNS, palette},
 };
 
@@ -99,7 +99,7 @@ impl VIC {
 
 impl Addressable for VIC {
     fn read_byte(&self, address: u16) -> u8 {
-        let offset = address as usize - VIC_REGISTERS_START as usize;
+        let offset = address as usize;
         match offset {
             SCREEN_CONTROL_OFFSET => self.screen_control,
             _ => self.registers[offset],
@@ -107,7 +107,7 @@ impl Addressable for VIC {
     }
 
     fn write_byte(&mut self, address: u16, value: u8) {
-        let offset = address as usize - VIC_REGISTERS_START as usize;
+        let offset = address as usize;
         match offset {
             SCREEN_CONTROL_OFFSET => self.screen_control = value,
             _ => self.registers[offset] = value,
@@ -180,7 +180,7 @@ mod tests {
     #[case(SCREEN_CONTROL_OFFSET, 0x0E)]
     fn vic_register_reset_value(#[case] offset: usize, #[case] expected: u8) {
         let vic = VIC::default();
-        let address = VIC_REGISTERS_START + (offset as u16);
+        let address = offset as u16;
         assert_eq!(vic.read_byte(address), expected);
     }
 
@@ -202,7 +202,7 @@ mod tests {
     #[case(14)]
     #[case(SCREEN_CONTROL_OFFSET)]
     fn vic_read_returns_last_written_value(mut vic: VIC, #[case] offset: usize) {
-        let address = VIC_REGISTERS_START + (offset as u16);
+        let address = offset as u16;
         let value = 50;
         vic.write_byte(address, value);
         assert_eq!(vic.read_byte(address), value);
