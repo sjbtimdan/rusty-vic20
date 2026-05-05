@@ -3,7 +3,7 @@ use crate::{
     cpu::{
         addressing_mode::OperandResolution,
         instructions::Instruction,
-        interrupt_handler::InterruptHandler,
+        interrupt_handler::{Interrupt, InterruptHandler},
         registers::{
             BREAK_FLAG_BITMASK, CARRY_FLAG_BITMASK, DECIMAL_FLAG_BITMASK, NEGATIVE_FLAG_BITMASK, OVERFLOW_FLAG_BITMASK,
             Registers, UNUSED_FLAG_BITMASK, ZERO_FLAG_BITMASK,
@@ -71,7 +71,7 @@ fn execute_instruction(
         Instruction::BCC => branch_if(registers, operands, !registers.is_flag_set(CARRY_FLAG_BITMASK)),
         Instruction::BCS => branch_if(registers, operands, registers.is_flag_set(CARRY_FLAG_BITMASK)),
         Instruction::BEQ => branch_if(registers, operands, registers.is_flag_set(ZERO_FLAG_BITMASK)),
-        Instruction::BRK => interrupt_handler.handle_interrupt(registers, memory, true),
+        Instruction::BRK => interrupt_handler.handle_interrupt(registers, memory, Interrupt::BRK),
         Instruction::BIT => {
             let value = operand_resolution.resolve_value(registers, memory, operands);
             registers.set_flag(ZERO_FLAG_BITMASK, registers.a & value == 0);
@@ -1232,7 +1232,7 @@ mod tests {
         let operand_resolution = Unimock::new(());
         let mut interrupt_handler = Unimock::new(
             InterruptHandlerMock::handle_interrupt
-                .each_call(matching!(_, _, true))
+                .each_call(matching!(_, _, Interrupt::BRK))
                 .returns(()),
         );
         execute_instruction(

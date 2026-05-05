@@ -2,10 +2,10 @@ use crate::{
     addressable::Addressable,
     cpu::{
         addressing_mode::OperandResolution,
-        instruction_executor::{InstructionExecutor, stack_push},
+        instruction_executor::InstructionExecutor,
+        instruction_tracking::InstructionTracking,
         instructions::{Instruction, InstructionInfo, decode},
-        interrupt_handler::InterruptHandler,
-        registers::{BREAK_FLAG_BITMASK, DECIMAL_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK, Registers, UNUSED_FLAG_BITMASK},
+        registers::{DECIMAL_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK, Registers},
     },
     tools::{
         debug::{Breakpoint, LoggingAddressBreakpoint},
@@ -16,48 +16,6 @@ use log::{debug, log_enabled};
 use std::time::Instant;
 
 const PERFORMANCE_LOG_INTERVAL_CYCLES: u64 = 1_000_000;
-
-#[derive(Clone, Copy, Default)]
-pub struct InstructionTracking {
-    current_instruction_info: Option<InstructionInfo>,
-    interrupt_requested: bool,
-}
-impl InterruptHandler for InstructionTracking {
-    fn handle_interrupt(&mut self, registers: &mut Registers, memory: &mut dyn Addressable, is_break: bool) {
-        if !is_break && registers.is_flag_set(INTERRUPT_FLAG_BITMASK) {
-            return;
-        }
-        if is_break || self.current_instruction_info.is_none() {
-            self.current_instruction_info = None;
-            self.do_interrupt(registers, memory, is_break);
-        } else {
-            debug!(
-                "Interrupt requested during instruction execution at PC=0x{:04X}, will be handled after current instruction completes",
-                registers.pc
-            );
-            self.interrupt_requested = true;
-        }
-    }
-}
-
-impl InstructionTracking {
-    fn do_interrupt(&mut self, registers: &mut Registers, memory: &mut dyn Addressable, is_break: bool) {
-        debug!("Handling interrupt (is_break={is_break}) at PC=0x{:04X}", registers.pc);
-        let return_address = if is_break {
-            registers.pc.wrapping_add(2)
-        } else {
-            registers.pc
-        };
-        let status_to_push = (registers.status | UNUSED_FLAG_BITMASK) & if is_break { !0 } else { !BREAK_FLAG_BITMASK };
-        stack_push(registers, memory, (return_address >> 8) as u8);
-        stack_push(registers, memory, return_address as u8);
-        stack_push(registers, memory, status_to_push);
-        registers.pc = memory.read_word(0xFFFE);
-        registers.set_flag(INTERRUPT_FLAG_BITMASK, true);
-        registers.set_flag(BREAK_FLAG_BITMASK, is_break);
-        self.interrupt_requested = false;
-    }
-}
 
 pub struct CPU6502 {
     pub registers: Registers,
@@ -113,11 +71,12 @@ impl CPU6502 {
     }
 
     pub fn step(&mut self, memory: &mut impl Addressable, instruction_executor: &impl InstructionExecutor) {
-        if self.instruction_tracking.interrupt_requested && self.instruction_tracking.current_instruction_info.is_none()
+        if let Some(interrupt) = self.instruction_tracking.interrupt_requested
+            && self.instruction_tracking.current_instruction_info.is_none()
         {
             self.instruction_tracking
-                .do_interrupt(&mut self.registers, memory, false);
-            self.instruction_tracking.interrupt_requested = false;
+                .do_interrupt(&mut self.registers, memory, interrupt);
+            self.instruction_tracking.interrupt_requested = None;
             return;
         }
         self.total_cycles += 1;

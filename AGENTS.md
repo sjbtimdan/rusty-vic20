@@ -13,6 +13,7 @@ Guidance for AI coding agents working in this repository.
 - Build: `cargo build`
 - Test: `cargo test`
 - Format: `cargo fmt` (config in `rustfmt.toml`)
+- Lint: `cargo clippy` — run after every change and fix all warnings
 - Run emulator: `cargo run --bin vic20`
 - Run disassembler: `cargo run --bin disassembler -- data/somefile.bin`
 - Enable logging: `RUST_LOG=info cargo run --bin vic20` (uses `env_logger`)

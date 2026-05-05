@@ -1,5 +1,7 @@
 use crate::{
-    addressable::Addressable, bus::VIA2_REGISTERS_START, cpu::interrupt_handler::InterruptHandler,
+    addressable::Addressable,
+    bus::VIA2_REGISTERS_START,
+    cpu::interrupt_handler::{Interrupt, InterruptHandler},
     cpu::registers::Registers,
 };
 use std::cell::Cell;
@@ -73,7 +75,7 @@ impl VIA {
         self.step_timer1();
         self.update_ifr_irq();
         if self.ifr_byte() & IFR_IRQ != 0 {
-            interrupt_handler.handle_interrupt(registers, memory, false);
+            interrupt_handler.handle_interrupt(registers, memory, Interrupt::IRQ);
         }
     }
 
@@ -300,7 +302,7 @@ mod tests {
         via.ier |= IFR_TIMER1;
         let mut handler = Unimock::new(
             InterruptHandlerMock::handle_interrupt
-                .each_call(matching!(_, _, false))
+                .each_call(matching!(_, _, Interrupt::IRQ))
                 .returns(()),
         );
         via.step(&mut Registers::default(), &mut UnimplementedAddressable, &mut handler);
@@ -333,7 +335,7 @@ mod tests {
         via.ier |= IFR_TIMER1;
         let mut handler = Unimock::new(
             InterruptHandlerMock::handle_interrupt
-                .each_call(matching!(_, _, false))
+                .each_call(matching!(_, _, Interrupt::IRQ))
                 .returns(()),
         );
         via.step(&mut Registers::default(), &mut UnimplementedAddressable, &mut handler);

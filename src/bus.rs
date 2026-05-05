@@ -13,7 +13,7 @@ use std::fs;
 pub struct Bus {
     memory: Memory,
     vic: VIC,
-    via1: VIA,
+    _via1: VIA,
     via2: VIA,
     watchpoints: Vec<MemoryWriteWatchpoint>,
     frame_buffer: [u8; ACTIVE_HEIGHT * ACTIVE_WIDTH * 4],
@@ -38,7 +38,7 @@ impl Default for Bus {
         Self {
             memory: [0; 65536],
             vic: VIC::default(),
-            via1: VIA::default(),
+            _via1: VIA::default(),
             via2: VIA::default(),
             watchpoints: vec![],
             frame_buffer: [0; ACTIVE_HEIGHT * ACTIVE_WIDTH * 4],
