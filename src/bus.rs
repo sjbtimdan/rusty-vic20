@@ -2,8 +2,8 @@ use crate::{
     addressable::Addressable,
     cpu::{cpu6502::CPU6502, interrupt_handler::Interrupt},
     memory::Memory,
-    screen::renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH},
     tools::debug::MemoryWriteWatchpoint,
+    ui::screen::renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH},
     via::VIA,
     vic::VIC,
 };

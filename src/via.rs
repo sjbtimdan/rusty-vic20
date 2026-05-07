@@ -101,6 +101,10 @@ impl VIA {
     fn ifr_byte(&self) -> u8 {
         self.ifr.get()
     }
+
+    pub fn set_port_a_bit(&mut self, bit_mask: u8) {
+        self.pa |= bit_mask;
+    }
 }
 
 impl Addressable for VIA {

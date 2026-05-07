@@ -13,10 +13,12 @@ use crate::{
         SharedRegistersState,
         display::DebugWindow,
     },
-    keyboard::{KeyboardState, display::KeyboardWindow},
-    screen::{
-        display::{ScreenWindow, SharedVideoState},
-        renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH},
+    ui::{
+        keyboard::{KeyboardState, display::KeyboardWindow},
+        screen::{
+            display::{ScreenWindow, SharedVideoState},
+            renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH},
+        },
     },
 };
 use std::{

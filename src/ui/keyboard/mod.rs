@@ -2,7 +2,18 @@
 
 pub mod display;
 
-use crate::virtual_clock::{Clock, SystemClock};
+use crate::{
+    via::VIA,
+    virtual_clock::{Clock, SystemClock},
+};
+
+pub struct Keyboard;
+
+impl Keyboard {
+    pub fn on_restore(&self, via: &mut VIA) {
+        via.set_port_a_bit(0x02);
+    }
+}
 use std::{
     collections::HashSet,
     time::{Duration, Instant},

@@ -8,7 +8,7 @@ use winit::{
     window::Window,
 };
 
-use crate::screen::renderer::{PAL_HEIGHT, PAL_WIDTH, display_vic20_screen};
+use crate::ui::screen::renderer::{PAL_HEIGHT, PAL_WIDTH, display_vic20_screen};
 
 pub struct SharedVideoState {
     pub screen_rgba: Vec<u8>,

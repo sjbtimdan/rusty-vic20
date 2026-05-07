@@ -11,9 +11,9 @@ use winit::{
     window::Window,
 };
 
-use crate::keyboard::{KeyRegion, KeyboardState};
+use crate::ui::keyboard::{KeyRegion, KeyboardState};
 
-const KEYBOARD_PNG: &[u8] = include_bytes!("../../data/vic20-c64-layout.png");
+const KEYBOARD_PNG: &[u8] = include_bytes!("../../../data/vic20-c64-layout.png");
 
 #[derive(Copy, Clone)]
 struct FrameSize {
