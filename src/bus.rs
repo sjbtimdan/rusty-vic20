@@ -82,12 +82,8 @@ impl Bus {
             &mut cpu.instruction_tracking,
             Interrupt::NMI,
         );
-        self.via2.step(
-            &mut cpu.registers,
-            &mut self.memory,
-            &mut cpu.instruction_tracking,
-            Interrupt::IRQ,
-        );
+        self.via2.step_internal(); // avoiding interrupts for now...
+        cpu.irq_line_low = self.via2.irq_active();
     }
 
     pub fn render_active_screen(&mut self) {

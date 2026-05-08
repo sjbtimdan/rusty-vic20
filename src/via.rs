@@ -77,12 +77,20 @@ impl VIA {
         interrupt_handler: &mut dyn InterruptHandler,
         interrupt: Interrupt,
     ) {
+        self.step_internal();
+        if self.irq_active() {
+            interrupt_handler.handle_interrupt(registers, memory, interrupt);
+        }
+    }
+
+    pub fn step_internal(&mut self) {
         self.step_timer1();
         self.check_ca1_edge();
         self.update_ifr_irq();
-        if self.ifr_byte() & IFR_IRQ != 0 {
-            interrupt_handler.handle_interrupt(registers, memory, interrupt);
-        }
+    }
+
+    pub fn irq_active(&self) -> bool {
+        self.ifr_byte() & IFR_IRQ != 0
     }
 
     fn step_timer1(&self) {
@@ -104,10 +112,6 @@ impl VIA {
 
     fn ifr_byte(&self) -> u8 {
         self.ifr.get()
-    }
-
-    pub fn set_ca1_pending(&mut self) {
-        self.ca1_pending = true;
     }
 
     fn check_ca1_edge(&mut self) {
@@ -281,6 +285,56 @@ mod tests {
         via.write_byte(addr(TIMER1_LATCH_HI_OFFSET), 0x56);
         assert_eq!(via.t1_counter.get(), 0x5678);
         assert_eq!(via.ifr.get() & IFR_TIMER1, 0);
+    }
+
+    #[rstest]
+    fn irq_active_when_ifr_irq_bit_set(via: VIA) {
+        via.ifr.set(IFR_IRQ | IFR_TIMER1);
+        assert!(via.irq_active());
+    }
+
+    #[rstest]
+    fn irq_inactive_when_ifr_irq_bit_clear(via: VIA) {
+        via.ifr.set(IFR_TIMER1);
+        assert!(!via.irq_active());
+    }
+
+    /// step_internal decrements timer1, sets IFR on underflow, but does NOT call interrupt handler.
+    #[rstest]
+    fn step_internal_decrements_timer1(mut via: VIA) {
+        via.t1_counter.set(5);
+        via.t1_latch.set(100);
+        via.step_internal();
+        assert_eq!(via.t1_counter.get(), 4);
+    }
+
+    #[rstest]
+    fn step_internal_reloads_timer1_and_sets_flag_on_underflow(mut via: VIA) {
+        via.t1_counter.set(0);
+        via.t1_latch.set(100);
+        via.step_internal();
+        assert_eq!(via.t1_counter.get(), 100);
+        assert_eq!(via.ifr.get() & IFR_TIMER1, IFR_TIMER1);
+    }
+
+    #[rstest]
+    fn step_internal_sets_ifr_irq_when_enabled(mut via: VIA) {
+        via.t1_counter.set(0);
+        via.t1_latch.set(100);
+        via.ier |= IFR_TIMER1;
+        assert!(!via.irq_active());
+        via.step_internal();
+        assert!(via.irq_active());
+    }
+
+    #[rstest]
+    fn step_internal_does_not_set_ifr_irq_when_not_enabled(mut via: VIA) {
+        via.t1_counter.set(0);
+        via.t1_latch.set(100);
+        assert!(!via.irq_active());
+        via.step_internal();
+        assert!(via.ifr.get() & IFR_TIMER1 != 0);
+        assert!(!via.irq_active());
     }
 
     /// Each step decrements the running timer1 counter by one cycle.

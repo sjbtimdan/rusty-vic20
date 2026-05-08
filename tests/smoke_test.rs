@@ -21,8 +21,8 @@ fn run_steps(steps: usize) -> (Bus, CPU6502) {
     cpu.reset(reset_vector);
 
     for _ in 0..steps {
-        cpu.step(&mut bus, &instruction_executor);
         bus.step_devices(&mut cpu);
+        cpu.step(&mut bus, &instruction_executor);
     }
     (bus, cpu)
 }

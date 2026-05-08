@@ -185,8 +185,8 @@ impl Vic20Controller {
                 }
             }
 
-            cpu.step(&mut bus, &instruction_executor);
             bus.step_devices(&mut cpu);
+            cpu.step(&mut bus, &instruction_executor);
 
             if last_frame_publish.elapsed() >= FRAME_PUBLISH_INTERVAL {
                 bus.render_active_screen();

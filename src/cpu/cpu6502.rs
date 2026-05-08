@@ -5,6 +5,7 @@ use crate::{
         instruction_executor::InstructionExecutor,
         instruction_tracking::InstructionTracking,
         instructions::{Instruction, InstructionInfo, decode},
+        interrupt_handler::Interrupt,
         registers::{DECIMAL_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK, Registers},
     },
     tools::{
@@ -28,6 +29,7 @@ pub struct CPU6502 {
     last_performance_log_instant: Instant,
     breakpoints: Vec<Box<dyn Breakpoint>>,
     pub instruction_tracking: InstructionTracking,
+    pub irq_line_low: bool,
 }
 
 impl Default for CPU6502 {
@@ -44,6 +46,7 @@ impl Default for CPU6502 {
             last_performance_log_instant: Instant::now(),
             breakpoints: vec![],
             instruction_tracking: InstructionTracking::default(),
+            irq_line_low: false,
         }
     }
 }
@@ -60,6 +63,7 @@ impl CPU6502 {
         registers.sp = 0xFD;
         registers.pc = reset_vector;
         self.instruction_tracking = InstructionTracking::default();
+        self.irq_line_low = false;
     }
 
     pub fn add_breakpoint_address(&mut self, address: u16) {
@@ -71,13 +75,17 @@ impl CPU6502 {
     }
 
     pub fn step(&mut self, memory: &mut impl Addressable, instruction_executor: &impl InstructionExecutor) {
-        if let Some(interrupt) = self.instruction_tracking.interrupt_requested
-            && self.instruction_tracking.current_instruction_info.is_none()
-        {
-            self.instruction_tracking
-                .do_interrupt(&mut self.registers, memory, interrupt);
-            self.instruction_tracking.interrupt_requested = None;
-            return;
+        if self.instruction_tracking.current_instruction_info.is_none() {
+            if let Some(interrupt) = self.instruction_tracking.interrupt_requested.take() {
+                self.instruction_tracking
+                    .do_interrupt(&mut self.registers, memory, interrupt);
+                return;
+            }
+            if self.irq_line_low && !self.registers.is_flag_set(INTERRUPT_FLAG_BITMASK) {
+                self.instruction_tracking
+                    .do_interrupt(&mut self.registers, memory, Interrupt::IRQ);
+                return;
+            }
         }
         self.total_cycles += 1;
         if self.total_cycles - self.last_performance_log_cycle >= PERFORMANCE_LOG_INTERVAL_CYCLES {
@@ -151,6 +159,16 @@ impl CPU6502 {
                 );
                 self.instruction_tracking.current_instruction_info = None;
                 self.cycle_count = 0;
+
+                if let Some(interrupt) = self.instruction_tracking.interrupt_requested.take() {
+                    self.instruction_tracking
+                        .do_interrupt(&mut self.registers, memory, interrupt);
+                    return;
+                }
+                if self.irq_line_low && !self.registers.is_flag_set(INTERRUPT_FLAG_BITMASK) {
+                    self.instruction_tracking
+                        .do_interrupt(&mut self.registers, memory, Interrupt::IRQ);
+                }
             }
         }
     }
