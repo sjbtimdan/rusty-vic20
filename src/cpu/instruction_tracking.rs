@@ -7,7 +7,7 @@ use crate::{
         registers::{BREAK_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK, Registers, UNUSED_FLAG_BITMASK},
     },
 };
-use log::debug;
+use log::{Level, debug, log};
 
 #[derive(Clone, Copy, Default)]
 pub struct InstructionTracking {
@@ -35,7 +35,17 @@ impl InterruptHandler for InstructionTracking {
 impl InstructionTracking {
     pub fn do_interrupt(&mut self, registers: &mut Registers, memory: &mut dyn Addressable, interrupt: Interrupt) {
         let is_break = interrupt == Interrupt::BRK;
-        debug!("Handling interrupt (is_break={is_break}) at PC=0x{:04X}", registers.pc);
+        let log_level = if interrupt == Interrupt::NMI {
+            Level::Info
+        } else {
+            Level::Debug
+        };
+        log!(
+            log_level,
+            "Handling interrupt {:?} (is_break={is_break}) at PC=0x{:04X}",
+            interrupt,
+            registers.pc
+        );
         let return_address = if is_break {
             registers.pc.wrapping_add(2)
         } else {

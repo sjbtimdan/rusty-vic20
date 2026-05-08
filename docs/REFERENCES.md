@@ -24,6 +24,8 @@ https://www.mdawson.net/vic20chrome/vic20/docs/kernel_disassembly.txt
 # Interrupts
 https://eden.mose.org.uk/download/Commodore%20Interrupts.pdf
 https://jefftranter.blogspot.com/2012/03/6522-via-experiment-2.html
+https://www.pagetable.com/?p=410
+https://6502.org/tutorials/interrupts.html
 
 # Programming
 https://www.vic-20.it/computes_second_book_of_VIC.pdf

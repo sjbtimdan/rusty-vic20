@@ -125,28 +125,15 @@ impl KeyboardWindow {
                 button: MouseButton::Left,
                 ..
             } => {
-                if let Some(key) = self.key_at_cursor(state) {
-                    state.on_key_click(key);
-                    if let Some(window) = self.window.as_ref() {
-                        window.request_redraw();
-                    }
+                if let Some((img_x, img_y)) = self.window_pos_to_image_pos() {
+                    self.handle_mouse_click(img_x, img_y, state);
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(keycode) = event.physical_key
                     && let Some(vic_key) = keycode_to_vic20(keycode)
                 {
-                    match event.state {
-                        ElementState::Pressed => {
-                            state.physical_key_pressed(vic_key);
-                        }
-                        ElementState::Released => {
-                            state.physical_key_released(vic_key);
-                        }
-                    }
-                    if let Some(window) = self.window.as_ref() {
-                        window.request_redraw();
-                    }
+                    self.handle_physical_key_event(event.state == ElementState::Pressed, vic_key, state);
                 }
             }
             WindowEvent::RedrawRequested => self.draw(event_loop, state),
@@ -250,11 +237,31 @@ impl KeyboardWindow {
         state.flash_remaining().map(|d| Instant::now() + d)
     }
 
-    fn key_at_cursor(&self, state: &KeyboardState) -> Option<&'static str> {
+    fn window_pos_to_image_pos(&self) -> Option<(f32, f32)> {
         let (cursor_x, cursor_y) = self.cursor_pos?;
         let pixels = self.pixels.as_ref()?;
-        let (image_x, image_y) = pixels.window_pos_to_pixel((cursor_x as f32, cursor_y as f32)).ok()?;
-        state.key_at_pixel(image_x as f32, image_y as f32)
+        let (img_x, img_y) = pixels.window_pos_to_pixel((cursor_x as f32, cursor_y as f32)).ok()?;
+        Some((img_x as f32, img_y as f32))
+    }
+
+    pub fn handle_mouse_click(&mut self, image_x: f32, image_y: f32, state: &mut KeyboardState) {
+        if let Some(key) = state.key_at_pixel(image_x, image_y) {
+            state.on_key_click(key);
+            if let Some(window) = self.window.as_ref() {
+                window.request_redraw();
+            }
+        }
+    }
+
+    pub fn handle_physical_key_event(&mut self, pressed: bool, vic_key: &'static str, state: &mut KeyboardState) {
+        if pressed {
+            state.physical_key_pressed(vic_key);
+        } else {
+            state.physical_key_released(vic_key);
+        }
+        if let Some(window) = self.window.as_ref() {
+            window.request_redraw();
+        }
     }
 }
 

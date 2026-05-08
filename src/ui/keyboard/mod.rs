@@ -2,16 +2,41 @@
 
 pub mod display;
 
-use crate::{
-    via::VIA,
-    virtual_clock::{Clock, SystemClock},
+use crate::virtual_clock::{Clock, SystemClock};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
-pub struct Keyboard;
+pub struct Keyboard {
+    restore_triggered: Arc<AtomicBool>,
+}
+
+impl Default for Keyboard {
+    fn default() -> Self {
+        Self {
+            restore_triggered: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
 
 impl Keyboard {
-    pub fn on_restore(&self, via: &mut VIA) {
-        via.set_port_a_bit(0x02);
+    pub fn new() -> (Self, Arc<AtomicBool>) {
+        let flag = Arc::new(AtomicBool::new(false));
+        (
+            Self {
+                restore_triggered: Arc::clone(&flag),
+            },
+            flag,
+        )
+    }
+
+    pub fn on_restore(&self) {
+        self.restore_triggered.store(true, Ordering::SeqCst);
+    }
+
+    pub fn restore_trigger(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.restore_triggered)
     }
 }
 use std::{
@@ -46,6 +71,7 @@ pub struct KeyboardState<C = SystemClock> {
     pub flash_key: Option<(String, Instant)>,
     pub physical_keys: HashSet<&'static str>,
     pub status_message: String,
+    pub keyboard: Keyboard,
 }
 
 impl Default for KeyboardState {
@@ -70,7 +96,12 @@ impl<C: Clock> KeyboardState<C> {
             flash_key: None,
             physical_keys: HashSet::new(),
             status_message: String::from("Click a key. Double-click toggles hold."),
+            keyboard: Keyboard::default(),
         }
+    }
+
+    pub fn restore_trigger(&self) -> Arc<AtomicBool> {
+        self.keyboard.restore_trigger()
     }
 
     /// Given image-space pixel coordinates, returns the label of the key there (if any).
@@ -101,16 +132,22 @@ impl<C: Clock> KeyboardState<C> {
         match self.classify_click(key) {
             ClickKind::Single => {
                 let now = self.clock.now();
-                if let Some(held) = self.held_key.clone()
+                if let Some(held) = &self.held_key
                     && held != key
                 {
                     self.status_message = format!("CHORD: {held} + {key} pressed together, then released");
                     self.held_key = None;
                     self.flash_key = Some((key.to_string(), now));
+                    if key == "RESTORE" {
+                        self.keyboard.on_restore();
+                    }
                     return;
                 }
                 self.flash_key = Some((key.to_string(), now));
                 self.status_message = format!("CLICK: {key}");
+                if key == "RESTORE" {
+                    self.keyboard.on_restore();
+                }
             }
             ClickKind::Double => {
                 if self.held_key.as_deref() == Some(key) {
@@ -119,6 +156,9 @@ impl<C: Clock> KeyboardState<C> {
                 } else {
                     self.held_key = Some(key.to_string());
                     self.status_message = format!("HOLD: {key}");
+                }
+                if key == "RESTORE" {
+                    self.keyboard.on_restore();
                 }
             }
         }

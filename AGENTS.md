@@ -35,15 +35,15 @@ Guidance for AI coding agents working in this repository.
 
 - `src/bus.rs`: 64KB address space routing, ROM mapping, device stepping.
 - `src/cpu/`: 6502 execution core (decode, execute, interrupts, registers).
-- `src/vic.rs` and `src/screen/`: video logic and display path (`renderer.rs`, `display.rs`).
+- `src/vic.rs` and `src/ui/screen/`: video logic and display path (`renderer.rs`, `display.rs`).
 - `src/via2.rs`: VIA timer/interrupt behavior (still WIP — only Timer 1 partially implemented).
 - `src/debug/mod.rs` and `src/debug/display.rs`: debugger window showing registers, memory, and perf metrics.
 - `src/tools/disassembler.rs`: 6502 disassembler used by the `disassembler` binary.
 - `src/bin/vic20.rs`: thin CLI entrypoint, accepts optional tick duration in microseconds.
 - `src/bin/disassembler.rs`: standalone disassembler binary.
 - `src/controller.rs`: main `ApplicationHandler` managing both screen + keyboard windows, dispatches events by `WindowId`, owns emulator thread.
-- `src/keyboard/mod.rs`: keyboard state machine (key regions, click/hold/flash, physical key mapping).
-- `src/keyboard/display.rs`: interactive keyboard overlay window rendering.
+- `src/ui/keyboard/mod.rs`: keyboard state machine (key regions, click/hold/flash, physical key mapping).
+- `src/ui/keyboard/display.rs`: interactive keyboard overlay window rendering.
 
 ## Platform and Threading Constraints
 
@@ -56,7 +56,6 @@ Guidance for AI coding agents working in this repository.
 - Avoid self-referential lifetime designs around CPU execution helpers; construct short-lived executors per step when needed.
 - In bus/device stepping, avoid aliasing mutable borrows of a field and `&mut self` in the same call path.
 - For `unimock` with trait objects, local `Debug` impls for trait objects may be needed for test expectations.
-- The VIC chip's reverse-mode, multi-color mode, and double-height characters are not yet implemented (see `WIP.md`).
 
 ## Testing Conventions
 
@@ -69,6 +68,7 @@ Guidance for AI coding agents working in this repository.
 ## File and Change Hygiene
 
 - Keep formatting aligned with `rustfmt.toml` (max width 120, no hard tabs, field init shorthand, reorder imports).
+- Use cargo +nightly fmt
 - Do not edit `target/` artifacts.
 - Preserve existing public APIs unless the task explicitly requires API changes.
 

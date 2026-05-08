@@ -7,6 +7,7 @@ use crate::{
 };
 use std::cell::Cell;
 
+const IFR_CA1: u8 = 0x02;
 const IFR_TIMER1: u8 = 0x40;
 const IFR_IRQ: u8 = 0x80;
 
@@ -43,6 +44,7 @@ pub struct VIA {
     port_a_handshake: u8,
     t1_counter: Cell<u16>,
     t1_latch: Cell<u16>,
+    ca1_pending: bool,
 }
 
 impl Default for VIA {
@@ -62,6 +64,7 @@ impl Default for VIA {
             port_a_handshake: 0,
             t1_counter: Cell::new(0x0000),
             t1_latch: Cell::new(0x0000),
+            ca1_pending: false,
         }
     }
 }
@@ -75,6 +78,7 @@ impl VIA {
         interrupt: Interrupt,
     ) {
         self.step_timer1();
+        self.check_ca1_edge();
         self.update_ifr_irq();
         if self.ifr_byte() & IFR_IRQ != 0 {
             interrupt_handler.handle_interrupt(registers, memory, interrupt);
@@ -102,8 +106,18 @@ impl VIA {
         self.ifr.get()
     }
 
-    pub fn set_port_a_bit(&mut self, bit_mask: u8) {
-        self.pa |= bit_mask;
+    pub fn set_ca1_pending(&mut self) {
+        self.ca1_pending = true;
+    }
+
+    fn check_ca1_edge(&mut self) {
+        if !self.ca1_pending {
+            return;
+        }
+        self.ca1_pending = false;
+        if (self.peripheral_control & 0x01) == 0 {
+            self.ifr.set(self.ifr.get() | IFR_CA1);
+        }
     }
 }
 
