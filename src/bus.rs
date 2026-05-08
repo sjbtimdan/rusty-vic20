@@ -94,10 +94,6 @@ impl Bus {
         self.vic.render_active_screen(&self.memory, &mut self.frame_buffer)
     }
 
-    pub fn trigger_restore_nmi(&mut self) {
-        self.via1.set_ca1_pending();
-    }
-
     pub fn frame_buffer(&self) -> &[u8; ACTIVE_HEIGHT * ACTIVE_WIDTH * 4] {
         &self.frame_buffer
     }

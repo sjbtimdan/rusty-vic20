@@ -22,11 +22,7 @@ use crate::{
     },
 };
 use std::{
-    sync::{
-        Arc,
-        Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Mutex},
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
@@ -59,12 +55,11 @@ pub struct Vic20Controller {
     debug_state: DebugState,
     tick_duration: Duration,
     vic_thread: Option<JoinHandle<()>>,
-    restore_trigger: Arc<AtomicBool>,
 }
 
 impl Vic20Controller {
     pub fn new(tick_duration: Duration) -> Self {
-        let (keyboard, restore_trigger) = Keyboard::new();
+        let keyboard = Keyboard;
         let keyboard_state = KeyboardState {
             keyboard,
             ..KeyboardState::new()
@@ -78,7 +73,6 @@ impl Vic20Controller {
             debug_state: DebugState::new(),
             tick_duration,
             vic_thread: None,
-            restore_trigger,
         }
     }
 
@@ -91,7 +85,7 @@ impl Vic20Controller {
         event_loop.run_app(self).expect("event loop run failed");
     }
 
-    fn spawn_emulator(tick_duration: Duration, restore_triggered: Arc<AtomicBool>) -> (JoinHandle<()>, SharedState) {
+    fn spawn_emulator(tick_duration: Duration) -> (JoinHandle<()>, SharedState) {
         let video = Arc::new(Mutex::new(SharedVideoState {
             screen_rgba: vec![0_u8; ACTIVE_WIDTH * ACTIVE_HEIGHT * 4],
             border_rgba: [0x00, 0x44, 0xAA, 0xFF],
@@ -118,7 +112,6 @@ impl Vic20Controller {
                 let registers = Arc::clone(&registers);
                 let pending_register_writes = Arc::clone(&pending_register_writes);
                 let perf = Arc::clone(&perf);
-                let restore = Arc::clone(&restore_triggered);
                 move || {
                     Self::run_emulator(
                         video,
@@ -127,7 +120,6 @@ impl Vic20Controller {
                         registers,
                         pending_register_writes,
                         perf,
-                        restore,
                         tick_duration,
                     )
                 }
@@ -155,7 +147,6 @@ impl Vic20Controller {
         shared_registers: SharedRegistersState,
         pending_register_writes: PendingRegisterWrites,
         shared_perf: SharedPerfState,
-        restore_triggered: Arc<AtomicBool>,
         tick_duration: Duration,
     ) {
         let mut cpu = CPU6502::default();
@@ -195,9 +186,6 @@ impl Vic20Controller {
             }
 
             cpu.step(&mut bus, &instruction_executor);
-            if restore_triggered.swap(false, Ordering::SeqCst) {
-                bus.trigger_restore_nmi();
-            }
             bus.step_devices(&mut cpu);
 
             if last_frame_publish.elapsed() >= FRAME_PUBLISH_INTERVAL {
@@ -264,7 +252,7 @@ impl ApplicationHandler for Vic20Controller {
         self.keyboard.create(event_loop);
         self.debug.create(event_loop);
 
-        let (handle, state) = Self::spawn_emulator(self.tick_duration, Arc::clone(&self.restore_trigger));
+        let (handle, state) = Self::spawn_emulator(self.tick_duration);
         self.vic_thread = Some(handle);
         self.shared_state = Some(state);
     }
