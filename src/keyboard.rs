@@ -3,7 +3,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-pub type SharedKeyboardState = Arc<Mutex<HashSet<String>>>;
+use crate::ui::keyboard::Key;
+
+pub type SharedKeyboardState = Arc<Mutex<HashSet<Key>>>;
 
 pub struct Keyboard {
     shared_state: SharedKeyboardState,
@@ -24,7 +26,7 @@ impl Keyboard {
         }
     }
 
-    fn read_keys(&self) -> HashSet<String> {
+    fn read_keys(&self) -> HashSet<Key> {
         if let Ok(keys) = self.shared_state.lock() {
             keys.clone()
         } else {
@@ -55,7 +57,7 @@ mod tests {
     #[rstest]
     fn step_returns_some_when_key_1_pressed(keyboard_with_state: (Keyboard, SharedKeyboardState)) {
         let (keyboard, shared_state) = keyboard_with_state;
-        shared_state.lock().unwrap().insert("1".to_string());
+        shared_state.lock().unwrap().insert(Key::Single('1'));
         assert_eq!(keyboard.step(), Some(0xFE));
     }
 }

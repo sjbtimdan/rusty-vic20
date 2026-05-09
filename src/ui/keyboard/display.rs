@@ -11,7 +11,7 @@ use winit::{
     window::Window,
 };
 
-use crate::ui::keyboard::{KeyRegion, KeyboardState};
+use crate::ui::keyboard::{Key, KeyRegion, KeyboardState};
 
 const KEYBOARD_PNG: &[u8] = include_bytes!("../../../data/vic20-c64-layout.png");
 
@@ -158,7 +158,7 @@ impl KeyboardWindow {
 
         let w = frame_size.width;
 
-        if let Some(held) = state.held_key.clone() {
+        if let Some(held) = state.held_key {
             let regions: Vec<_> = state.key_regions.iter().filter(|r| r.label == held).cloned().collect();
             for region in &regions {
                 tint_region(frame, w, region, [30, 80, 220], 160);
@@ -168,14 +168,14 @@ impl KeyboardWindow {
         let phys: Vec<_> = state
             .key_regions
             .iter()
-            .filter(|r| state.physical_keys.contains(r.label))
+            .filter(|r| state.physical_keys.contains(&r.label))
             .cloned()
             .collect();
         for region in &phys {
             tint_region(frame, w, region, [60, 180, 255], 150);
         }
 
-        if let Some((flash, _)) = state.flash_key.clone() {
+        if let Some((flash, _)) = state.flash_key {
             let regions: Vec<_> = state.key_regions.iter().filter(|r| r.label == flash).cloned().collect();
             for region in &regions {
                 tint_region(frame, w, region, [120, 200, 255], 130);
@@ -208,7 +208,7 @@ impl KeyboardWindow {
             2,
         );
 
-        let held = state.held_key.as_deref().unwrap_or("(none)");
+        let held = state.held_key.map_or_else(|| "(none)".to_string(), |k| k.to_string());
         draw_text(
             frame,
             frame_size,
@@ -253,7 +253,7 @@ impl KeyboardWindow {
         }
     }
 
-    pub fn handle_physical_key_event(&mut self, pressed: bool, vic_key: &'static str, state: &mut KeyboardState) {
+    pub fn handle_physical_key_event(&mut self, pressed: bool, vic_key: Key, state: &mut KeyboardState) {
         if pressed {
             state.physical_key_pressed(vic_key);
         } else {
@@ -345,73 +345,73 @@ fn draw_text(frame: &mut [u8], frame_size: FrameSize, origin: Point, text: &str,
     }
 }
 
-fn keycode_to_vic20(key: KeyCode) -> Option<&'static str> {
+fn keycode_to_vic20(key: KeyCode) -> Option<Key> {
     Some(match key {
-        KeyCode::Backquote => "LEFT",
-        KeyCode::Digit1 => "1",
-        KeyCode::Digit2 => "2",
-        KeyCode::Digit3 => "3",
-        KeyCode::Digit4 => "4",
-        KeyCode::Digit5 => "5",
-        KeyCode::Digit6 => "6",
-        KeyCode::Digit7 => "7",
-        KeyCode::Digit8 => "8",
-        KeyCode::Digit9 => "9",
-        KeyCode::Digit0 => "0",
-        KeyCode::Minus => "+",
-        KeyCode::Equal => "-",
-        KeyCode::Backslash => "POUND",
-        KeyCode::Home => "CLR/HOME",
-        KeyCode::Backspace => "INS/DEL",
-        KeyCode::Delete => "INS/DEL",
-        KeyCode::ControlLeft => "CTRL",
-        KeyCode::ControlRight => "CTRL",
-        KeyCode::KeyQ => "Q",
-        KeyCode::KeyW => "W",
-        KeyCode::KeyE => "E",
-        KeyCode::KeyR => "R",
-        KeyCode::KeyT => "T",
-        KeyCode::KeyY => "Y",
-        KeyCode::KeyU => "U",
-        KeyCode::KeyI => "I",
-        KeyCode::KeyO => "O",
-        KeyCode::KeyP => "P",
-        KeyCode::BracketLeft => "@",
-        KeyCode::BracketRight => "*",
-        KeyCode::CapsLock => "SHIFT LOCK",
-        KeyCode::KeyA => "A",
-        KeyCode::KeyS => "S",
-        KeyCode::KeyD => "D",
-        KeyCode::KeyF => "F",
-        KeyCode::KeyG => "G",
-        KeyCode::KeyH => "H",
-        KeyCode::KeyJ => "J",
-        KeyCode::KeyK => "K",
-        KeyCode::KeyL => "L",
-        KeyCode::Semicolon => "[",
-        KeyCode::Quote => "]",
-        KeyCode::Enter => "RETURN",
-        KeyCode::ShiftLeft => "SHIFT",
-        KeyCode::KeyZ => "Z",
-        KeyCode::KeyX => "X",
-        KeyCode::KeyC => "C",
-        KeyCode::KeyV => "V",
-        KeyCode::KeyB => "B",
-        KeyCode::KeyN => "N",
-        KeyCode::KeyM => "M",
-        KeyCode::Comma => ",",
-        KeyCode::Period => ".",
-        KeyCode::Slash => "/",
-        KeyCode::ShiftRight => "SHIFT",
-        KeyCode::ArrowUp => "CRSR UD",
-        KeyCode::ArrowDown => "CRSR UD",
-        KeyCode::ArrowLeft => "CRSR LR",
-        KeyCode::ArrowRight => "CRSR LR",
-        KeyCode::Space => "SPACE",
-        KeyCode::F1 | KeyCode::F2 => "F1/F2",
-        KeyCode::F3 | KeyCode::F4 => "F3/F4",
-        KeyCode::F5 | KeyCode::F6 => "F5/F6",
-        KeyCode::F7 | KeyCode::F8 => "F7/F8",
+        KeyCode::Backquote => Key::Left,
+        KeyCode::Digit1 => Key::Single('1'),
+        KeyCode::Digit2 => Key::Single('2'),
+        KeyCode::Digit3 => Key::Single('3'),
+        KeyCode::Digit4 => Key::Single('4'),
+        KeyCode::Digit5 => Key::Single('5'),
+        KeyCode::Digit6 => Key::Single('6'),
+        KeyCode::Digit7 => Key::Single('7'),
+        KeyCode::Digit8 => Key::Single('8'),
+        KeyCode::Digit9 => Key::Single('9'),
+        KeyCode::Digit0 => Key::Single('0'),
+        KeyCode::Minus => Key::Single('+'),
+        KeyCode::Equal => Key::Single('-'),
+        KeyCode::Backslash => Key::Single('£'),
+        KeyCode::Home => Key::ClrHome,
+        KeyCode::Backspace => Key::InsDel,
+        KeyCode::Delete => Key::InsDel,
+        KeyCode::ControlLeft => Key::Ctrl,
+        KeyCode::ControlRight => Key::Ctrl,
+        KeyCode::KeyQ => Key::Single('Q'),
+        KeyCode::KeyW => Key::Single('W'),
+        KeyCode::KeyE => Key::Single('E'),
+        KeyCode::KeyR => Key::Single('R'),
+        KeyCode::KeyT => Key::Single('T'),
+        KeyCode::KeyY => Key::Single('Y'),
+        KeyCode::KeyU => Key::Single('U'),
+        KeyCode::KeyI => Key::Single('I'),
+        KeyCode::KeyO => Key::Single('O'),
+        KeyCode::KeyP => Key::Single('P'),
+        KeyCode::BracketLeft => Key::Single('@'),
+        KeyCode::BracketRight => Key::Single('*'),
+        KeyCode::CapsLock => Key::ShiftLock,
+        KeyCode::KeyA => Key::Single('A'),
+        KeyCode::KeyS => Key::Single('S'),
+        KeyCode::KeyD => Key::Single('D'),
+        KeyCode::KeyF => Key::Single('F'),
+        KeyCode::KeyG => Key::Single('G'),
+        KeyCode::KeyH => Key::Single('H'),
+        KeyCode::KeyJ => Key::Single('J'),
+        KeyCode::KeyK => Key::Single('K'),
+        KeyCode::KeyL => Key::Single('L'),
+        KeyCode::Semicolon => Key::Single('['),
+        KeyCode::Quote => Key::Single(']'),
+        KeyCode::Enter => Key::Return,
+        KeyCode::ShiftLeft => Key::Shift,
+        KeyCode::KeyZ => Key::Single('Z'),
+        KeyCode::KeyX => Key::Single('X'),
+        KeyCode::KeyC => Key::Single('C'),
+        KeyCode::KeyV => Key::Single('V'),
+        KeyCode::KeyB => Key::Single('B'),
+        KeyCode::KeyN => Key::Single('N'),
+        KeyCode::KeyM => Key::Single('M'),
+        KeyCode::Comma => Key::Single(','),
+        KeyCode::Period => Key::Single('.'),
+        KeyCode::Slash => Key::Single('/'),
+        KeyCode::ShiftRight => Key::Shift,
+        KeyCode::ArrowUp => Key::CrsrUD,
+        KeyCode::ArrowDown => Key::CrsrUD,
+        KeyCode::ArrowLeft => Key::CrsrLR,
+        KeyCode::ArrowRight => Key::CrsrLR,
+        KeyCode::Space => Key::Single(' '),
+        KeyCode::F1 | KeyCode::F2 => Key::F1F2,
+        KeyCode::F3 | KeyCode::F4 => Key::F3F4,
+        KeyCode::F5 | KeyCode::F6 => Key::F5F6,
+        KeyCode::F7 | KeyCode::F8 => Key::F7F8,
         _ => return None,
     })
 }

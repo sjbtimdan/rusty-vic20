@@ -5,17 +5,65 @@ pub mod display;
 use crate::virtual_clock::{Clock, SystemClock};
 use std::{
     collections::HashSet,
+    fmt,
     time::{Duration, Instant},
 };
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Key {
+    Single(char),
+    Left,
+    Up,
+    ClrHome,
+    InsDel,
+    Ctrl,
+    Restore,
+    RunStop,
+    ShiftLock,
+    Return,
+    Cbm,
+    Shift,
+    CrsrUD,
+    CrsrLR,
+    F1F2,
+    F3F4,
+    F5F6,
+    F7F8,
+}
+
+impl fmt::Display for Key {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Key::Single(c) => write!(f, "{c}"),
+            Key::Left => write!(f, "LEFT"),
+            Key::Up => write!(f, "UP"),
+            Key::ClrHome => write!(f, "CLR/HOME"),
+            Key::InsDel => write!(f, "INS/DEL"),
+            Key::Ctrl => write!(f, "CTRL"),
+            Key::Restore => write!(f, "RESTORE"),
+            Key::RunStop => write!(f, "RUN/STOP"),
+            Key::ShiftLock => write!(f, "SHIFT LOCK"),
+            Key::Return => write!(f, "RETURN"),
+            Key::Cbm => write!(f, "CBM"),
+            Key::Shift => write!(f, "SHIFT"),
+            Key::CrsrUD => write!(f, "CRSR UD"),
+            Key::CrsrLR => write!(f, "CRSR LR"),
+            Key::F1F2 => write!(f, "F1/F2"),
+            Key::F3F4 => write!(f, "F3/F4"),
+            Key::F5F6 => write!(f, "F5/F6"),
+            Key::F7F8 => write!(f, "F7/F8"),
+        }
+    }
+}
 
 pub struct Keyboard;
 
 pub const DOUBLE_CLICK_THRESHOLD: Duration = Duration::from_millis(350);
 pub const FLASH_DURATION: Duration = Duration::from_millis(200);
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct KeyRegion {
-    pub label: &'static str,
+    pub label: Key,
     pub x: f32,
     pub y: f32,
     pub w: f32,
@@ -32,10 +80,10 @@ pub enum ClickKind {
 pub struct KeyboardState<C = SystemClock> {
     pub clock: C,
     pub key_regions: Vec<KeyRegion>,
-    pub last_click: Option<(String, Instant)>,
-    pub held_key: Option<String>,
-    pub flash_key: Option<(String, Instant)>,
-    pub physical_keys: HashSet<String>,
+    pub last_click: Option<(Key, Instant)>,
+    pub held_key: Option<Key>,
+    pub flash_key: Option<(Key, Instant)>,
+    pub physical_keys: HashSet<Key>,
     pub status_message: String,
     pub keyboard: Keyboard,
 }
@@ -67,7 +115,7 @@ impl<C: Clock> KeyboardState<C> {
     }
 
     /// Given image-space pixel coordinates, returns the label of the key there (if any).
-    pub fn key_at_pixel(&self, image_x: f32, image_y: f32) -> Option<&'static str> {
+    pub fn key_at_pixel(&self, image_x: f32, image_y: f32) -> Option<Key> {
         self.key_regions
             .iter()
             .find(|r| image_x >= r.x && image_x <= r.x + r.w && image_y >= r.y && image_y <= r.y + r.h)
@@ -76,46 +124,46 @@ impl<C: Clock> KeyboardState<C> {
 
     /// Classify a click as [`ClickKind::Single`] or [`ClickKind::Double`].
     /// Updates `last_click` as a side-effect.
-    pub fn classify_click(&mut self, key: &str) -> ClickKind {
+    pub fn classify_click(&mut self, key: Key) -> ClickKind {
         let now = self.clock.now();
         if let Some((last_key, last_time)) = &self.last_click
-            && last_key == key
+            && *last_key == key
             && now.duration_since(*last_time) <= DOUBLE_CLICK_THRESHOLD
         {
             self.last_click = None;
             return ClickKind::Double;
         }
-        self.last_click = Some((key.to_string(), now));
+        self.last_click = Some((key, now));
         ClickKind::Single
     }
 
     /// Process a mouse click on `key`, updating held/flash/status state.
-    pub fn on_key_click(&mut self, key: &str) {
+    pub fn on_key_click(&mut self, key: Key) {
         match self.classify_click(key) {
             ClickKind::Single => {
                 let now = self.clock.now();
-                if let Some(held) = &self.held_key
+                if let Some(held) = self.held_key
                     && held != key
                 {
-                    self.physical_keys.remove(held.as_str());
+                    self.physical_keys.remove(&held);
                     self.status_message = format!("CHORD: {held} + {key} pressed together, then released");
                     self.held_key = None;
-                    self.flash_key = Some((key.to_string(), now));
-                    self.physical_keys.insert(key.to_string());
+                    self.flash_key = Some((key, now));
+                    self.physical_keys.insert(key);
                     return;
                 }
-                self.flash_key = Some((key.to_string(), now));
+                self.flash_key = Some((key, now));
                 self.status_message = format!("CLICK: {key}");
-                self.physical_keys.insert(key.to_string());
+                self.physical_keys.insert(key);
             }
             ClickKind::Double => {
-                if self.held_key.as_deref() == Some(key) {
+                if self.held_key == Some(key) {
                     self.held_key = None;
-                    self.physical_keys.remove(key);
+                    self.physical_keys.remove(&key);
                     self.status_message = format!("RELEASE HOLD: {key}");
                 } else {
-                    self.held_key = Some(key.to_string());
-                    self.physical_keys.insert(key.to_string());
+                    self.held_key = Some(key);
+                    self.physical_keys.insert(key);
                     self.status_message = format!("HOLD: {key}");
                 }
             }
@@ -123,8 +171,8 @@ impl<C: Clock> KeyboardState<C> {
     }
 
     /// Record a physical key press. Returns `true` if the key was newly pressed.
-    pub fn physical_key_pressed(&mut self, key: &str) -> bool {
-        if self.physical_keys.insert(key.to_string()) {
+    pub fn physical_key_pressed(&mut self, key: Key) -> bool {
+        if self.physical_keys.insert(key) {
             self.status_message = format!("KEY: {key}");
             true
         } else {
@@ -133,8 +181,8 @@ impl<C: Clock> KeyboardState<C> {
     }
 
     /// Record a physical key release, clearing status when no keys remain held.
-    pub fn physical_key_released(&mut self, key: &str) {
-        self.physical_keys.remove(key);
+    pub fn physical_key_released(&mut self, key: Key) {
+        self.physical_keys.remove(&key);
         if self.physical_keys.is_empty() {
             self.status_message = String::from("Click a key. Double-click toggles hold.");
         }
@@ -164,84 +212,84 @@ impl<C: Clock> KeyboardState<C> {
 pub fn build_key_regions() -> Vec<KeyRegion> {
     // All coordinates are measured directly from data/vic20-c64-layout.png (1006×290).
     #[rustfmt::skip]
-    let data: &[(&'static str, i32, i32, i32, i32)] = &[
+    let data: &[(Key, i32, i32, i32, i32)] = &[
         // ── Number row (y=11..62) ──────────────────────────────────────────
-        ("LEFT",     23,  11,  54, 52),
-        ("1",        78,  11,  53, 52),
-        ("2",       132,  11,  53, 52),
-        ("3",       186,  11,  53, 52),
-        ("4",       240,  11,  53, 52),
-        ("5",       294,  11,  53, 52),
-        ("6",       348,  11,  53, 52),
-        ("7",       402,  11,  53, 52),
-        ("8",       456,  11,  53, 52),
-        ("9",       510,  11,  53, 52),
-        ("0",       564,  11,  53, 52),
-        ("+",       618,  11,  53, 52),
-        ("-",       672,  11,  53, 52),
-        ("POUND",   726,  11,  53, 52),
-        ("CLR/HOME",780,  11,  53, 52),
-        ("INS/DEL", 834,  11,  36, 52),
+        (Key::Left,     23,  11,  54, 52),
+        (Key::Single('1'),        78,  11,  53, 52),
+        (Key::Single('2'),       132,  11,  53, 52),
+        (Key::Single('3'),       186,  11,  53, 52),
+        (Key::Single('4'),       240,  11,  53, 52),
+        (Key::Single('5'),       294,  11,  53, 52),
+        (Key::Single('6'),       348,  11,  53, 52),
+        (Key::Single('7'),       402,  11,  53, 52),
+        (Key::Single('8'),       456,  11,  53, 52),
+        (Key::Single('9'),       510,  11,  53, 52),
+        (Key::Single('0'),       564,  11,  53, 52),
+        (Key::Single('+'),       618,  11,  53, 52),
+        (Key::Single('-'),       672,  11,  53, 52),
+        (Key::Single('£'),       726,  11,  53, 52),
+        (Key::ClrHome, 780,  11,  53, 52),
+        (Key::InsDel,  834,  11,  36, 52),
 
         // ── CTRL/Q row (y=65..116) ────────────────────────────────────────
-        ("CTRL",     23,  65,  81, 52),
-        ("Q",       105,  65,  53, 52),
-        ("W",       159,  65,  53, 52),
-        ("E",       213,  65,  53, 52),
-        ("R",       267,  65,  53, 52),
-        ("T",       321,  65,  53, 52),
-        ("Y",       375,  65,  53, 52),
-        ("U",       429,  65,  53, 52),
-        ("I",       483,  65,  53, 52),
-        ("O",       537,  65,  53, 52),
-        ("P",       591,  65,  53, 52),
-        ("@",       645,  65,  53, 52),
-        ("*",       699,  65,  53, 52),
-        ("UP",      753,  65,  53, 52),
-        ("RESTORE", 807,  65,  63, 52),
+        (Key::Ctrl,     23,  65,  81, 52),
+        (Key::Single('Q'),       105,  65,  53, 52),
+        (Key::Single('W'),       159,  65,  53, 52),
+        (Key::Single('E'),       213,  65,  53, 52),
+        (Key::Single('R'),       267,  65,  53, 52),
+        (Key::Single('T'),       321,  65,  53, 52),
+        (Key::Single('Y'),       375,  65,  53, 52),
+        (Key::Single('U'),       429,  65,  53, 52),
+        (Key::Single('I'),       483,  65,  53, 52),
+        (Key::Single('O'),       537,  65,  53, 52),
+        (Key::Single('P'),       591,  65,  53, 52),
+        (Key::Single('@'),       645,  65,  53, 52),
+        (Key::Single('*'),       699,  65,  53, 52),
+        (Key::Up,       753,  65,  53, 52),
+        (Key::Restore,  807,  65,  63, 52),
 
         // ── RUN/STOP / A row (y=119..170) ────────────────────────────────
-        ("RUN/STOP",   11, 119,  52, 52),
-        ("SHIFT LOCK", 65, 119,  52, 52),
-        ("A",         119, 119,  52, 52),
-        ("S",         173, 119,  52, 52),
-        ("D",         227, 119,  52, 52),
-        ("F",         281, 119,  52, 52),
-        ("G",         335, 119,  52, 52),
-        ("H",         389, 119,  52, 52),
-        ("J",         443, 119,  52, 52),
-        ("K",         497, 119,  52, 52),
-        ("L",         551, 119,  52, 52),
-        ("[",         605, 119,  52, 52),
-        ("]",         659, 119,  52, 52),
-        ("=",         713, 119,  52, 52),
-        ("RETURN",    767, 119, 103, 52),
+        (Key::RunStop,     11, 119,  52, 52),
+        (Key::ShiftLock,   65, 119,  52, 52),
+        (Key::Single('A'),         119, 119,  52, 52),
+        (Key::Single('S'),         173, 119,  52, 52),
+        (Key::Single('D'),         227, 119,  52, 52),
+        (Key::Single('F'),         281, 119,  52, 52),
+        (Key::Single('G'),         335, 119,  52, 52),
+        (Key::Single('H'),         389, 119,  52, 52),
+        (Key::Single('J'),         443, 119,  52, 52),
+        (Key::Single('K'),         497, 119,  52, 52),
+        (Key::Single('L'),         551, 119,  52, 52),
+        (Key::Single('['),         605, 119,  52, 52),
+        (Key::Single(']'),         659, 119,  52, 52),
+        (Key::Single('='),         713, 119,  52, 52),
+        (Key::Return,    767, 119, 103, 52),
 
         // ── CBM / Z row (y=173..224) ──────────────────────────────────────
-        ("CBM",        11, 173,  52, 52),
-        ("SHIFT",      65, 173,  79, 52),
-        ("Z",         146, 173,  52, 52),
-        ("X",         200, 173,  52, 52),
-        ("C",         254, 173,  52, 52),
-        ("V",         308, 173,  52, 52),
-        ("B",         362, 173,  52, 52),
-        ("N",         416, 173,  52, 52),
-        ("M",         470, 173,  52, 52),
-        (",",         524, 173,  52, 52),
-        (".",         578, 173,  52, 52),
-        ("/",         632, 173,  52, 52),
-        ("SHIFT",     686, 173,  79, 52),
-        ("CRSR UD",   767, 173,  52, 52),
-        ("CRSR LR",   821, 173,  49, 52),
+        (Key::Cbm,        11, 173,  52, 52),
+        (Key::Shift,      65, 173,  79, 52),
+        (Key::Single('Z'),         146, 173,  52, 52),
+        (Key::Single('X'),         200, 173,  52, 52),
+        (Key::Single('C'),         254, 173,  52, 52),
+        (Key::Single('V'),         308, 173,  52, 52),
+        (Key::Single('B'),         362, 173,  52, 52),
+        (Key::Single('N'),         416, 173,  52, 52),
+        (Key::Single('M'),         470, 173,  52, 52),
+        (Key::Single(','),         524, 173,  52, 52),
+        (Key::Single('.'),         578, 173,  52, 52),
+        (Key::Single('/'),         632, 173,  52, 52),
+        (Key::Shift,      686, 173,  79, 52),
+        (Key::CrsrUD,    767, 173,  52, 52),
+        (Key::CrsrLR,    821, 173,  49, 52),
 
         // ── Space bar row (y=226..289) ────────────────────────────────────
-        ("SPACE",     158, 226, 487, 64),
+        (Key::Single(' '),     158, 226, 487, 64),
 
         // ── F-keys (right column, each spans a full key row) ──────────────
-        ("F1/F2",  910,  11, 90, 52),
-        ("F3/F4",  910,  65, 90, 52),
-        ("F5/F6",  910, 119, 90, 52),
-        ("F7/F8",  910, 173, 90, 52),
+        (Key::F1F2,  910,  11, 90, 52),
+        (Key::F3F4,  910,  65, 90, 52),
+        (Key::F5F6,  910, 119, 90, 52),
+        (Key::F7F8,  910, 173, 90, 52),
     ];
 
     data.iter()
@@ -289,8 +337,8 @@ mod tests {
         KeyboardState::with_clock(MockClock::new())
     }
 
-    fn just_clicked<C: Clock>(state: &KeyboardState<C>, label: &str) -> bool {
-        state.flash_key.as_ref().is_some_and(|(k, _)| k == label)
+    fn just_clicked<C: Clock>(state: &KeyboardState<C>, key: Key) -> bool {
+        state.flash_key.as_ref().is_some_and(|(k, _)| *k == key)
     }
 
     // ── key_at_pixel ──────────────────────────────────────────────────────
@@ -298,13 +346,13 @@ mod tests {
     #[test]
     fn pixel_inside_space_bar() {
         let state = mock_state();
-        assert_eq!(state.key_at_pixel(300.0, 250.0), Some("SPACE"));
+        assert_eq!(state.key_at_pixel(300.0, 250.0), Some(Key::Single(' ')));
     }
 
     #[test]
     fn pixel_inside_a_key() {
         let state = mock_state();
-        assert_eq!(state.key_at_pixel(140.0, 130.0), Some("A"));
+        assert_eq!(state.key_at_pixel(140.0, 130.0), Some(Key::Single('A')));
     }
 
     #[test]
@@ -317,10 +365,10 @@ mod tests {
     #[test]
     fn pixel_inside_fkey() {
         let state = mock_state();
-        assert_eq!(state.key_at_pixel(940.0, 30.0), Some("F1/F2"));
-        assert_eq!(state.key_at_pixel(940.0, 80.0), Some("F3/F4"));
-        assert_eq!(state.key_at_pixel(940.0, 140.0), Some("F5/F6"));
-        assert_eq!(state.key_at_pixel(940.0, 190.0), Some("F7/F8"));
+        assert_eq!(state.key_at_pixel(940.0, 30.0), Some(Key::F1F2));
+        assert_eq!(state.key_at_pixel(940.0, 80.0), Some(Key::F3F4));
+        assert_eq!(state.key_at_pixel(940.0, 140.0), Some(Key::F5F6));
+        assert_eq!(state.key_at_pixel(940.0, 190.0), Some(Key::F7F8));
     }
 
     // ── single click ──────────────────────────────────────────────────────
@@ -328,11 +376,11 @@ mod tests {
     #[test]
     fn single_click_sets_flash_and_status() {
         let mut state = mock_state();
-        state.on_key_click("A");
-        assert!(just_clicked(&state, "A"), "flash should be set to A");
+        state.on_key_click(Key::Single('A'));
+        assert!(just_clicked(&state, Key::Single('A')), "flash should be set to A");
         assert_eq!(state.status_message, "CLICK: A");
         assert!(state.held_key.is_none());
-        assert!(state.physical_keys.contains("A"));
+        assert!(state.physical_keys.contains(&Key::Single('A')));
     }
 
     // ── double click ──────────────────────────────────────────────────────
@@ -341,41 +389,41 @@ mod tests {
     fn classify_click_returns_double_within_threshold() {
         let mut state = mock_state();
         let now = state.clock.now();
-        state.last_click = Some(("A".to_string(), now));
-        assert_eq!(state.classify_click("A"), ClickKind::Double);
+        state.last_click = Some((Key::Single('A'), now));
+        assert_eq!(state.classify_click(Key::Single('A')), ClickKind::Double);
     }
 
     #[test]
     fn classify_click_returns_single_after_threshold() {
         let mut state = mock_state();
         let past = state.clock.now();
-        state.last_click = Some(("A".to_string(), past));
+        state.last_click = Some((Key::Single('A'), past));
         state.clock.advance(DOUBLE_CLICK_THRESHOLD + Duration::from_millis(1));
-        assert_eq!(state.classify_click("A"), ClickKind::Single);
+        assert_eq!(state.classify_click(Key::Single('A')), ClickKind::Single);
     }
 
     #[test]
     fn double_click_holds_key() {
         let mut state = mock_state();
         let now = state.clock.now();
-        state.last_click = Some(("A".to_string(), now));
-        state.on_key_click("A"); // triggers Double
-        assert_eq!(state.held_key.as_deref(), Some("A"));
+        state.last_click = Some((Key::Single('A'), now));
+        state.on_key_click(Key::Single('A')); // triggers Double
+        assert_eq!(state.held_key, Some(Key::Single('A')));
         assert_eq!(state.status_message, "HOLD: A");
-        assert!(state.physical_keys.contains("A"));
+        assert!(state.physical_keys.contains(&Key::Single('A')));
     }
 
     #[test]
     fn double_click_on_held_key_releases_it() {
         let mut state = mock_state();
-        state.held_key = Some("A".to_string());
-        state.physical_keys.insert("A".to_string());
+        state.held_key = Some(Key::Single('A'));
+        state.physical_keys.insert(Key::Single('A'));
         let now = state.clock.now();
-        state.last_click = Some(("A".to_string(), now));
-        state.on_key_click("A"); // triggers Double
+        state.last_click = Some((Key::Single('A'), now));
+        state.on_key_click(Key::Single('A')); // triggers Double
         assert!(state.held_key.is_none());
         assert_eq!(state.status_message, "RELEASE HOLD: A");
-        assert!(!state.physical_keys.contains("A"));
+        assert!(!state.physical_keys.contains(&Key::Single('A')));
     }
 
     // ── chord ──────────────────────────────────────────────────────────────
@@ -383,30 +431,33 @@ mod tests {
     #[test]
     fn single_click_while_holding_produces_chord() {
         let mut state = mock_state();
-        state.held_key = Some("SHIFT".to_string());
-        state.physical_keys.insert("SHIFT".to_string());
+        state.held_key = Some(Key::Shift);
+        state.physical_keys.insert(Key::Shift);
         // Ensure first click registers as single (no recent last_click)
-        state.on_key_click("A");
+        state.on_key_click(Key::Single('A'));
         assert_eq!(state.status_message, "CHORD: SHIFT + A pressed together, then released");
         assert!(state.held_key.is_none());
         assert!(
-            !state.physical_keys.contains("SHIFT"),
+            !state.physical_keys.contains(&Key::Shift),
             "held key should be released from physical_keys"
         );
-        assert!(just_clicked(&state, "A"), "flash should be set to the chord key");
-        assert!(state.physical_keys.contains("A"));
+        assert!(
+            just_clicked(&state, Key::Single('A')),
+            "flash should be set to the chord key"
+        );
+        assert!(state.physical_keys.contains(&Key::Single('A')));
     }
 
     #[test]
     fn single_click_on_already_held_key_just_flashes() {
         let mut state = mock_state();
-        state.held_key = Some("A".to_string());
-        state.physical_keys.insert("A".to_string());
-        state.on_key_click("A"); // single click on the held key itself
+        state.held_key = Some(Key::Single('A'));
+        state.physical_keys.insert(Key::Single('A'));
+        state.on_key_click(Key::Single('A')); // single click on the held key itself
         // Should be treated as normal click, not chord
         assert_eq!(state.status_message, "CLICK: A");
-        assert!(just_clicked(&state, "A"));
-        assert!(state.physical_keys.contains("A"));
+        assert!(just_clicked(&state, Key::Single('A')));
+        assert!(state.physical_keys.contains(&Key::Single('A')));
     }
 
     // ── physical keys ─────────────────────────────────────────────────────
@@ -414,25 +465,25 @@ mod tests {
     #[test]
     fn physical_key_pressed_updates_status() {
         let mut state = mock_state();
-        let inserted = state.physical_key_pressed("Q");
+        let inserted = state.physical_key_pressed(Key::Single('Q'));
         assert!(inserted);
-        assert!(state.physical_keys.contains("Q"));
+        assert!(state.physical_keys.contains(&Key::Single('Q')));
         assert_eq!(state.status_message, "KEY: Q");
     }
 
     #[test]
     fn physical_key_pressed_again_returns_false() {
         let mut state = mock_state();
-        state.physical_key_pressed("Q");
-        let inserted = state.physical_key_pressed("Q");
+        state.physical_key_pressed(Key::Single('Q'));
+        let inserted = state.physical_key_pressed(Key::Single('Q'));
         assert!(!inserted);
     }
 
     #[test]
     fn physical_key_released_clears_status_when_empty() {
         let mut state = mock_state();
-        state.physical_key_pressed("Q");
-        state.physical_key_released("Q");
+        state.physical_key_pressed(Key::Single('Q'));
+        state.physical_key_released(Key::Single('Q'));
         assert!(state.physical_keys.is_empty());
         assert_eq!(state.status_message, "Click a key. Double-click toggles hold.");
     }
@@ -440,10 +491,10 @@ mod tests {
     #[test]
     fn physical_key_released_keeps_status_while_other_keys_held() {
         let mut state = mock_state();
-        state.physical_key_pressed("Q");
-        state.physical_key_pressed("W");
-        state.physical_key_released("Q");
-        assert!(state.physical_keys.contains("W"));
+        state.physical_key_pressed(Key::Single('Q'));
+        state.physical_key_pressed(Key::Single('W'));
+        state.physical_key_released(Key::Single('Q'));
+        assert!(state.physical_keys.contains(&Key::Single('W')));
         // status should not reset to default
         assert_ne!(state.status_message, "Click a key. Double-click toggles hold.");
     }
@@ -461,19 +512,19 @@ mod tests {
     fn tick_flash_clears_expired_flash() {
         let mut state = mock_state();
         let past = state.clock.now();
-        state.flash_key = Some(("A".to_string(), past));
-        state.physical_keys.insert("A".to_string());
+        state.flash_key = Some((Key::Single('A'), past));
+        state.physical_keys.insert(Key::Single('A'));
         state.clock.advance(FLASH_DURATION + Duration::from_millis(1));
         state.tick_flash();
         assert!(state.flash_key.is_none());
-        assert!(!state.physical_keys.contains("A"));
+        assert!(!state.physical_keys.contains(&Key::Single('A')));
     }
 
     #[test]
     fn tick_flash_keeps_active_flash() {
         let mut state = mock_state();
         let now = state.clock.now();
-        state.flash_key = Some(("A".to_string(), now));
+        state.flash_key = Some((Key::Single('A'), now));
         state.tick_flash();
         assert!(state.flash_key.is_some());
     }
@@ -488,7 +539,7 @@ mod tests {
     fn flash_remaining_some_for_active_flash() {
         let mut state = mock_state();
         let now = state.clock.now();
-        state.flash_key = Some(("A".to_string(), now));
+        state.flash_key = Some((Key::Single('A'), now));
         assert!(state.flash_remaining().is_some());
     }
 }
