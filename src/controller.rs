@@ -13,6 +13,7 @@ use crate::{
         SharedRegistersState,
         display::DebugWindow,
     },
+    keyboard::SharedKeyboardState,
     ui::{
         keyboard::{Keyboard, KeyboardState, display::KeyboardWindow},
         screen::{
@@ -44,6 +45,7 @@ struct SharedState {
     registers: SharedRegistersState,
     pending_register_writes: PendingRegisterWrites,
     perf: SharedPerfState,
+    shared_keyboard: SharedKeyboardState,
 }
 
 pub struct Vic20Controller {
@@ -102,6 +104,7 @@ impl Vic20Controller {
         }));
         let pending_register_writes: PendingRegisterWrites = Arc::new(Mutex::new(Vec::new()));
         let perf: SharedPerfState = Arc::new(Mutex::new(SharedPerformanceMetrics::default()));
+        let shared_keyboard: SharedKeyboardState = Arc::new(Mutex::new(std::collections::HashSet::new()));
 
         let handle = thread::Builder::new()
             .name("vic20-core-loop".to_string())
@@ -112,6 +115,7 @@ impl Vic20Controller {
                 let registers = Arc::clone(&registers);
                 let pending_register_writes = Arc::clone(&pending_register_writes);
                 let perf = Arc::clone(&perf);
+                let shared_keyboard = Arc::clone(&shared_keyboard);
                 move || {
                     Self::run_emulator(
                         video,
@@ -120,6 +124,7 @@ impl Vic20Controller {
                         registers,
                         pending_register_writes,
                         perf,
+                        shared_keyboard,
                         tick_duration,
                     )
                 }
@@ -135,6 +140,7 @@ impl Vic20Controller {
                 registers,
                 pending_register_writes,
                 perf,
+                shared_keyboard,
             },
         )
     }
@@ -147,6 +153,7 @@ impl Vic20Controller {
         shared_registers: SharedRegistersState,
         pending_register_writes: PendingRegisterWrites,
         shared_perf: SharedPerfState,
+        shared_keyboard: SharedKeyboardState,
         tick_duration: Duration,
     ) {
         let mut cpu = CPU6502::default();
@@ -158,12 +165,14 @@ impl Vic20Controller {
         let mut frame_count: u64 = 0;
         let mut last_perf_total_cycles: u64 = 0;
         let mut last_perf_frame_count: u64 = 0;
+        let mut keyboard = crate::keyboard::Keyboard::new(shared_keyboard);
 
         bus.load_standard_roms_from_data_dir();
         let reset_vector = bus.read_word(0xFFFC);
         cpu.reset(reset_vector);
 
         loop {
+            keyboard.step();
             // Apply any pending writes from the debugger (non-blocking)
             if let Ok(mut writes) = pending_writes.try_lock() {
                 for (addr, value) in writes.drain(..) {
@@ -268,6 +277,12 @@ impl ApplicationHandler for Vic20Controller {
                     };
                     self.screen.draw(event_loop, &shared);
                 }
+                WindowEvent::KeyboardInput { .. } => {
+                    self.keyboard.handle_event(event_loop, event, &mut self.keyboard_state);
+                    if let Ok(mut keys) = self.shared_state().shared_keyboard.lock() {
+                        keys.clone_from(&self.keyboard_state.physical_keys);
+                    }
+                }
                 _ => {
                     self.screen.handle_event(event_loop, event);
                 }
@@ -279,6 +294,9 @@ impl ApplicationHandler for Vic20Controller {
                 }
                 _ => {
                     self.keyboard.handle_event(event_loop, event, &mut self.keyboard_state);
+                    if let Ok(mut keys) = self.shared_state().shared_keyboard.lock() {
+                        keys.clone_from(&self.keyboard_state.physical_keys);
+                    }
                 }
             }
         } else if Some(window_id) == self.debug.window_id() {

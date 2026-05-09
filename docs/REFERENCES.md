@@ -1,5 +1,6 @@
 # Memory Map
 https://www.zimmers.net/anonftp/pub/cbm/maps/Vic20.MemoryMap.txt
+https://archive.org/details/COMPUTEs_Mapping_the_VIC_1984_COMPUTE_Publications
 
 # 6502
 http://www.6502.org/tutorials/6502opcodes.html

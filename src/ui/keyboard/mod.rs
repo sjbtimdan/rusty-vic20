@@ -35,7 +35,7 @@ pub struct KeyboardState<C = SystemClock> {
     pub last_click: Option<(String, Instant)>,
     pub held_key: Option<String>,
     pub flash_key: Option<(String, Instant)>,
-    pub physical_keys: HashSet<&'static str>,
+    pub physical_keys: HashSet<String>,
     pub status_message: String,
     pub keyboard: Keyboard,
 }
@@ -97,20 +97,25 @@ impl<C: Clock> KeyboardState<C> {
                 if let Some(held) = &self.held_key
                     && held != key
                 {
+                    self.physical_keys.remove(held.as_str());
                     self.status_message = format!("CHORD: {held} + {key} pressed together, then released");
                     self.held_key = None;
                     self.flash_key = Some((key.to_string(), now));
+                    self.physical_keys.insert(key.to_string());
                     return;
                 }
                 self.flash_key = Some((key.to_string(), now));
                 self.status_message = format!("CLICK: {key}");
+                self.physical_keys.insert(key.to_string());
             }
             ClickKind::Double => {
                 if self.held_key.as_deref() == Some(key) {
                     self.held_key = None;
+                    self.physical_keys.remove(key);
                     self.status_message = format!("RELEASE HOLD: {key}");
                 } else {
                     self.held_key = Some(key.to_string());
+                    self.physical_keys.insert(key.to_string());
                     self.status_message = format!("HOLD: {key}");
                 }
             }
@@ -118,8 +123,8 @@ impl<C: Clock> KeyboardState<C> {
     }
 
     /// Record a physical key press. Returns `true` if the key was newly pressed.
-    pub fn physical_key_pressed(&mut self, key: &'static str) -> bool {
-        if self.physical_keys.insert(key) {
+    pub fn physical_key_pressed(&mut self, key: &str) -> bool {
+        if self.physical_keys.insert(key.to_string()) {
             self.status_message = format!("KEY: {key}");
             true
         } else {
@@ -128,7 +133,7 @@ impl<C: Clock> KeyboardState<C> {
     }
 
     /// Record a physical key release, clearing status when no keys remain held.
-    pub fn physical_key_released(&mut self, key: &'static str) {
+    pub fn physical_key_released(&mut self, key: &str) {
         self.physical_keys.remove(key);
         if self.physical_keys.is_empty() {
             self.status_message = String::from("Click a key. Double-click toggles hold.");
@@ -142,8 +147,8 @@ impl<C: Clock> KeyboardState<C> {
             .flash_key
             .as_ref()
             .is_some_and(|(_, t)| now.duration_since(*t) >= FLASH_DURATION);
-        if expired {
-            self.flash_key = None;
+        if expired && let Some((key, _)) = self.flash_key.take() {
+            self.physical_keys.remove(&key);
         }
     }
 
@@ -327,6 +332,7 @@ mod tests {
         assert!(just_clicked(&state, "A"), "flash should be set to A");
         assert_eq!(state.status_message, "CLICK: A");
         assert!(state.held_key.is_none());
+        assert!(state.physical_keys.contains("A"));
     }
 
     // ── double click ──────────────────────────────────────────────────────
@@ -356,17 +362,20 @@ mod tests {
         state.on_key_click("A"); // triggers Double
         assert_eq!(state.held_key.as_deref(), Some("A"));
         assert_eq!(state.status_message, "HOLD: A");
+        assert!(state.physical_keys.contains("A"));
     }
 
     #[test]
     fn double_click_on_held_key_releases_it() {
         let mut state = mock_state();
         state.held_key = Some("A".to_string());
+        state.physical_keys.insert("A".to_string());
         let now = state.clock.now();
         state.last_click = Some(("A".to_string(), now));
         state.on_key_click("A"); // triggers Double
         assert!(state.held_key.is_none());
         assert_eq!(state.status_message, "RELEASE HOLD: A");
+        assert!(!state.physical_keys.contains("A"));
     }
 
     // ── chord ──────────────────────────────────────────────────────────────
@@ -375,21 +384,29 @@ mod tests {
     fn single_click_while_holding_produces_chord() {
         let mut state = mock_state();
         state.held_key = Some("SHIFT".to_string());
+        state.physical_keys.insert("SHIFT".to_string());
         // Ensure first click registers as single (no recent last_click)
         state.on_key_click("A");
         assert_eq!(state.status_message, "CHORD: SHIFT + A pressed together, then released");
         assert!(state.held_key.is_none());
+        assert!(
+            !state.physical_keys.contains("SHIFT"),
+            "held key should be released from physical_keys"
+        );
         assert!(just_clicked(&state, "A"), "flash should be set to the chord key");
+        assert!(state.physical_keys.contains("A"));
     }
 
     #[test]
     fn single_click_on_already_held_key_just_flashes() {
         let mut state = mock_state();
         state.held_key = Some("A".to_string());
+        state.physical_keys.insert("A".to_string());
         state.on_key_click("A"); // single click on the held key itself
         // Should be treated as normal click, not chord
         assert_eq!(state.status_message, "CLICK: A");
         assert!(just_clicked(&state, "A"));
+        assert!(state.physical_keys.contains("A"));
     }
 
     // ── physical keys ─────────────────────────────────────────────────────
@@ -445,9 +462,11 @@ mod tests {
         let mut state = mock_state();
         let past = state.clock.now();
         state.flash_key = Some(("A".to_string(), past));
+        state.physical_keys.insert("A".to_string());
         state.clock.advance(FLASH_DURATION + Duration::from_millis(1));
         state.tick_flash();
         assert!(state.flash_key.is_none());
+        assert!(!state.physical_keys.contains("A"));
     }
 
     #[test]
