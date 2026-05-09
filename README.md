@@ -9,14 +9,14 @@ Still a WIP.
 - [x] On screen VIC-20 keyboard
 - [X] VIA 2 chip (driving interrupts, etc)
 - [X] Integration testing.
-- [ ] Keyboard interaction.
-- [ ] Speed control.
+- [X] VIA 1 chip
+- [.] Keyboard interaction.
 - [ ] Sound.
-- [ ] Lightpen
-- [ ] Load programs from cassette or binary data.
-- [ ] Accurate emulation down to the cycle and raster level.
-- [ ] VIA 1 chip
 - [ ] Joystick support
+- [ ] Load programs from cassette or binary data.
+- [ ] Speed control.
+- [ ] Accurate emulation down to the cycle and raster level.
+- [ ] Lightpen
 
 ## Vic 20
 ```
