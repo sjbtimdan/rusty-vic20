@@ -1,6 +1,8 @@
 # AGENTS.md
 
 Guidance for AI coding agents working in this repository.
+References on the Vic 20 to guide implementation are in [docs/REFERENCES.md]
+
 
 ## Scope
 
@@ -12,24 +14,11 @@ Guidance for AI coding agents working in this repository.
 
 - Build: `cargo build`
 - Test: `cargo test`
-- Format: `cargo fmt` (config in `rustfmt.toml`)
+- Format: `cargo +nightly fmt` (config in `rustfmt.toml`)
 - Lint: `cargo clippy` — run after every change and fix all warnings
 - Run emulator: `cargo run --bin vic20`
 - Run disassembler: `cargo run --bin disassembler -- data/somefile.bin`
 - Enable logging: `RUST_LOG=info cargo run --bin vic20` (uses `env_logger`)
-
-## Compiler Requirements
-
-- `edition = "2024"` in `Cargo.toml` requires Rust >= 1.85.
-
-## Runtime Preconditions
-
-- Emulator startup expects ROM files in `data/`:
-  - `basic.901486-01.bin`
-  - `characters.901460-03.bin`
-  - `kernal.901486-07.bin`
-- Missing ROM files can panic during boot due to `expect(...)` calls in bus initialization.
-- Integration tests in `tests/smoke_test.rs` also require ROM files and may take several seconds (600K+ CPU steps).
 
 ## Architecture Landmarks
 

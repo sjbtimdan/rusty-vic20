@@ -165,14 +165,22 @@ impl Vic20Controller {
         let mut frame_count: u64 = 0;
         let mut last_perf_total_cycles: u64 = 0;
         let mut last_perf_frame_count: u64 = 0;
-        let mut keyboard = crate::keyboard::Keyboard::new(shared_keyboard);
+        let keyboard = crate::keyboard::Keyboard::new(shared_keyboard);
 
         bus.load_standard_roms_from_data_dir();
         let reset_vector = bus.read_word(0xFFFC);
         cpu.reset(reset_vector);
 
         loop {
-            keyboard.step();
+            if let Some(port_a) = keyboard.step() {
+                if port_a != 0xFF && bus.via2.port_b() & 0x01 == 0 {
+                    bus.via2.set_port_a(port_a);
+                } else {
+                    bus.via2.set_port_a(0xFF);
+                }
+            } else {
+                bus.via2.set_port_a(0xFF);
+            }
             // Apply any pending writes from the debugger (non-blocking)
             if let Ok(mut writes) = pending_writes.try_lock() {
                 for (addr, value) in writes.drain(..) {

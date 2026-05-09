@@ -41,7 +41,6 @@ pub struct VIA {
     peripheral_control: u8,
     ifr: Cell<u8>,
     ier: u8,
-    port_a_handshake: u8,
     t1_counter: Cell<u16>,
     t1_latch: Cell<u16>,
     ca1_pending: bool,
@@ -61,7 +60,6 @@ impl Default for VIA {
             peripheral_control: 0,
             ifr: Cell::new(0),
             ier: 0,
-            port_a_handshake: 0,
             t1_counter: Cell::new(0x0000),
             t1_latch: Cell::new(0x0000),
             ca1_pending: false,
@@ -91,6 +89,18 @@ impl VIA {
 
     pub fn irq_active(&self) -> bool {
         self.ifr_byte() & IFR_IRQ != 0
+    }
+
+    pub fn port_b(&self) -> u8 {
+        self.pb
+    }
+
+    pub fn set_port_a(&mut self, value: u8) {
+        self.pa = value;
+    }
+
+    pub fn set_port_b(&mut self, value: u8) {
+        self.pb = value;
     }
 
     fn step_timer1(&self) {
@@ -153,7 +163,7 @@ impl Addressable for VIA {
                 if active != 0 { ifr | IFR_IRQ } else { ifr & !IFR_IRQ }
             }
             IER_OFFSET => self.ier,
-            PORTA_HANDSHAKE_OFFSET => self.port_a_handshake,
+            PORTA_HANDSHAKE_OFFSET => self.pa,
             _ => panic!("Invalid VIA2 register read at address {:04X}", address),
         }
     }
@@ -204,7 +214,7 @@ impl Addressable for VIA {
                     self.ier &= !(value & 0x7F);
                 }
             }
-            PORTA_HANDSHAKE_OFFSET => self.port_a_handshake = value,
+            PORTA_HANDSHAKE_OFFSET => self.pa = value,
             _ => panic!("Invalid VIA2 register write at address {:04X}", address),
         }
     }

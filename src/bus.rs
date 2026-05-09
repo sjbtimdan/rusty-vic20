@@ -14,7 +14,7 @@ pub struct Bus {
     memory: Memory,
     vic: VIC,
     via1: VIA,
-    via2: VIA,
+    pub via2: VIA,
     watchpoints: Vec<MemoryWriteWatchpoint>,
     frame_buffer: [u8; ACTIVE_HEIGHT * ACTIVE_WIDTH * 4],
 }
