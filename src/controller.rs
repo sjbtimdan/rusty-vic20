@@ -171,13 +171,11 @@ impl Vic20Controller {
         let reset_vector = bus.read_word(0xFFFC);
         cpu.reset(reset_vector);
 
+        // bus.add_watchpoint(tools::debug::MemoryWriteWatchpoint::watch_address_range(0x9120, 0x9121));
+
         loop {
-            if let Some(port_a) = keyboard.step() {
-                if port_a != 0xFF && bus.via2.port_b() & 0x01 == 0 {
-                    bus.via2.set_port_a(port_a);
-                } else {
-                    bus.via2.set_port_a(0xFF);
-                }
+            if let Some(port_a) = keyboard.step(bus.via2.port_b()) {
+                bus.via2.set_port_a(port_a);
             } else {
                 bus.via2.set_port_a(0xFF);
             }
