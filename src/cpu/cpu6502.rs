@@ -88,7 +88,9 @@ impl CPU6502 {
             }
         }
         self.total_cycles += 1;
-        if self.total_cycles - self.last_performance_log_cycle >= PERFORMANCE_LOG_INTERVAL_CYCLES {
+        if log_enabled!(log::Level::Debug)
+            && self.total_cycles - self.last_performance_log_cycle >= PERFORMANCE_LOG_INTERVAL_CYCLES
+        {
             let elapsed = self.last_performance_log_instant.elapsed();
             debug!(
                 "Executed {} cycles in {:.3} ms",
