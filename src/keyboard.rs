@@ -1,14 +1,17 @@
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, Mutex},
+    sync::mpsc::{self, Receiver, SyncSender},
 };
 
 use crate::ui::keyboard::Key;
 
-pub type SharedKeyboardState = Arc<Mutex<HashSet<Key>>>;
+pub fn make_keyboard_channel() -> (SyncSender<HashSet<Key>>, Receiver<HashSet<Key>>) {
+    mpsc::sync_channel(2)
+}
 
 pub struct Keyboard {
-    shared_state: SharedKeyboardState,
+    cache: HashSet<Key>,
+    receiver: Receiver<HashSet<Key>>,
     keyboard_map: HashMap<(Key, u8), u8>,
 }
 
@@ -96,9 +99,10 @@ fn keyboard_map() -> HashMap<(Key, u8), u8> {
 }
 
 impl Keyboard {
-    pub fn new(shared_state: SharedKeyboardState) -> Self {
+    pub fn new(receiver: Receiver<HashSet<Key>>) -> Self {
         Self {
-            shared_state,
+            cache: HashSet::new(),
+            receiver,
             keyboard_map: keyboard_map(),
         }
     }
@@ -106,21 +110,15 @@ impl Keyboard {
     // 0x9120: column drive (port b, input)
     // 0x9121: row (port a, output)
     #[must_use]
-    pub fn step(&self, port_b: u8) -> Option<u8> {
-        let keys = self.read_keys();
-        if !keys.is_empty() {
-            let first_key = *keys.iter().next().unwrap();
+    pub fn step(&mut self, port_b: u8) -> Option<u8> {
+        if let Ok(keys) = self.receiver.try_recv() {
+            self.cache = keys;
+        }
+        if !self.cache.is_empty() {
+            let first_key = *self.cache.iter().next().unwrap();
             self.keyboard_map.get(&(first_key, port_b)).cloned()
         } else {
             None
-        }
-    }
-
-    fn read_keys(&self) -> HashSet<Key> {
-        if let Ok(keys) = self.shared_state.lock() {
-            keys.clone()
-        } else {
-            HashSet::new()
         }
     }
 }
@@ -132,36 +130,37 @@ mod tests {
     use std::collections::HashSet;
 
     #[fixture]
-    fn keyboard_with_state() -> (Keyboard, SharedKeyboardState) {
-        let shared: SharedKeyboardState = Arc::new(Mutex::new(HashSet::new()));
-        let keyboard = Keyboard::new(Arc::clone(&shared));
-        (keyboard, shared)
+    fn keyboard() -> Keyboard {
+        let (_tx, rx) = make_keyboard_channel();
+        Keyboard::new(rx)
+    }
+
+    fn keyboard_with_keys(keys: HashSet<Key>) -> Keyboard {
+        let (tx, rx) = make_keyboard_channel();
+        tx.send(keys).unwrap();
+        Keyboard::new(rx)
     }
 
     #[rstest]
-    fn step_returns_none_when_no_key_pressed(keyboard_with_state: (Keyboard, SharedKeyboardState)) {
-        let (keyboard, _) = keyboard_with_state;
+    fn step_returns_none_when_no_key_pressed(mut keyboard: Keyboard) {
         assert_eq!(keyboard.step(0x00), None);
     }
 
     #[rstest]
-    fn step_returns_some_when_key_1_pressed(keyboard_with_state: (Keyboard, SharedKeyboardState)) {
-        let (keyboard, shared_state) = keyboard_with_state;
-        shared_state.lock().unwrap().insert(Key::Single('1'));
+    fn step_returns_some_when_key_1_pressed() {
+        let mut keyboard = keyboard_with_keys(HashSet::from([Key::Single('1')]));
         assert_eq!(keyboard.step(0xFE), Some(0xFE));
     }
 
     #[rstest]
-    fn step_returns_some_when_return_pressed(keyboard_with_state: (Keyboard, SharedKeyboardState)) {
-        let (keyboard, shared_state) = keyboard_with_state;
-        shared_state.lock().unwrap().insert(Key::Return);
+    fn step_returns_some_when_return_pressed() {
+        let mut keyboard = keyboard_with_keys(HashSet::from([Key::Return]));
         assert_eq!(keyboard.step(0xFD), Some(0x7F));
     }
 
     #[rstest]
-    fn step_returns_none_for_wrong_column(keyboard_with_state: (Keyboard, SharedKeyboardState)) {
-        let (keyboard, shared_state) = keyboard_with_state;
-        shared_state.lock().unwrap().insert(Key::Single('1'));
-        assert_eq!(keyboard.step(0xFD), None); // '1' is c0, not c1
+    fn step_returns_none_for_wrong_column() {
+        let mut keyboard = keyboard_with_keys(HashSet::from([Key::Single('1')]));
+        assert_eq!(keyboard.step(0xFD), None);
     }
 }

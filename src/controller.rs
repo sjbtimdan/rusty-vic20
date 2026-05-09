@@ -13,7 +13,7 @@ use crate::{
         SharedRegistersState,
         display::DebugWindow,
     },
-    keyboard::SharedKeyboardState,
+    keyboard::make_keyboard_channel,
     ui::{
         keyboard::{Keyboard, KeyboardState, display::KeyboardWindow},
         screen::{
@@ -23,7 +23,8 @@ use crate::{
     },
 };
 use std::{
-    sync::{Arc, Mutex},
+    collections::HashSet,
+    sync::{Arc, Mutex, mpsc::SyncSender},
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
@@ -45,7 +46,7 @@ struct SharedState {
     registers: SharedRegistersState,
     pending_register_writes: PendingRegisterWrites,
     perf: SharedPerfState,
-    shared_keyboard: SharedKeyboardState,
+    keyboard_sender: SyncSender<HashSet<crate::ui::keyboard::Key>>,
 }
 
 pub struct Vic20Controller {
@@ -104,7 +105,7 @@ impl Vic20Controller {
         }));
         let pending_register_writes: PendingRegisterWrites = Arc::new(Mutex::new(Vec::new()));
         let perf: SharedPerfState = Arc::new(Mutex::new(SharedPerformanceMetrics::default()));
-        let shared_keyboard: SharedKeyboardState = Arc::new(Mutex::new(std::collections::HashSet::new()));
+        let (keyboard_sender, keyboard_receiver) = make_keyboard_channel();
 
         let handle = thread::Builder::new()
             .name("vic20-core-loop".to_string())
@@ -115,7 +116,6 @@ impl Vic20Controller {
                 let registers = Arc::clone(&registers);
                 let pending_register_writes = Arc::clone(&pending_register_writes);
                 let perf = Arc::clone(&perf);
-                let shared_keyboard = Arc::clone(&shared_keyboard);
                 move || {
                     Self::run_emulator(
                         video,
@@ -124,7 +124,7 @@ impl Vic20Controller {
                         registers,
                         pending_register_writes,
                         perf,
-                        shared_keyboard,
+                        keyboard_receiver,
                         tick_duration,
                     )
                 }
@@ -140,7 +140,7 @@ impl Vic20Controller {
                 registers,
                 pending_register_writes,
                 perf,
-                shared_keyboard,
+                keyboard_sender,
             },
         )
     }
@@ -153,7 +153,7 @@ impl Vic20Controller {
         shared_registers: SharedRegistersState,
         pending_register_writes: PendingRegisterWrites,
         shared_perf: SharedPerfState,
-        shared_keyboard: SharedKeyboardState,
+        keyboard_receiver: std::sync::mpsc::Receiver<HashSet<crate::ui::keyboard::Key>>,
         tick_duration: Duration,
     ) {
         let mut cpu = CPU6502::default();
@@ -165,7 +165,7 @@ impl Vic20Controller {
         let mut frame_count: u64 = 0;
         let mut last_perf_total_cycles: u64 = 0;
         let mut last_perf_frame_count: u64 = 0;
-        let keyboard = crate::keyboard::Keyboard::new(shared_keyboard);
+        let mut keyboard = crate::keyboard::Keyboard::new(keyboard_receiver);
 
         bus.load_standard_roms_from_data_dir();
         let reset_vector = bus.read_word(0xFFFC);
@@ -285,9 +285,10 @@ impl ApplicationHandler for Vic20Controller {
                 }
                 WindowEvent::KeyboardInput { .. } => {
                     self.keyboard.handle_event(event_loop, event, &mut self.keyboard_state);
-                    if let Ok(mut keys) = self.shared_state().shared_keyboard.lock() {
-                        keys.clone_from(&self.keyboard_state.physical_keys);
-                    }
+                    let _ = self
+                        .shared_state()
+                        .keyboard_sender
+                        .send(self.keyboard_state.physical_keys.clone());
                 }
                 _ => {
                     self.screen.handle_event(event_loop, event);
@@ -300,9 +301,10 @@ impl ApplicationHandler for Vic20Controller {
                 }
                 _ => {
                     self.keyboard.handle_event(event_loop, event, &mut self.keyboard_state);
-                    if let Ok(mut keys) = self.shared_state().shared_keyboard.lock() {
-                        keys.clone_from(&self.keyboard_state.physical_keys);
-                    }
+                    let _ = self
+                        .shared_state()
+                        .keyboard_sender
+                        .send(self.keyboard_state.physical_keys.clone());
                 }
             }
         } else if Some(window_id) == self.debug.window_id() {
