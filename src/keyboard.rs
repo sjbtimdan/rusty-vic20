@@ -115,8 +115,12 @@ impl Keyboard {
             self.cache = keys;
         }
         if !self.cache.is_empty() {
-            let first_key = *self.cache.iter().next().unwrap();
-            self.keyboard_map.get(&(first_key, port_b)).cloned()
+            let result = self
+                .cache
+                .iter()
+                .filter_map(|&k| self.keyboard_map.get(&(k, port_b)).copied())
+                .fold(0xFFu8, |acc, val| acc & val);
+            if result == 0xFF { None } else { Some(result) }
         } else {
             None
         }
@@ -162,5 +166,18 @@ mod tests {
     fn step_returns_none_for_wrong_column() {
         let mut keyboard = keyboard_with_keys(HashSet::from([Key::Single('1')]));
         assert_eq!(keyboard.step(0xFD), None);
+    }
+
+    #[rstest]
+    fn step_combines_two_keys_same_column_different_rows() {
+        let mut keyboard = keyboard_with_keys(HashSet::from([Key::Single('1'), Key::Single('3')]));
+        assert_eq!(keyboard.step(0xFE), Some(0xFC));
+    }
+
+    #[rstest]
+    fn step_returns_key_in_driven_column_with_two_keys_different_columns() {
+        let mut keyboard = keyboard_with_keys(HashSet::from([Key::Single('1'), Key::Single('2')]));
+        assert_eq!(keyboard.step(0xFE), Some(0xFE));
+        assert_eq!(keyboard.step(0x7F), Some(0xFE));
     }
 }
