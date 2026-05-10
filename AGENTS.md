@@ -1,7 +1,8 @@
 # AGENTS.md
 
 Guidance for AI coding agents working in this repository.
-References on the Vic 20 to guide implementation are in [docs/REFERENCES.md]
+Deep architectural reference in [ARCHITECTURE.md](ARCHITECTURE.md).
+VIC-20 hardware references in [docs/REFERENCES.md](docs/REFERENCES.md).
 
 ## Fast Start
 
@@ -14,7 +15,7 @@ References on the Vic 20 to guide implementation are in [docs/REFERENCES.md]
 - Run disassembler: `cargo run --bin disassembler -- <file> [base_address] [disassemble_start_addr]`
 - Enable logging: `RUST_LOG=info cargo run --bin vic20` (uses `env_logger`)
 
-Note: `rm -rf target` if `cargo build` fails after a Rust upgrade, since the crate uses `edition = "2024"`.
+Note: `rm -rf target` if `cargo build` fails after a Rust upgrade — the crate uses `edition = "2024"`.
 
 ## ROM File Prerequisites
 
@@ -26,41 +27,41 @@ data/characters.901460-03.bin (Character ROM, 4KB at 0x8000)
 data/kernal.901486-07.bin     (KERNEL ROM, 8KB at 0xE000)
 ```
 
-`cargo test` panics without these files because unit tests in `src/bus.rs` call `load_standard_roms_from_data_dir()`.
+`cargo test` panics without these files — unit tests in `src/bus.rs` call `load_standard_roms_from_data_dir()`.
 
-## Architecture
+## Architecture Overview
 
-- Single crate (not a workspace). Top-level modules re-exported in `src/lib.rs`.
-- `edition = "2024"` — requires Rust >= 1.85.0.
-- `src/addressable.rs`: `Addressable` trait for read/write across the 64KB bus. Trait has a `#[cfg(test)]` `Debug` impl for `dyn Addressable` needed by `unimock`.
-- `src/bus.rs`: 64KB address space routing. Owns `Memory`, `VIC`, two `VIA` instances (VIA1 at 0x9110, VIA2 at 0x9120), watchpoints, and a framebuffer. ROMs loaded from `data/` on startup.
-- `src/cpu/`: 6502 execution core — `cpu6502.rs` (struct + reset), `instructions.rs` (opcode dispatch), `addressing_mode.rs` (modes), `instruction_executor.rs` (trait for mocking), `instruction_tracking.rs` (cycle counts), `interrupt_handler.rs`, `registers.rs`.
-- `src/vic.rs`: VIC-I chip — text-mode rendering, screen control, palette. Registers at 0x9000–0x900F.
-- `src/via.rs`: 6522 VIA chip. Timer 1 countdown/underflow/latch/reload, CA1 edge detect, IFR/IER/IRQ logic. Reads/writes for Ports A/B, DDR, Timer2, shift reg, ACR, PCR. Timer 2 does not count down yet.
-- `src/ui/screen/`: Video display — `renderer.rs` (framebuffer constants, palette), `display.rs` (pixels-based window).
-- `src/ui/keyboard/`: On-screen keyboard overlay — `mod.rs` (key regions, `Key` enum, `KeyboardState`), `display.rs` (separate winit window).
-- `src/debug/mod.rs` and `src/debug/display.rs`: Debug overlays showing registers, memory, and perf metrics in a third window.
-- `src/keyboard.rs`: Physical-key → VIA port B/A matrix. Receives key sets via `mpsc::sync_channel(2)` from the UI thread.
-- `src/tools/disassembler.rs`: 6502 disassembler used by the `disassembler` binary.
-- `src/bin/vic20.rs`: CLI entrypoint accepting optional tick-duration in microseconds.
-- `src/bin/disassembler.rs`: Standalone disassembler. Accepts filename, optional base_address (hex), optional start_address (hex).
-- `src/controller.rs`: `ApplicationHandler` managing three windows (screen, keyboard, debug). Creates a worker thread for the CPU/bus loop.
-- `src/virtual_clock.rs`: Clock abstraction for cycle timing.
+- Single crate (not a workspace), `edition = "2024"` (requires Rust >= 1.85.0).
+- All modules re-exported in `src/lib.rs`.
+- **`Addressable` trait** (`src/addressable.rs`): The foundational `read_byte`/`write_byte` interface. Implemented by `Memory`, `VIC`, `VIA`, and `Bus` itself. The CPU interacts with the bus exclusively through `dyn Addressable` / `impl Addressable`.
+- **`Bus`** (`src/bus.rs`): 64KB address router owning `Memory`, `VIC`, two `VIA` (VIA1 at 0x9110, VIA2 at 0x9120), watchpoints, and a framebuffer. `step_devices()` steps each device per cycle; `render_active_screen()` delegates to VIC.
+- **`CPU6502`** (`src/cpu/cpu6502.rs`): Cycle-accurate emulation — each `cpu.step(&mut bus, &executor)` call is exactly one clock cycle. Uses a state machine (`cycle_count`, `operands_index`, `current_instruction_info`) for multi-cycle instructions. 151 opcodes decoded in `instructions.rs`.
+- **Instruction executor traits** (`src/cpu/instruction_executor.rs`, `src/cpu/interrupt_handler.rs`, `src/cpu/addressing_mode.rs`): Traits enable `unimock` testing without real CPU/memory. `DefaultInstructionExecutor` is a zero-sized struct.
+- **`VIC`** (`src/vic.rs`): Renders 176×184 text-mode screen from screen RAM + Character ROM + color RAM. Registers at 0x9000–0x900F.
+- **`VIA`** (`src/via.rs`): 6522 chip — Timer1 countdown/underflow/latch, IFR/IER/IRQ logic (`Cell` for interior mutability), CA1 edge detect. Port A/B for keyboard matrix. Timer2 not yet counting down.
+- **UI** (`src/ui/`): Three `pixels`/`winit` windows — screen (176×184 at 3x), keyboard overlay (PNG image + virtual keyboard), debug (hex memory grid, registers, perf).
+- **Keyboard** (`src/keyboard.rs`, `src/ui/keyboard/`): Physical keys → `HashSet<Key>` via `sync_channel(2)` → emulator thread → `keyboard.step(port_b)` → `via2.set_port_a()`.
+- **Debug** (`src/debug/`): `Arc<Mutex<>>` shared state for memory mirror (64KB), registers, perf metrics, and `Vec`-based pending-write channels for debugger→emulator edits.
+- **Controller** (`src/controller.rs`): `winit::ApplicationHandler` — spawns `"vic20-core-loop"` worker thread in `resumed`, manages frame timing at 50Hz in `about_to_wait`.
+- **Tools** (`src/tools/`): Breakpoints/watchpoints (`debug.rs`), 6502 disassembler (`disassembler.rs`).
+- **`Clock` trait** (`src/virtual_clock.rs`): `SystemClock`/`MockClock` abstraction for testing time-dependent keyboard interactions.
+
+Full detail: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Threading and Shared State
 
-- `winit` event loop runs on the main thread (required for macOS).
-- CPU/bus stepping runs on a named worker thread (`"vic20-core-loop"`).
+- **`winit` event loop** runs on the main thread (required for macOS).
+- **CPU/bus stepping** runs on a named worker thread (`"vic20-core-loop"`).
 - Shared state uses `Arc<Mutex<>>`: `SharedVideoState` (framebuffer + border RGBA), `SharedMemory` (64KB mirror), `SharedRegisters`, `SharedPerformanceMetrics`, and two `Vec`-based pending-write channels for debugger interaction.
-- CPU loop uses `try_lock()` for non-blocking reads of pending writes; UI thread uses blocking `lock()` for frame/memory/register reads.
-- Keyboard state: `KeyboardState.physical_keys` (a `HashSet<Key>`) is sent via `SyncSender` from UI thread to the emulator thread each input event. Inside the emulator loop, `keyboard.step(via2.port_b())` converts physical keys to VIA port A values.
+- **Locking asymmetry:** CPU loop uses `try_lock()` for non-blocking reads of pending writes (skips if held). UI thread uses blocking `lock()` for frame/memory/register reads.
+- Keyboard: `KeyboardState.physical_keys` (`HashSet<Key>`) sent via `SyncSender` from UI thread to emulator. Emulator thread uses `try_recv()` — non-blocking.
 - Frame timing in `about_to_wait`: computes nearest deadline between 50Hz screen refresh and keyboard animation deadlines, uses `ControlFlow::WaitUntil`.
 
 ## Known Pitfalls
 
 - Avoid self-referential lifetime designs around CPU execution helpers; construct short-lived executors per step when needed.
 - In bus/device stepping, avoid aliasing mutable borrows of a field and `&mut self` in the same call path.
-- For `unimock` with trait objects, local `Debug` impls for trait objects may be needed for test expectations (see `src/addressable.rs:33-38`).
+- For `unimock` with trait objects, local `Debug` impls may be needed for test expectations (see `src/addressable.rs:33-38`).
 
 ## Testing
 
@@ -79,6 +80,7 @@ data/kernal.901486-07.bin     (KERNEL ROM, 8KB at 0xE000)
 ## References
 
 - Project overview: [README.md](README.md)
+- Architecture deep-dive: [ARCHITECTURE.md](ARCHITECTURE.md)
 - Roadmap and status: [docs/PLAN.md](docs/PLAN.md)
 - VIA implementation notes: [docs/VIA.md](docs/VIA.md)
 - VIC-20 reference links: [docs/REFERENCES.md](docs/REFERENCES.md)
