@@ -54,7 +54,8 @@ fn keyboard_map() -> HashMap<(Key, u8), u8> {
         (Key::CrsrLR, 0xFB, 0x7F),
         // Column c3 (port_b = 0xF7)
         (Key::RunStop, 0xF7, 0xFE),
-        (Key::Shift, 0xF7, 0xFD),
+        (Key::LeftShift, 0xF7, 0xFD),
+        (Key::RightShift, 0xF7, 0xFD),
         (Key::Single('X'), 0xF7, 0xFB),
         (Key::Single('V'), 0xF7, 0xF7),
         (Key::Single('N'), 0xF7, 0xEF),
@@ -68,7 +69,8 @@ fn keyboard_map() -> HashMap<(Key, u8), u8> {
         (Key::Single('B'), 0xEF, 0xF7),
         (Key::Single('M'), 0xEF, 0xEF),
         (Key::Single('.'), 0xEF, 0xDF),
-        (Key::Shift, 0xEF, 0xBF),
+        (Key::LeftShift, 0xEF, 0xBF),
+        (Key::RightShift, 0xEF, 0xBF),
         (Key::F1F2, 0xEF, 0x7F),
         // Column c5 (port_b = 0xDF)
         (Key::Cbm, 0xDF, 0xFE),

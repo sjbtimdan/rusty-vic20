@@ -185,7 +185,7 @@ pub fn build_key_regions() -> Vec<KeyRegion> {
         (Key::Single('-'),       672,  11,  53, 52),
         (Key::Single('£'),       726,  11,  53, 52),
         (Key::ClrHome, 780,  11,  53, 52),
-        (Key::InsDel,  834,  11,  36, 52),
+        (Key::InsDel,  834,  11,  53, 52),
 
         // ── CTRL/Q row (y=65..116) ────────────────────────────────────────
         (Key::Ctrl,     23,  65,  81, 52),
@@ -202,7 +202,7 @@ pub fn build_key_regions() -> Vec<KeyRegion> {
         (Key::Single('@'),       645,  65,  53, 52),
         (Key::Single('*'),       699,  65,  53, 52),
         (Key::Up,       753,  65,  53, 52),
-        (Key::Restore,  807,  65,  63, 52),
+        (Key::Restore,  807,  65,  82, 52),
 
         // ── RUN/STOP / A row (y=119..170) ────────────────────────────────
         (Key::RunStop,     11, 119,  52, 52),
@@ -223,7 +223,7 @@ pub fn build_key_regions() -> Vec<KeyRegion> {
 
         // ── CBM / Z row (y=173..224) ──────────────────────────────────────
         (Key::Cbm,        11, 173,  52, 52),
-        (Key::Shift,      65, 173,  79, 52),
+        (Key::LeftShift,  65, 173,  79, 52),
         (Key::Single('Z'),         146, 173,  52, 52),
         (Key::Single('X'),         200, 173,  52, 52),
         (Key::Single('C'),         254, 173,  52, 52),
@@ -234,7 +234,7 @@ pub fn build_key_regions() -> Vec<KeyRegion> {
         (Key::Single(','),         524, 173,  52, 52),
         (Key::Single('.'),         578, 173,  52, 52),
         (Key::Single('/'),         632, 173,  52, 52),
-        (Key::Shift,      686, 173,  79, 52),
+        (Key::RightShift, 686, 173,  79, 52),
         (Key::CrsrUD,    767, 173,  52, 52),
         (Key::CrsrLR,    821, 173,  49, 52),
 
@@ -387,14 +387,14 @@ mod tests {
     #[test]
     fn single_click_while_holding_produces_chord() {
         let mut state = mock_state();
-        state.held_key = Some(Key::Shift);
-        state.physical_keys.insert(Key::Shift);
+        state.held_key = Some(Key::LeftShift);
+        state.physical_keys.insert(Key::LeftShift);
         // Ensure first click registers as single (no recent last_click)
         state.on_key_click(Key::Single('A'));
         assert_eq!(state.status_message, "CHORD: SHIFT + A pressed together, then released");
         assert!(state.held_key.is_none());
         assert!(
-            !state.physical_keys.contains(&Key::Shift),
+            !state.physical_keys.contains(&Key::LeftShift),
             "held key should be released from physical_keys"
         );
         assert!(
