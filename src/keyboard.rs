@@ -1,9 +1,14 @@
+use crate::{
+    addressable::Addressable,
+    paste::{KBD_BUFFER_COUNT, KBD_BUFFER_SIZE, KBD_BUFFER_START, PasteQueue},
+    ui::keyboard::key::Key,
+};
 use std::{
     collections::{HashMap, HashSet},
     sync::mpsc::{self, Receiver, SyncSender},
 };
 
-use crate::ui::keyboard::key::Key;
+const PASTE_COOLDOWN_CYCLES: u32 = 100;
 
 pub fn make_keyboard_channel() -> (SyncSender<HashSet<Key>>, Receiver<HashSet<Key>>) {
     mpsc::sync_channel(2)
@@ -13,6 +18,8 @@ pub struct Keyboard {
     cache: HashSet<Key>,
     receiver: Receiver<HashSet<Key>>,
     keyboard_map: HashMap<(Key, u8), u8>,
+    paste_queue: Option<PasteQueue>,
+    paste_cooldown: u32,
 }
 
 fn keyboard_map() -> HashMap<(Key, u8), u8> {
@@ -99,11 +106,13 @@ fn keyboard_map() -> HashMap<(Key, u8), u8> {
 }
 
 impl Keyboard {
-    pub fn new(receiver: Receiver<HashSet<Key>>) -> Self {
+    pub fn new(receiver: Receiver<HashSet<Key>>, paste_queue: Option<PasteQueue>) -> Self {
         Self {
             cache: HashSet::new(),
             receiver,
             keyboard_map: keyboard_map(),
+            paste_queue,
+            paste_cooldown: 0,
         }
     }
 
@@ -125,24 +134,49 @@ impl Keyboard {
             None
         }
     }
+
+    pub fn inject_paste_into_buffer(&mut self, bus: &mut impl Addressable) {
+        if self.paste_cooldown > 0 {
+            self.paste_cooldown -= 1;
+            return;
+        }
+
+        if let Some(ref queue) = self.paste_queue
+            && let Ok(mut q) = queue.try_lock()
+            && let Some(petscii_code) = q.pop_front()
+        {
+            let count = bus.read_byte(KBD_BUFFER_COUNT);
+            if count < KBD_BUFFER_SIZE {
+                let addr = KBD_BUFFER_START + count as u16;
+                bus.write_byte(addr, petscii_code);
+                bus.write_byte(KBD_BUFFER_COUNT, count + 1);
+            } else {
+                q.push_front(petscii_code);
+            }
+            self.paste_cooldown = PASTE_COOLDOWN_CYCLES;
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use rstest::{fixture, rstest};
-    use std::collections::HashSet;
+    use std::{
+        collections::{HashSet, VecDeque},
+        sync::{Arc, Mutex},
+    };
 
     #[fixture]
     fn keyboard() -> Keyboard {
         let (_tx, rx) = make_keyboard_channel();
-        Keyboard::new(rx)
+        Keyboard::new(rx, None)
     }
 
     fn keyboard_with_keys(keys: HashSet<Key>) -> Keyboard {
         let (tx, rx) = make_keyboard_channel();
         tx.send(keys).unwrap();
-        Keyboard::new(rx)
+        Keyboard::new(rx, None)
     }
 
     #[rstest]
@@ -185,7 +219,7 @@ mod tests {
     fn cache_persists_across_multiple_steps() {
         let (tx, rx) = make_keyboard_channel();
         tx.send(HashSet::from([Key::Single('W')])).unwrap();
-        let mut keyboard = Keyboard::new(rx);
+        let mut keyboard = Keyboard::new(rx, None);
         assert_eq!(keyboard.step(0xFD), Some(0xFD));
         assert_eq!(keyboard.step(0xFD), Some(0xFD));
         assert_eq!(keyboard.step(0xFD), Some(0xFD));
@@ -195,7 +229,7 @@ mod tests {
     fn cache_is_replaced_when_new_message_arrives() {
         let (tx, rx) = make_keyboard_channel();
         tx.send(HashSet::from([Key::Single('W')])).unwrap();
-        let mut keyboard = Keyboard::new(rx);
+        let mut keyboard = Keyboard::new(rx, None);
         assert_eq!(keyboard.step(0xFD), Some(0xFD));
         tx.send(HashSet::from([Key::Single('R')])).unwrap();
         assert_eq!(keyboard.step(0xFD), Some(0xFB));
@@ -206,10 +240,43 @@ mod tests {
     fn empty_cache_returns_none_after_previous_keys_cleared() {
         let (tx, rx) = make_keyboard_channel();
         tx.send(HashSet::from([Key::Single('W')])).unwrap();
-        let mut keyboard = Keyboard::new(rx);
+        let mut keyboard = Keyboard::new(rx, None);
         assert_eq!(keyboard.step(0xFD), Some(0xFD));
         tx.send(HashSet::new()).unwrap();
         assert_eq!(keyboard.step(0xFD), None);
         assert_eq!(keyboard.step(0xFD), None);
+    }
+
+    #[test]
+    fn inject_paste_writes_to_keyboard_buffer() {
+        let (_tx, rx) = make_keyboard_channel();
+        let queue: PasteQueue = Arc::new(Mutex::new(VecDeque::from([0x41, 0x42, 0x43])));
+        let mut keyboard = Keyboard::new(rx, Some(queue.clone()));
+        let mut mem = crate::memory::default();
+
+        keyboard.inject_paste_into_buffer(&mut mem);
+        assert_eq!(mem.read_byte(KBD_BUFFER_COUNT), 1);
+        assert_eq!(mem.read_byte(KBD_BUFFER_START), 0x41);
+
+        keyboard.paste_cooldown = 0;
+        keyboard.inject_paste_into_buffer(&mut mem);
+        assert_eq!(mem.read_byte(KBD_BUFFER_COUNT), 2);
+        assert_eq!(mem.read_byte(KBD_BUFFER_START + 1), 0x42);
+
+        keyboard.paste_cooldown = 0;
+        keyboard.inject_paste_into_buffer(&mut mem);
+        assert_eq!(mem.read_byte(KBD_BUFFER_COUNT), 3);
+        assert_eq!(mem.read_byte(KBD_BUFFER_START + 2), 0x43);
+    }
+
+    #[test]
+    fn paste_queue_empty_does_nothing() {
+        let (_tx, rx) = make_keyboard_channel();
+        let queue: PasteQueue = Arc::new(Mutex::new(VecDeque::new()));
+        let mut keyboard = Keyboard::new(rx, Some(queue));
+        let mut mem = crate::memory::default();
+
+        keyboard.inject_paste_into_buffer(&mut mem);
+        assert_eq!(mem.read_byte(KBD_BUFFER_COUNT), 0);
     }
 }

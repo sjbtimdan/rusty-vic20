@@ -41,6 +41,7 @@ data/kernal.901486-07.bin     (KERNEL ROM, 8KB at 0xE000)
 - **`VIA`** (`src/via.rs`): 6522 chip — Timer1 countdown/underflow/latch, IFR/IER/IRQ logic (`Cell` for interior mutability), CA1 edge detect. Port A/B for keyboard matrix. Timer2 not yet counting down.
 - **UI** (`src/ui/`): Three `pixels`/`winit` windows — screen (176×184 at 3x), keyboard overlay (PNG image + virtual keyboard), debug (hex memory grid, registers, perf).
 - **Keyboard** (`src/keyboard.rs`, `src/ui/keyboard/`): Physical keys → `HashSet<Key>` via `sync_channel(2)` → emulator thread → `keyboard.step(port_b)` → `via2.set_port_a()`.
+- **Paste** (`src/paste.rs`): Clipboard text injection (Ctrl+V / Cmd+V) → Unicode→PETSCII conversion → queues bytes into the KERNAL keyboard buffer at `0x0277`. Throttled via `PASTE_COOLDOWN_CYCLES` to avoid overflowing the 10-byte buffer. Wired through `Keyboard::inject_paste_into_buffer()` in the emulator loop.
 - **Debug** (`src/debug/`): `Arc<Mutex<>>` shared state for memory mirror (64KB), registers, perf metrics, and `Vec`-based pending-write channels for debugger→emulator edits.
 - **Controller** (`src/controller.rs`): `winit::ApplicationHandler` — spawns `"vic20-core-loop"` worker thread in `resumed`, manages frame timing at 50Hz in `about_to_wait`.
 - **Tools** (`src/tools/`): Breakpoints/watchpoints (`debug.rs`), 6502 disassembler (`disassembler.rs`).
