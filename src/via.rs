@@ -99,10 +99,6 @@ impl VIA {
         self.pa = value;
     }
 
-    pub fn set_port_b(&mut self, value: u8) {
-        self.pb = value;
-    }
-
     fn step_timer1(&self) {
         let counter = self.t1_counter.get();
         if counter == 0 {
