@@ -180,4 +180,36 @@ mod tests {
         assert_eq!(keyboard.step(0xFE), Some(0xFE));
         assert_eq!(keyboard.step(0x7F), Some(0xFE));
     }
+
+    #[test]
+    fn cache_persists_across_multiple_steps() {
+        let (tx, rx) = make_keyboard_channel();
+        tx.send(HashSet::from([Key::Single('W')])).unwrap();
+        let mut keyboard = Keyboard::new(rx);
+        assert_eq!(keyboard.step(0xFD), Some(0xFD));
+        assert_eq!(keyboard.step(0xFD), Some(0xFD));
+        assert_eq!(keyboard.step(0xFD), Some(0xFD));
+    }
+
+    #[test]
+    fn cache_is_replaced_when_new_message_arrives() {
+        let (tx, rx) = make_keyboard_channel();
+        tx.send(HashSet::from([Key::Single('W')])).unwrap();
+        let mut keyboard = Keyboard::new(rx);
+        assert_eq!(keyboard.step(0xFD), Some(0xFD));
+        tx.send(HashSet::from([Key::Single('R')])).unwrap();
+        assert_eq!(keyboard.step(0xFD), Some(0xFB));
+        assert_eq!(keyboard.step(0xFD), Some(0xFB));
+    }
+
+    #[test]
+    fn empty_cache_returns_none_after_previous_keys_cleared() {
+        let (tx, rx) = make_keyboard_channel();
+        tx.send(HashSet::from([Key::Single('W')])).unwrap();
+        let mut keyboard = Keyboard::new(rx);
+        assert_eq!(keyboard.step(0xFD), Some(0xFD));
+        tx.send(HashSet::new()).unwrap();
+        assert_eq!(keyboard.step(0xFD), None);
+        assert_eq!(keyboard.step(0xFD), None);
+    }
 }

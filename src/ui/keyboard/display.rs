@@ -361,6 +361,8 @@ fn keycode_to_vickeys(key: KeyCode) -> Vec<Key> {
         KeyCode::Digit0 => vec![Key::Single('0')],
         KeyCode::Minus => vec![Key::Single('-')],
         KeyCode::Equal => vec![Key::Single('+')],
+        KeyCode::Tab => vec![Key::RunStop],
+        KeyCode::AltLeft => vec![Key::Cbm],
         KeyCode::Backslash => vec![Key::Single('£')],
         KeyCode::Home => vec![Key::ClrHome],
         KeyCode::Backspace => vec![Key::InsDel],
