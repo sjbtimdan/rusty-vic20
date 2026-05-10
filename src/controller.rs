@@ -46,7 +46,7 @@ struct SharedState {
     registers: SharedRegistersState,
     pending_register_writes: PendingRegisterWrites,
     perf: SharedPerfState,
-    keyboard_sender: SyncSender<HashSet<crate::ui::keyboard::Key>>,
+    keyboard_sender: SyncSender<HashSet<crate::ui::keyboard::key::Key>>,
 }
 
 pub struct Vic20Controller {
@@ -153,7 +153,7 @@ impl Vic20Controller {
         shared_registers: SharedRegistersState,
         pending_register_writes: PendingRegisterWrites,
         shared_perf: SharedPerfState,
-        keyboard_receiver: std::sync::mpsc::Receiver<HashSet<crate::ui::keyboard::Key>>,
+        keyboard_receiver: std::sync::mpsc::Receiver<HashSet<crate::ui::keyboard::key::Key>>,
         tick_duration: Duration,
     ) {
         let mut cpu = CPU6502::default();

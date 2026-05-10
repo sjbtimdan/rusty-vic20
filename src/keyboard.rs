@@ -3,7 +3,7 @@ use std::{
     sync::mpsc::{self, Receiver, SyncSender},
 };
 
-use crate::ui::keyboard::Key;
+use crate::ui::keyboard::key::Key;
 
 pub fn make_keyboard_channel() -> (SyncSender<HashSet<Key>>, Receiver<HashSet<Key>>) {
     mpsc::sync_channel(2)

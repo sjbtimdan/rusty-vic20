@@ -1,4 +1,4 @@
-use rusty_vic20::ui::keyboard::{Key, KeyboardState};
+use rusty_vic20::ui::keyboard::{KeyboardState, key::Key};
 
 const RESTORE_CENTER: (f32, f32) = (838.5, 91.0);
 const RESTORE_TOPLEFT: (f32, f32) = (807.0, 65.0);

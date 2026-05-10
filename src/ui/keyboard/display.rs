@@ -409,10 +409,54 @@ fn keycode_to_vickeys(key: KeyCode) -> Vec<Key> {
         KeyCode::ArrowLeft => vec![Key::CrsrLR, Key::Shift],
         KeyCode::ArrowRight => vec![Key::CrsrLR],
         KeyCode::Space => vec![Key::Single(' ')],
-        KeyCode::F1 | KeyCode::F2 => vec![Key::F1F2],
-        KeyCode::F3 | KeyCode::F4 => vec![Key::F3F4],
-        KeyCode::F5 | KeyCode::F6 => vec![Key::F5F6],
-        KeyCode::F7 | KeyCode::F8 => vec![Key::F7F8],
+        KeyCode::F1 => vec![Key::F1F2],
+        KeyCode::F2 => vec![Key::Shift, Key::F1F2],
+        KeyCode::F3 => vec![Key::F3F4],
+        KeyCode::F4 => vec![Key::Shift, Key::F3F4],
+        KeyCode::F5 => vec![Key::F5F6],
+        KeyCode::F6 => vec![Key::Shift, Key::F5F6],
+        KeyCode::F7 => vec![Key::F7F8],
+        KeyCode::F8 => vec![Key::Shift, Key::F7F8],
         _ => vec![],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case(KeyCode::KeyA, vec![Key::Single('A')])]
+    #[case(KeyCode::Digit1, vec![Key::Single('1')])]
+    #[case(KeyCode::Space, vec![Key::Single(' ')])]
+    #[case(KeyCode::Minus, vec![Key::Single('-')])]
+    #[case(KeyCode::Equal, vec![Key::Single('+')])]
+    #[case(KeyCode::Comma, vec![Key::Single(',')])]
+    fn single_key_mapping(#[case] keycode: KeyCode, #[case] expected: Vec<Key>) {
+        assert_eq!(keycode_to_vickeys(keycode), expected);
+    }
+
+    #[rstest]
+    #[case(KeyCode::ArrowUp, vec![Key::CrsrUD, Key::Shift])]
+    #[case(KeyCode::ArrowLeft, vec![Key::CrsrLR, Key::Shift])]
+    #[case(KeyCode::ArrowDown, vec![Key::CrsrUD])]
+    #[case(KeyCode::ArrowRight, vec![Key::CrsrLR])]
+    fn multi_key_mapping(#[case] keycode: KeyCode, #[case] expected: Vec<Key>) {
+        assert_eq!(keycode_to_vickeys(keycode), expected);
+    }
+
+    #[rstest]
+    #[case(KeyCode::F1, vec![Key::F1F2])]
+    #[case(KeyCode::F2, vec![Key::Shift, Key::F1F2])]
+    fn f1_f2_mapping(#[case] keycode: KeyCode, #[case] expected: Vec<Key>) {
+        assert_eq!(keycode_to_vickeys(keycode), expected);
+    }
+
+    #[rstest]
+    #[case(KeyCode::End)]
+    #[case(KeyCode::PageUp)]
+    fn unmapped_key_returns_empty(#[case] keycode: KeyCode) {
+        assert_eq!(keycode_to_vickeys(keycode), vec![]);
     }
 }
