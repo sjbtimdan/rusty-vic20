@@ -360,7 +360,7 @@ fn keycode_to_vickeys(key: KeyCode) -> Vec<Key> {
         KeyCode::Digit9 => vec![Key::Single('9')],
         KeyCode::Digit0 => vec![Key::Single('0')],
         KeyCode::Minus => vec![Key::Single('-')],
-        KeyCode::Equal => vec![Key::Single('+')],
+        KeyCode::Equal => vec![Key::Single('=')],
         KeyCode::Tab => vec![Key::RunStop],
         KeyCode::AltLeft => vec![Key::Cbm],
         KeyCode::Backslash => vec![Key::Single('£')],
@@ -394,7 +394,7 @@ fn keycode_to_vickeys(key: KeyCode) -> Vec<Key> {
         KeyCode::Semicolon => vec![Key::Single('[')],
         KeyCode::Quote => vec![Key::Single(']')],
         KeyCode::Enter => vec![Key::Return],
-        KeyCode::ShiftLeft => vec![Key::Shift],
+        KeyCode::ShiftLeft => vec![Key::LeftShift],
         KeyCode::KeyZ => vec![Key::Single('Z')],
         KeyCode::KeyX => vec![Key::Single('X')],
         KeyCode::KeyC => vec![Key::Single('C')],
@@ -405,20 +405,20 @@ fn keycode_to_vickeys(key: KeyCode) -> Vec<Key> {
         KeyCode::Comma => vec![Key::Single(',')],
         KeyCode::Period => vec![Key::Single('.')],
         KeyCode::Slash => vec![Key::Single('/')],
-        KeyCode::ShiftRight => vec![Key::Shift],
-        KeyCode::ArrowUp => vec![Key::CrsrUD, Key::Shift],
+        KeyCode::ShiftRight => vec![Key::RightShift],
+        KeyCode::ArrowUp => vec![Key::CrsrUD, Key::LeftShift],
         KeyCode::ArrowDown => vec![Key::CrsrUD],
-        KeyCode::ArrowLeft => vec![Key::CrsrLR, Key::Shift],
+        KeyCode::ArrowLeft => vec![Key::CrsrLR, Key::LeftShift],
         KeyCode::ArrowRight => vec![Key::CrsrLR],
         KeyCode::Space => vec![Key::Single(' ')],
         KeyCode::F1 => vec![Key::F1F2],
-        KeyCode::F2 => vec![Key::Shift, Key::F1F2],
+        KeyCode::F2 => vec![Key::LeftShift, Key::F1F2],
         KeyCode::F3 => vec![Key::F3F4],
-        KeyCode::F4 => vec![Key::Shift, Key::F3F4],
+        KeyCode::F4 => vec![Key::LeftShift, Key::F3F4],
         KeyCode::F5 => vec![Key::F5F6],
-        KeyCode::F6 => vec![Key::Shift, Key::F5F6],
+        KeyCode::F6 => vec![Key::LeftShift, Key::F5F6],
         KeyCode::F7 => vec![Key::F7F8],
-        KeyCode::F8 => vec![Key::Shift, Key::F7F8],
+        KeyCode::F8 => vec![Key::LeftShift, Key::F7F8],
         _ => vec![],
     }
 }
@@ -433,15 +433,15 @@ mod tests {
     #[case(KeyCode::Digit1, vec![Key::Single('1')])]
     #[case(KeyCode::Space, vec![Key::Single(' ')])]
     #[case(KeyCode::Minus, vec![Key::Single('-')])]
-    #[case(KeyCode::Equal, vec![Key::Single('+')])]
+    #[case(KeyCode::Equal, vec![Key::Single('=')])]
     #[case(KeyCode::Comma, vec![Key::Single(',')])]
     fn single_key_mapping(#[case] keycode: KeyCode, #[case] expected: Vec<Key>) {
         assert_eq!(keycode_to_vickeys(keycode), expected);
     }
 
     #[rstest]
-    #[case(KeyCode::ArrowUp, vec![Key::CrsrUD, Key::Shift])]
-    #[case(KeyCode::ArrowLeft, vec![Key::CrsrLR, Key::Shift])]
+    #[case(KeyCode::ArrowUp, vec![Key::CrsrUD, Key::LeftShift])]
+    #[case(KeyCode::ArrowLeft, vec![Key::CrsrLR, Key::LeftShift])]
     #[case(KeyCode::ArrowDown, vec![Key::CrsrUD])]
     #[case(KeyCode::ArrowRight, vec![Key::CrsrLR])]
     fn multi_key_mapping(#[case] keycode: KeyCode, #[case] expected: Vec<Key>) {
@@ -450,7 +450,7 @@ mod tests {
 
     #[rstest]
     #[case(KeyCode::F1, vec![Key::F1F2])]
-    #[case(KeyCode::F2, vec![Key::Shift, Key::F1F2])]
+    #[case(KeyCode::F2, vec![Key::LeftShift, Key::F1F2])]
     fn f1_f2_mapping(#[case] keycode: KeyCode, #[case] expected: Vec<Key>) {
         assert_eq!(keycode_to_vickeys(keycode), expected);
     }
