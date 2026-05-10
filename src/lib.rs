@@ -5,6 +5,7 @@ pub mod cpu;
 pub mod debug;
 pub mod keyboard;
 pub mod memory;
+pub mod paste;
 pub mod tools;
 pub mod ui;
 pub mod via;

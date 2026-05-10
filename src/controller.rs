@@ -14,6 +14,7 @@ use crate::{
         display::DebugWindow,
     },
     keyboard::make_keyboard_channel,
+    paste::{self, PasteQueue},
     ui::{
         keyboard::{Keyboard, KeyboardState, display::KeyboardWindow},
         screen::{
@@ -22,6 +23,7 @@ use crate::{
         },
     },
 };
+use arboard::Clipboard;
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex, mpsc::SyncSender},
@@ -30,8 +32,9 @@ use std::{
 };
 use winit::{
     application::ApplicationHandler,
-    event::WindowEvent,
+    event::{ElementState, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+    keyboard::ModifiersState,
 };
 
 const FRAME_TIME: Duration = Duration::from_nanos(1_000_000_000 / 50);
@@ -47,6 +50,7 @@ struct SharedState {
     pending_register_writes: PendingRegisterWrites,
     perf: SharedPerfState,
     keyboard_sender: SyncSender<HashSet<crate::ui::keyboard::key::Key>>,
+    paste_queue: PasteQueue,
 }
 
 pub struct Vic20Controller {
@@ -58,6 +62,7 @@ pub struct Vic20Controller {
     debug_state: DebugState,
     tick_duration: Duration,
     vic_thread: Option<JoinHandle<()>>,
+    modifiers: ModifiersState,
 }
 
 impl Vic20Controller {
@@ -76,6 +81,7 @@ impl Vic20Controller {
             debug_state: DebugState::new(),
             tick_duration,
             vic_thread: None,
+            modifiers: ModifiersState::empty(),
         }
     }
 
@@ -106,6 +112,7 @@ impl Vic20Controller {
         let pending_register_writes: PendingRegisterWrites = Arc::new(Mutex::new(Vec::new()));
         let perf: SharedPerfState = Arc::new(Mutex::new(SharedPerformanceMetrics::default()));
         let (keyboard_sender, keyboard_receiver) = make_keyboard_channel();
+        let paste_queue: PasteQueue = paste::new_paste_queue();
 
         let handle = thread::Builder::new()
             .name("vic20-core-loop".to_string())
@@ -116,6 +123,7 @@ impl Vic20Controller {
                 let registers = Arc::clone(&registers);
                 let pending_register_writes = Arc::clone(&pending_register_writes);
                 let perf = Arc::clone(&perf);
+                let paste_queue = Arc::clone(&paste_queue);
                 move || {
                     Self::run_emulator(
                         video,
@@ -125,6 +133,7 @@ impl Vic20Controller {
                         pending_register_writes,
                         perf,
                         keyboard_receiver,
+                        paste_queue,
                         tick_duration,
                     )
                 }
@@ -141,6 +150,7 @@ impl Vic20Controller {
                 pending_register_writes,
                 perf,
                 keyboard_sender,
+                paste_queue,
             },
         )
     }
@@ -154,6 +164,7 @@ impl Vic20Controller {
         pending_register_writes: PendingRegisterWrites,
         shared_perf: SharedPerfState,
         keyboard_receiver: std::sync::mpsc::Receiver<HashSet<crate::ui::keyboard::key::Key>>,
+        paste_queue: PasteQueue,
         tick_duration: Duration,
     ) {
         let mut cpu = CPU6502::default();
@@ -165,15 +176,15 @@ impl Vic20Controller {
         let mut frame_count: u64 = 0;
         let mut last_perf_total_cycles: u64 = 0;
         let mut last_perf_frame_count: u64 = 0;
-        let mut keyboard = crate::keyboard::Keyboard::new(keyboard_receiver);
+        let mut keyboard = crate::keyboard::Keyboard::new(keyboard_receiver, Some(paste_queue));
 
         bus.load_standard_roms_from_data_dir();
         let reset_vector = bus.read_word(0xFFFC);
         cpu.reset(reset_vector);
 
-        // bus.add_watchpoint(tools::debug::MemoryWriteWatchpoint::watch_address_range(0x9120, 0x9121));
-
         loop {
+            keyboard.inject_paste_into_buffer(&mut bus);
+
             if let Some(port_a) = keyboard.step(bus.via2.port_b()) {
                 bus.via2.set_port_a(port_a);
             } else {
@@ -283,7 +294,16 @@ impl ApplicationHandler for Vic20Controller {
                     };
                     self.screen.draw(event_loop, &shared);
                 }
-                WindowEvent::KeyboardInput { .. } => {
+                WindowEvent::ModifiersChanged(mods) => {
+                    self.modifiers = mods.state();
+                }
+                WindowEvent::KeyboardInput {
+                    event: ref key_event, ..
+                } => {
+                    if key_event.state == ElementState::Pressed && self.is_paste_shortcut(key_event) {
+                        self.handle_paste();
+                        return;
+                    }
                     self.keyboard.handle_event(event_loop, event, &mut self.keyboard_state);
                     let _ = self
                         .shared_state()
@@ -298,6 +318,9 @@ impl ApplicationHandler for Vic20Controller {
             match event {
                 WindowEvent::RedrawRequested => {
                     self.keyboard.draw(event_loop, &mut self.keyboard_state);
+                }
+                WindowEvent::ModifiersChanged(mods) => {
+                    self.modifiers = mods.state();
                 }
                 _ => {
                     self.keyboard.handle_event(event_loop, event, &mut self.keyboard_state);
@@ -348,5 +371,36 @@ impl ApplicationHandler for Vic20Controller {
         self.screen.request_redraw();
         self.keyboard.request_redraw();
         self.debug.request_redraw();
+    }
+}
+
+impl Vic20Controller {
+    fn is_paste_shortcut(&self, key_event: &winit::event::KeyEvent) -> bool {
+        if key_event.logical_key == winit::keyboard::Key::Character("v".into())
+            || key_event.logical_key == winit::keyboard::Key::Character("V".into())
+        {
+            #[cfg(target_os = "macos")]
+            {
+                self.modifiers.super_key()
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                self.modifiers.control_key()
+            }
+        } else {
+            false
+        }
+    }
+
+    fn handle_paste(&mut self) {
+        let text = match Clipboard::new().and_then(|mut c| c.get_text()) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+
+        let petscii_bytes = paste::text_to_petscii(&text);
+        if let Ok(mut q) = self.shared_state().paste_queue.lock() {
+            q.extend(petscii_bytes);
+        }
     }
 }
