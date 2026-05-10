@@ -10,7 +10,8 @@ Still a WIP.
 - [X] VIA 2 chip (driving interrupts, etc)
 - [X] Integration testing.
 - [X] VIA 1 chip
-- [.] Keyboard interaction.
+- [X] Keyboard interaction.
+- [ ] Load basic programs (maybe cut and paste)
 - [ ] Sound.
 - [ ] Joystick support
 - [ ] Load programs from cassette or binary data.
