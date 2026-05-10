@@ -24,7 +24,8 @@ Still a WIP.
 cargo run --bin vic20
 ```
 
-![Start screen](start-screen.png)
+![Start screen](docs/start-screen.png)
+![Kaleido](docs/kaleido.png)
 
 ## Disassembler
 
