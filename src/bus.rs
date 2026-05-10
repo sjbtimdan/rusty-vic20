@@ -75,7 +75,6 @@ impl Bus {
     }
 
     pub fn step_devices(&mut self, cpu: &mut CPU6502) {
-        self.vic.step();
         self.via1.step(
             &mut cpu.registers,
             &mut self.memory,

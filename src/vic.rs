@@ -9,7 +9,6 @@ const SCREEN_CONTROL_OFFSET: usize = 0x0F;
 pub struct VIC {
     registers: [u8; 15],
     screen_control: u8,
-    cycle_count: u64,
 }
 
 impl Default for VIC {
@@ -17,7 +16,6 @@ impl Default for VIC {
         let mut vic = Self {
             registers: [0; 15],
             screen_control: 0,
-            cycle_count: 0,
         };
         vic.registers[0x03] = 0x1E;
         vic.registers[0x05] = 0x80;
@@ -27,10 +25,6 @@ impl Default for VIC {
 }
 
 impl VIC {
-    pub fn step(&mut self) {
-        self.cycle_count += 1;
-    }
-
     pub fn render_active_screen(
         &self,
         memory: &[u8; 65536],
