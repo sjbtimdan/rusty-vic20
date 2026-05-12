@@ -16,7 +16,7 @@ use crate::{
     keyboard::make_keyboard_channel,
     paste::{self, PasteQueue},
     ui::{
-        keyboard::{Keyboard, KeyboardState, display::KeyboardWindow},
+        keyboard::{KeyboardState, display::KeyboardWindow},
         screen::{
             display::{ScreenWindow, SharedVideoState},
             renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH},
@@ -38,8 +38,8 @@ use winit::{
 };
 
 const FRAME_TIME: Duration = Duration::from_nanos(1_000_000_000 / 50);
-const FRAME_PUBLISH_INTERVAL: Duration = Duration::from_millis(20);
-const MEMORY_PUBLISH_INTERVAL: Duration = Duration::from_millis(200);
+const FRAME_PUBLISH_INTERVAL: Duration = Duration::from_millis(50);
+const MEMORY_PUBLISH_INTERVAL: Duration = Duration::from_millis(500);
 const PERF_PUBLISH_INTERVAL: Duration = Duration::from_secs(1);
 
 struct SharedState {
@@ -53,6 +53,7 @@ struct SharedState {
     paste_queue: PasteQueue,
 }
 
+#[derive(Default)]
 pub struct Vic20Controller {
     screen: ScreenWindow,
     keyboard: KeyboardWindow,
@@ -60,31 +61,11 @@ pub struct Vic20Controller {
     shared_state: Option<SharedState>,
     keyboard_state: KeyboardState,
     debug_state: DebugState,
-    tick_duration: Duration,
     vic_thread: Option<JoinHandle<()>>,
     modifiers: ModifiersState,
 }
 
 impl Vic20Controller {
-    pub fn new(tick_duration: Duration) -> Self {
-        let keyboard = Keyboard;
-        let keyboard_state = KeyboardState {
-            keyboard,
-            ..KeyboardState::new()
-        };
-        Self {
-            screen: ScreenWindow::default(),
-            keyboard: KeyboardWindow::default(),
-            debug: DebugWindow::default(),
-            shared_state: None,
-            keyboard_state,
-            debug_state: DebugState::new(),
-            tick_duration,
-            vic_thread: None,
-            modifiers: ModifiersState::empty(),
-        }
-    }
-
     fn shared_state(&self) -> &SharedState {
         self.shared_state.as_ref().unwrap()
     }
@@ -94,7 +75,7 @@ impl Vic20Controller {
         event_loop.run_app(self).expect("event loop run failed");
     }
 
-    fn spawn_emulator(tick_duration: Duration) -> (JoinHandle<()>, SharedState) {
+    fn spawn_emulator() -> (JoinHandle<()>, SharedState) {
         let video = Arc::new(Mutex::new(SharedVideoState {
             screen_rgba: vec![0_u8; ACTIVE_WIDTH * ACTIVE_HEIGHT * 4],
             border_rgba: [0x00, 0x44, 0xAA, 0xFF],
@@ -134,7 +115,6 @@ impl Vic20Controller {
                         perf,
                         keyboard_receiver,
                         paste_queue,
-                        tick_duration,
                     )
                 }
             })
@@ -165,7 +145,6 @@ impl Vic20Controller {
         shared_perf: SharedPerfState,
         keyboard_receiver: std::sync::mpsc::Receiver<HashSet<crate::ui::keyboard::key::Key>>,
         paste_queue: PasteQueue,
-        tick_duration: Duration,
     ) {
         let mut cpu = CPU6502::default();
         let mut bus = Bus::default();
@@ -221,7 +200,7 @@ impl Vic20Controller {
                     Ok(guard) => guard,
                     Err(poisoned) => poisoned.into_inner(),
                 };
-                shared.screen_rgba = bus.frame_buffer().to_vec();
+                shared.screen_rgba.copy_from_slice(bus.frame_buffer());
                 shared.border_rgba = latest_border_rgba;
                 last_frame_publish = Instant::now();
                 frame_count += 1;
@@ -264,10 +243,6 @@ impl Vic20Controller {
                 last_perf_frame_count = frame_count;
                 last_perf_publish = Instant::now();
             }
-
-            if !tick_duration.is_zero() {
-                thread::sleep(tick_duration);
-            }
         }
     }
 }
@@ -278,7 +253,7 @@ impl ApplicationHandler for Vic20Controller {
         self.keyboard.create(event_loop);
         self.debug.create(event_loop);
 
-        let (handle, state) = Self::spawn_emulator(self.tick_duration);
+        let (handle, state) = Self::spawn_emulator();
         self.vic_thread = Some(handle);
         self.shared_state = Some(state);
     }
