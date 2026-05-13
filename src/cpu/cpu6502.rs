@@ -62,6 +62,9 @@ impl CPU6502 {
         registers.set_flag(INTERRUPT_FLAG_BITMASK, false);
         registers.sp = 0xFD;
         registers.pc = reset_vector;
+        self.cycle_count = 0;
+        self.cycle_count_at_end_of_this_instruction = 0;
+        self.operands_index = 0;
         self.instruction_tracking = InstructionTracking::default();
         self.irq_line_low = false;
     }

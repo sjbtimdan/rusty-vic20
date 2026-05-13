@@ -21,6 +21,7 @@ use crate::{
             display::{ScreenWindow, SharedVideoState},
             renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH},
         },
+        tape::{self, LoadQueue},
     },
 };
 use arboard::Clipboard;
@@ -51,6 +52,7 @@ struct SharedState {
     perf: SharedPerfState,
     keyboard_sender: SyncSender<HashSet<crate::ui::keyboard::key::Key>>,
     paste_queue: PasteQueue,
+    load_queue: LoadQueue,
 }
 
 #[derive(Default)]
@@ -94,6 +96,7 @@ impl Vic20Controller {
         let perf: SharedPerfState = Arc::new(Mutex::new(SharedPerformanceMetrics::default()));
         let (keyboard_sender, keyboard_receiver) = make_keyboard_channel();
         let paste_queue: PasteQueue = paste::new_paste_queue();
+        let load_queue: LoadQueue = tape::new_load_queue();
 
         let handle = thread::Builder::new()
             .name("vic20-core-loop".to_string())
@@ -105,6 +108,7 @@ impl Vic20Controller {
                 let pending_register_writes = Arc::clone(&pending_register_writes);
                 let perf = Arc::clone(&perf);
                 let paste_queue = Arc::clone(&paste_queue);
+                let load_queue = Arc::clone(&load_queue);
                 move || {
                     Self::run_emulator(
                         video,
@@ -115,6 +119,7 @@ impl Vic20Controller {
                         perf,
                         keyboard_receiver,
                         paste_queue,
+                        load_queue,
                     )
                 }
             })
@@ -131,6 +136,7 @@ impl Vic20Controller {
                 perf,
                 keyboard_sender,
                 paste_queue,
+                load_queue,
             },
         )
     }
@@ -145,6 +151,7 @@ impl Vic20Controller {
         shared_perf: SharedPerfState,
         keyboard_receiver: std::sync::mpsc::Receiver<HashSet<crate::ui::keyboard::key::Key>>,
         paste_queue: PasteQueue,
+        load_queue: LoadQueue,
     ) {
         let mut cpu = CPU6502::default();
         let mut bus = Bus::default();
@@ -175,6 +182,9 @@ impl Vic20Controller {
                     bus.write_byte(addr, value);
                 }
             }
+
+            // Process any pending .prg load requests
+            tape::process_load_queue(&mut bus, &mut cpu, &load_queue);
 
             // Apply any pending register writes from the debugger (non-blocking)
             if let Ok(mut reg_writes) = pending_register_writes.try_lock() {
@@ -279,6 +289,10 @@ impl ApplicationHandler for Vic20Controller {
                         self.handle_paste();
                         return;
                     }
+                    if key_event.state == ElementState::Pressed && self.is_open_shortcut(key_event) {
+                        self.handle_open_prg();
+                        return;
+                    }
                     self.keyboard.handle_event(event_loop, event, &mut self.keyboard_state);
                     let _ = self
                         .shared_state()
@@ -297,13 +311,24 @@ impl ApplicationHandler for Vic20Controller {
                 WindowEvent::ModifiersChanged(mods) => {
                     self.modifiers = mods.state();
                 }
-                _ => {
+                WindowEvent::KeyboardInput {
+                    event: ref key_event, ..
+                } => {
+                    if key_event.state == ElementState::Pressed && self.is_paste_shortcut(key_event) {
+                        self.handle_paste();
+                        return;
+                    }
+                    if key_event.state == ElementState::Pressed && self.is_open_shortcut(key_event) {
+                        self.handle_open_prg();
+                        return;
+                    }
                     self.keyboard.handle_event(event_loop, event, &mut self.keyboard_state);
                     let _ = self
                         .shared_state()
                         .keyboard_sender
                         .send(self.keyboard_state.physical_keys.clone());
                 }
+                _ => {}
             }
         } else if Some(window_id) == self.debug.window_id() {
             let memory = Arc::clone(&self.shared_state().memory);
@@ -364,6 +389,43 @@ impl Vic20Controller {
             }
         } else {
             false
+        }
+    }
+
+    fn is_open_shortcut(&self, key_event: &winit::event::KeyEvent) -> bool {
+        if key_event.logical_key == winit::keyboard::Key::Character("o".into())
+            || key_event.logical_key == winit::keyboard::Key::Character("O".into())
+        {
+            #[cfg(target_os = "macos")]
+            {
+                self.modifiers.super_key()
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                self.modifiers.control_key()
+            }
+        } else {
+            false
+        }
+    }
+
+    fn handle_open_prg(&mut self) {
+        let path = rfd::FileDialog::new()
+            .add_filter("VIC-20 programs", &["prg"])
+            .pick_file();
+        if let Some(path) = path
+            && let Some(path_str) = path.to_str()
+        {
+            match tape::read_prg_file(path_str) {
+                Ok(request) => {
+                    if let Ok(mut q) = self.shared_state().load_queue.lock() {
+                        q.push_back(request);
+                    }
+                }
+                Err(e) => {
+                    log::error!("{}", e);
+                }
+            }
         }
     }
 
