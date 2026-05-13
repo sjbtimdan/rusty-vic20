@@ -2,12 +2,12 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::sync::{Arc, Mutex};
 
 pub struct Speaker {
-    cb2: Arc<Mutex<u8>>,
+    _cb2: Arc<Mutex<u8>>,
 }
 
 impl Speaker {
     pub fn new(cb2: Arc<Mutex<u8>>) -> Self {
-        Self { cb2 }
+        Self { _cb2: cb2 }
     }
 
     pub fn start(&self) {

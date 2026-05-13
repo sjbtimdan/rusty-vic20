@@ -133,7 +133,7 @@ const fn info(opcode: u8, instruction: Instruction, mode: AddressingMode, cycles
 }
 
 const fn illegal(opcode: u8) -> InstructionInfo {
-    info(opcode, Instruction::Illegal, AddressingMode::Implied, 0)
+    info(opcode, Instruction::Illegal, AddressingMode::Implied, 2)
 }
 
 pub const BRK_IMPLIED: InstructionInfo = info(0x00, Instruction::BRK, AddressingMode::Implied, 7);

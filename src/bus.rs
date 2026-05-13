@@ -101,6 +101,11 @@ impl Bus {
         dest.copy_from_slice(&self.memory);
     }
 
+    pub fn load_data(&mut self, start_address: usize, data: &[u8]) {
+        let len = data.len().min(65536 - start_address);
+        self.memory[start_address..start_address + len].copy_from_slice(&data[..len]);
+    }
+
     pub fn load_standard_roms_from_data_dir(&mut self) {
         let data_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/data");
         let basic_rom = fs::read(format!("{}/basic.901486-01.bin", data_dir)).expect("Missing basic_rom");
