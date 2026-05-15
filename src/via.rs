@@ -95,6 +95,22 @@ impl VIA {
         self.pb
     }
 
+    pub fn cassette_motor_control(&mut self, value: bool) {
+        self.pb = set_bit(self.pb, 3, value)
+    }
+
+    pub fn cassette_read_data(&mut self, value: bool) {
+        self.pb = set_bit(self.pb, 4, value)
+    }
+
+    pub fn cassette_write_data(&mut self, value: bool) {
+        self.pb = set_bit(self.pb, 5, value)
+    }
+
+    pub fn cassette_sense(&mut self, value: bool) {
+        self.pb = set_bit(self.pb, 6, value)
+    }
+
     pub fn set_port_a(&mut self, value: u8) {
         self.pa = value;
     }
@@ -129,6 +145,11 @@ impl VIA {
             self.ifr.set(self.ifr.get() | IFR_CA1);
         }
     }
+}
+
+fn set_bit(value: u8, bit_index: u8, bit: bool) -> u8 {
+    let bit_mask = 1 << bit_index;
+    if bit { value | bit_mask } else { value & !bit_mask }
 }
 
 impl Addressable for VIA {
