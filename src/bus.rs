@@ -13,7 +13,7 @@ use std::fs;
 pub struct Bus {
     memory: Memory,
     vic: VIC,
-    via1: VIA,
+    pub via1: VIA,
     pub via2: VIA,
     watchpoints: Vec<MemoryWriteWatchpoint>,
     frame_buffer: [u8; ACTIVE_HEIGHT * ACTIVE_WIDTH * 4],

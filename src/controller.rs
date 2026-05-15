@@ -164,6 +164,9 @@ impl Vic20Controller {
         let mut last_perf_frame_count: u64 = 0;
         let mut keyboard = crate::keyboard::Keyboard::new(keyboard_receiver, Some(paste_queue));
 
+        bus.via1
+            .set_port_b_callback(Box::new(crate::ui::tape::cassette_motor_control));
+
         bus.load_standard_roms_from_data_dir();
         let reset_vector = bus.read_word(0xFFFC);
         cpu.reset(reset_vector);
