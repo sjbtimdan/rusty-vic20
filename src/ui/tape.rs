@@ -6,6 +6,14 @@ use std::{
 
 use crate::{bus::Bus, cpu::cpu6502::CPU6502};
 
+pub fn cassette_motor_control(port_b: u8) {
+    if port_b & 0x08 == 0x08 {
+        log::error!("Cassette motor on")
+    } else {
+        log::error!("Cassette motor off")
+    };
+}
+
 pub struct PrgLoadRequest {
     pub path: String,
     pub data: Vec<u8>,
