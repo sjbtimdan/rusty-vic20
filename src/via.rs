@@ -44,6 +44,7 @@ pub struct VIA {
     t1_counter: Cell<u16>,
     t1_latch: Cell<u16>,
     ca1_pending: bool,
+    port_b_callback: Option<Box<dyn FnMut(u8)>>,
 }
 
 impl Default for VIA {
@@ -63,11 +64,23 @@ impl Default for VIA {
             t1_counter: Cell::new(0x0000),
             t1_latch: Cell::new(0x0000),
             ca1_pending: false,
+            port_b_callback: None,
         }
     }
 }
 
 impl VIA {
+    pub fn set_port_b_callback(&mut self, callback: Box<dyn FnMut(u8)>) {
+        self.port_b_callback = Some(callback);
+    }
+
+    fn set_port_b_internal(&mut self, value: u8) {
+        self.pb = value;
+        if let Some(ref mut callback) = self.port_b_callback {
+            callback(value);
+        }
+    }
+
     pub fn step(
         &mut self,
         registers: &mut Registers,
@@ -96,19 +109,19 @@ impl VIA {
     }
 
     pub fn cassette_motor_control(&mut self, value: bool) {
-        self.pb = set_bit(self.pb, 3, value)
+        self.set_port_b_internal(set_bit(self.pb, 3, value))
     }
 
     pub fn cassette_read_data(&mut self, value: bool) {
-        self.pb = set_bit(self.pb, 4, value)
+        self.set_port_b_internal(set_bit(self.pb, 4, value))
     }
 
     pub fn cassette_write_data(&mut self, value: bool) {
-        self.pb = set_bit(self.pb, 5, value)
+        self.set_port_b_internal(set_bit(self.pb, 5, value))
     }
 
     pub fn cassette_sense(&mut self, value: bool) {
-        self.pb = set_bit(self.pb, 6, value)
+        self.set_port_b_internal(set_bit(self.pb, 6, value))
     }
 
     pub fn set_port_a(&mut self, value: u8) {
@@ -189,7 +202,7 @@ impl Addressable for VIA {
         let offset = address as usize;
         match offset {
             PORT_A_OFFSET => self.pa = value,
-            PORT_B_OFFSET => self.pb = value,
+            PORT_B_OFFSET => self.set_port_b_internal(value),
             DATA_DIRECTION_A_OFFSET => self.ddra = value,
             DATA_DIRECTION_B_OFFSET => self.ddrb = value,
             TIMER1_LATCH_LO_OFFSET => {
