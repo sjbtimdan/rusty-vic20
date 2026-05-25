@@ -4,23 +4,62 @@ use crate::{
     ui::screen::renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH, CHAR_HEIGHT, CHAR_WIDTH, TEXT_COLUMNS, palette},
 };
 
+const HORIZONTAL_ORIGIN_OFFSET: usize = 0x00;
+const VERTICAL_ORIGIN_OFFSET: usize = 0x01;
+const COLUMNS_AND_SCREEN_SELECT_OFFSET: usize = 0x02;
+const ROWS_AND_DOUBLE_HEIGHT_OFFSET: usize = 0x03;
+const RASTER_LINE_OFFSET: usize = 0x04;
+const SCREEN_AND_CHAR_BASE_OFFSET: usize = 0x05;
+const LIGHT_PEN_HORIZONTAL_OFFSET: usize = 0x06;
+const LIGHT_PEN_VERTICAL_OFFSET: usize = 0x07;
+const PADDLE_X_OFFSET: usize = 0x08;
+const PADDLE_Y_OFFSET: usize = 0x09;
+const FREQUENCY_1_OFFSET: usize = 0x0A;
+const FREQUENCY_2_OFFSET: usize = 0x0B;
+const FREQUENCY_3_OFFSET: usize = 0x0C;
+const NOISE_AND_CONTROL_OFFSET: usize = 0x0D;
+const AUXILLIARY_COLOUR_AND_VOLUME_OFFSET: usize = 0x0E;
 const SCREEN_CONTROL_OFFSET: usize = 0x0F;
 
 pub struct VIC {
-    registers: [u8; 15],
+    horizontal_origin: u8,
+    vertical_origin: u8,
+    columns_and_screen_select: u8,
+    rows_and_double_height: u8,
+    raster_line: u8,
+    screen_and_char_base: u8,
+    light_pen_horizontal: u8,
+    light_pen_vertical: u8,
+    paddle_x: u8,
+    paddle_y: u8,
+    frequency_1: u8,
+    frequency_2: u8,
+    frequency_3: u8,
+    noise_and_control: u8,
+    auxiliary_colour_and_volume: u8,
     screen_control: u8,
 }
 
 impl Default for VIC {
     fn default() -> Self {
-        let mut vic = Self {
-            registers: [0; 15],
-            screen_control: 0,
-        };
-        vic.registers[0x03] = 0x1E;
-        vic.registers[0x05] = 0x80;
-        vic.screen_control = 0x0E;
-        vic
+        Self {
+            horizontal_origin: 0,
+            vertical_origin: 0,
+            columns_and_screen_select: 0,
+            rows_and_double_height: 0x1E,
+            raster_line: 0,
+            screen_and_char_base: 0x80,
+            light_pen_horizontal: 0,
+            light_pen_vertical: 0,
+            paddle_x: 0,
+            paddle_y: 0,
+            frequency_1: 0,
+            frequency_2: 0,
+            frequency_3: 0,
+            noise_and_control: 0,
+            auxiliary_colour_and_volume: 0,
+            screen_control: 0x0E,
+        }
     }
 }
 
@@ -74,15 +113,13 @@ impl VIC {
     }
 
     fn screen_ram_start(&self) -> u16 {
-        // S = 4 * (PEEK (36866) AND 128) + 64 * (PEEK (36869) AND 112)
-        let m_36866 = self.registers[0x02] as u16;
-        let m_36869 = self.registers[0x05] as u16;
+        let m_36866 = self.columns_and_screen_select as u16;
+        let m_36869 = self.screen_and_char_base as u16;
         4 * (m_36866 & 0x80) + 64 * (m_36869 & 0x70)
     }
 
     fn colour_ram_start(&self) -> u16 {
-        // C = 37888 + 4 * (PEEK (36866) AND 128)
-        let m_36866 = self.registers[0x02] as u16;
+        let m_36866 = self.columns_and_screen_select as u16;
         0x9400 + 4 * (m_36866 & 0x80)
     }
 
@@ -95,16 +132,46 @@ impl Addressable for VIC {
     fn read_byte(&self, address: u16) -> u8 {
         let offset = address as usize;
         match offset {
+            HORIZONTAL_ORIGIN_OFFSET => self.horizontal_origin,
+            VERTICAL_ORIGIN_OFFSET => self.vertical_origin,
+            COLUMNS_AND_SCREEN_SELECT_OFFSET => self.columns_and_screen_select,
+            ROWS_AND_DOUBLE_HEIGHT_OFFSET => self.rows_and_double_height,
+            RASTER_LINE_OFFSET => self.raster_line,
+            SCREEN_AND_CHAR_BASE_OFFSET => self.screen_and_char_base,
+            LIGHT_PEN_HORIZONTAL_OFFSET => self.light_pen_horizontal,
+            LIGHT_PEN_VERTICAL_OFFSET => self.light_pen_vertical,
+            PADDLE_X_OFFSET => self.paddle_x,
+            PADDLE_Y_OFFSET => self.paddle_y,
+            FREQUENCY_1_OFFSET => self.frequency_1,
+            FREQUENCY_2_OFFSET => self.frequency_2,
+            FREQUENCY_3_OFFSET => self.frequency_3,
+            NOISE_AND_CONTROL_OFFSET => self.noise_and_control,
+            AUXILLIARY_COLOUR_AND_VOLUME_OFFSET => self.auxiliary_colour_and_volume,
             SCREEN_CONTROL_OFFSET => self.screen_control,
-            _ => self.registers[offset],
+            _ => 0,
         }
     }
 
     fn write_byte(&mut self, address: u16, value: u8) {
         let offset = address as usize;
         match offset {
+            HORIZONTAL_ORIGIN_OFFSET => self.horizontal_origin = value,
+            VERTICAL_ORIGIN_OFFSET => self.vertical_origin = value,
+            COLUMNS_AND_SCREEN_SELECT_OFFSET => self.columns_and_screen_select = value,
+            ROWS_AND_DOUBLE_HEIGHT_OFFSET => self.rows_and_double_height = value,
+            RASTER_LINE_OFFSET => self.raster_line = value,
+            SCREEN_AND_CHAR_BASE_OFFSET => self.screen_and_char_base = value,
+            LIGHT_PEN_HORIZONTAL_OFFSET => self.light_pen_horizontal = value,
+            LIGHT_PEN_VERTICAL_OFFSET => self.light_pen_vertical = value,
+            PADDLE_X_OFFSET => self.paddle_x = value,
+            PADDLE_Y_OFFSET => self.paddle_y = value,
+            FREQUENCY_1_OFFSET => self.frequency_1 = value,
+            FREQUENCY_2_OFFSET => self.frequency_2 = value,
+            FREQUENCY_3_OFFSET => self.frequency_3 = value,
+            NOISE_AND_CONTROL_OFFSET => self.noise_and_control = value,
+            AUXILLIARY_COLOUR_AND_VOLUME_OFFSET => self.auxiliary_colour_and_volume = value,
             SCREEN_CONTROL_OFFSET => self.screen_control = value,
-            _ => self.registers[offset] = value,
+            _ => {}
         }
     }
 }
@@ -156,21 +223,21 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0, 0x00)]
-    #[case(1, 0x00)]
-    #[case(2, 0x00)]
-    #[case(3, 0x1E)]
-    #[case(4, 0x00)]
-    #[case(5, 0x80)]
-    #[case(6, 0x00)]
-    #[case(7, 0x00)]
-    #[case(8, 0x00)]
-    #[case(9, 0x00)]
-    #[case(10, 0x00)]
-    #[case(11, 0x00)]
-    #[case(12, 0x00)]
-    #[case(13, 0x00)]
-    #[case(14, 0x00)]
+    #[case(HORIZONTAL_ORIGIN_OFFSET, 0x00)]
+    #[case(VERTICAL_ORIGIN_OFFSET, 0x00)]
+    #[case(COLUMNS_AND_SCREEN_SELECT_OFFSET, 0x00)]
+    #[case(ROWS_AND_DOUBLE_HEIGHT_OFFSET, 0x1E)]
+    #[case(RASTER_LINE_OFFSET, 0x00)]
+    #[case(SCREEN_AND_CHAR_BASE_OFFSET, 0x80)]
+    #[case(LIGHT_PEN_HORIZONTAL_OFFSET, 0x00)]
+    #[case(LIGHT_PEN_VERTICAL_OFFSET, 0x00)]
+    #[case(PADDLE_X_OFFSET, 0x00)]
+    #[case(PADDLE_Y_OFFSET, 0x00)]
+    #[case(FREQUENCY_1_OFFSET, 0x00)]
+    #[case(FREQUENCY_2_OFFSET, 0x00)]
+    #[case(FREQUENCY_3_OFFSET, 0x00)]
+    #[case(NOISE_AND_CONTROL_OFFSET, 0x00)]
+    #[case(AUXILLIARY_COLOUR_AND_VOLUME_OFFSET, 0x00)]
     #[case(SCREEN_CONTROL_OFFSET, 0x0E)]
     fn vic_register_reset_value(#[case] offset: usize, #[case] expected: u8) {
         let vic = VIC::default();
@@ -179,21 +246,21 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0)]
-    #[case(1)]
-    #[case(2)]
-    #[case(3)]
-    #[case(4)]
-    #[case(5)]
-    #[case(6)]
-    #[case(7)]
-    #[case(8)]
-    #[case(9)]
-    #[case(10)]
-    #[case(11)]
-    #[case(12)]
-    #[case(13)]
-    #[case(14)]
+    #[case(HORIZONTAL_ORIGIN_OFFSET)]
+    #[case(VERTICAL_ORIGIN_OFFSET)]
+    #[case(COLUMNS_AND_SCREEN_SELECT_OFFSET)]
+    #[case(ROWS_AND_DOUBLE_HEIGHT_OFFSET)]
+    #[case(RASTER_LINE_OFFSET)]
+    #[case(SCREEN_AND_CHAR_BASE_OFFSET)]
+    #[case(LIGHT_PEN_HORIZONTAL_OFFSET)]
+    #[case(LIGHT_PEN_VERTICAL_OFFSET)]
+    #[case(PADDLE_X_OFFSET)]
+    #[case(PADDLE_Y_OFFSET)]
+    #[case(FREQUENCY_1_OFFSET)]
+    #[case(FREQUENCY_2_OFFSET)]
+    #[case(FREQUENCY_3_OFFSET)]
+    #[case(NOISE_AND_CONTROL_OFFSET)]
+    #[case(AUXILLIARY_COLOUR_AND_VOLUME_OFFSET)]
     #[case(SCREEN_CONTROL_OFFSET)]
     fn vic_read_returns_last_written_value(mut vic: VIC, #[case] offset: usize) {
         let address = offset as u16;
