@@ -272,6 +272,41 @@ mod tests {
     }
 
     #[test]
+    fn paste_cooldown_prevents_injection() {
+        let (_tx, rx) = make_keyboard_channel();
+        let queue: PasteQueue = Arc::new(Mutex::new(VecDeque::from([0x41])));
+        let mut keyboard = Keyboard::new(rx, Some(queue));
+        keyboard.paste_cooldown = 5;
+        let mut mem = crate::memory::default();
+
+        keyboard.inject_paste_into_buffer(&mut mem);
+        assert_eq!(keyboard.paste_cooldown, 4);
+        assert_eq!(mem.read_byte(KBD_BUFFER_COUNT), 0);
+
+        keyboard.inject_paste_into_buffer(&mut mem);
+        assert_eq!(keyboard.paste_cooldown, 3);
+        assert_eq!(mem.read_byte(KBD_BUFFER_COUNT), 0);
+    }
+
+    #[test]
+    fn paste_cooldown_expires_allows_next_paste() {
+        let (_tx, rx) = make_keyboard_channel();
+        let queue: PasteQueue = Arc::new(Mutex::new(VecDeque::from([0x41])));
+        let mut keyboard = Keyboard::new(rx, Some(queue));
+        keyboard.paste_cooldown = 1;
+        let mut mem = crate::memory::default();
+
+        keyboard.inject_paste_into_buffer(&mut mem);
+        assert_eq!(keyboard.paste_cooldown, 0);
+        assert_eq!(mem.read_byte(KBD_BUFFER_COUNT), 0);
+
+        keyboard.inject_paste_into_buffer(&mut mem);
+        assert_eq!(mem.read_byte(KBD_BUFFER_COUNT), 1);
+        assert_eq!(mem.read_byte(KBD_BUFFER_START), 0x41);
+        assert_eq!(keyboard.paste_cooldown, PASTE_COOLDOWN_CYCLES);
+    }
+
+    #[test]
     fn paste_queue_empty_does_nothing() {
         let (_tx, rx) = make_keyboard_channel();
         let queue: PasteQueue = Arc::new(Mutex::new(VecDeque::new()));

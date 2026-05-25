@@ -15,8 +15,6 @@ VIC-20 hardware references in [docs/REFERENCES.md](docs/REFERENCES.md).
 - Run disassembler: `cargo run --bin disassembler -- <file> [base_address] [disassemble_start_addr]`
 - Enable logging: `RUST_LOG=info cargo run --bin vic20` (uses `env_logger`)
 
-Note: `rm -rf target` if `cargo build` fails after a Rust upgrade — the crate uses `edition = "2024"`.
-
 ## ROM File Prerequisites
 
 The emulator and integration tests load ROM files from the `data/` directory (not in git):

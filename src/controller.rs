@@ -164,6 +164,8 @@ impl Vic20Controller {
         let mut last_perf_frame_count: u64 = 0;
         let mut keyboard = crate::keyboard::Keyboard::new(keyboard_receiver, Some(paste_queue));
 
+        // bus.add_watchpoint(MemoryWriteWatchpoint::watch_address_range(0x9110, 0x911F));
+
         bus.via1
             .set_port_b_callback(Box::new(crate::ui::tape::cassette_motor_control));
 

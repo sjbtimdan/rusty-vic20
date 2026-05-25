@@ -34,6 +34,7 @@ impl MemoryWriteWatchpoint {
     }
 
     pub fn watch_address_range(start: u16, end: u16) -> MemoryWriteWatchpoint {
+        assert!(start <= end);
         MemoryWriteWatchpoint {
             address: Box::new(move |addr| addr >= start && addr <= end),
         }

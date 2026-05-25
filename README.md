@@ -11,7 +11,8 @@ Still a WIP.
 - [X] Integration testing.
 - [X] VIA 1 chip
 - [X] Keyboard interaction.
-- [ ] Load basic programs (maybe cut and paste)
+- [X] Load basic programs (maybe cut and paste)
+- [ ] NMI handling + RESTORE key
 - [ ] Sound.
 - [ ] Joystick support
 - [ ] Load programs from cassette or binary data.

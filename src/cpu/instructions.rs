@@ -298,3 +298,23 @@ pub const fn decode(opcode: u8) -> InstructionInfo {
         _ => illegal(opcode),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(Instruction::LDA, AddressingMode::AbsoluteX, true)]
+    #[case(Instruction::LDX, AddressingMode::AbsoluteY, true)]
+    #[case(Instruction::LDA, AddressingMode::Absolute, false)]
+    #[case(Instruction::STA, AddressingMode::AbsoluteX, false)]
+    fn test_has_page_cross_cycle_penalty(
+        #[case] instruction: Instruction,
+        #[case] mode: AddressingMode,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(instruction.has_page_cross_cycle_penalty(&mode), expected);
+    }
+}
