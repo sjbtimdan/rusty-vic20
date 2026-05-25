@@ -333,7 +333,13 @@ impl ApplicationHandler for Vic20Controller {
                         .keyboard_sender
                         .send(self.keyboard_state.physical_keys.clone());
                 }
-                _ => {}
+                _ => {
+                    self.keyboard.handle_event(event_loop, event, &mut self.keyboard_state);
+                    let _ = self
+                        .shared_state()
+                        .keyboard_sender
+                        .send(self.keyboard_state.physical_keys.clone());
+                }
             }
         } else if Some(window_id) == self.debug.window_id() {
             let memory = Arc::clone(&self.shared_state().memory);
