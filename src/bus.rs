@@ -22,6 +22,7 @@ pub struct Bus {
 pub const SCREEN_RAM_SIZE: usize = 512;
 pub const CHARACTER_ROM_START: usize = 0x8000;
 pub const CHARACTER_ROM_END: usize = 0x8FFF;
+pub const CHARSET_SIZE: usize = 0x0FFF;
 pub const BASIC_ROM_START: usize = 0xC000;
 pub const BASIC_ROM_END: usize = 0xDFFF;
 pub const KERNEL_ROM_START: usize = 0xE000;

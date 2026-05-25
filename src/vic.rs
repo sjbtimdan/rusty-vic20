@@ -1,6 +1,6 @@
 use crate::{
     addressable::Addressable,
-    bus::{CHARACTER_ROM_END, CHARACTER_ROM_START, SCREEN_RAM_SIZE},
+    bus::{CHARSET_SIZE, SCREEN_RAM_SIZE},
     ui::screen::renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH, CHAR_HEIGHT, CHAR_WIDTH, TEXT_COLUMNS, palette},
 };
 
@@ -73,7 +73,8 @@ impl VIC {
         let screen_ram = &memory[screen_ram_start..screen_ram_start + SCREEN_RAM_SIZE];
         let colour_ram_start = self.colour_ram_start() as usize;
         let colour_ram = &memory[colour_ram_start..=colour_ram_start + SCREEN_RAM_SIZE];
-        let char_rom = &memory[CHARACTER_ROM_START..=CHARACTER_ROM_END];
+        let charset_base = self.charset_base() as usize;
+        let char_rom = &memory[charset_base..charset_base + CHARSET_SIZE];
         let background_colour = self.background_colour();
         let mut frame_buffer_index = 0;
         for active_y in 0..ACTIVE_HEIGHT {
@@ -125,6 +126,12 @@ impl VIC {
 
     fn background_colour(&self) -> u8 {
         (self.screen_control & 0xF0) >> 4
+    }
+
+    fn charset_base(&self) -> u16 {
+        let lower_bits = (self.screen_and_char_base & 0x0F) as u16;
+        let base = if lower_bits < 8 { 0x8000 } else { 0x0000 };
+        base + 0x0400 * lower_bits
     }
 }
 
@@ -179,6 +186,7 @@ impl Addressable for VIC {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bus::CHARACTER_ROM_START;
     use rstest::{fixture, rstest};
 
     const SCREEN_COLOR: u8 = 2;
