@@ -3,6 +3,7 @@ use crate::{
     paste::{KBD_BUFFER_COUNT, KBD_BUFFER_SIZE, KBD_BUFFER_START, PasteQueue},
     ui::keyboard::key::Key,
 };
+use log::{Level, info};
 use std::{
     collections::{HashMap, HashSet},
     sync::mpsc::{self, Receiver, SyncSender},
@@ -51,6 +52,7 @@ fn keyboard_map() -> HashMap<(Key, u8), u8> {
         (Key::Single('J'), 0xFB, 0xEF),
         (Key::Single('L'), 0xFB, 0xDF),
         (Key::Single(';'), 0xFB, 0xBF),
+        (Key::Single(']'), 0xFB, 0xBF),
         (Key::CrsrLR, 0xFB, 0x7F),
         // Column c3 (port_b = 0xF7)
         (Key::RunStop, 0xF7, 0xFE),
@@ -79,6 +81,7 @@ fn keyboard_map() -> HashMap<(Key, u8), u8> {
         (Key::Single('H'), 0xDF, 0xF7),
         (Key::Single('K'), 0xDF, 0xEF),
         (Key::Single(':'), 0xDF, 0xDF),
+        (Key::Single('['), 0xDF, 0xDF),
         (Key::Single('='), 0xDF, 0xBF),
         (Key::F3F4, 0xDF, 0x7F),
         // Column c6 (port_b = 0xBF)
@@ -92,12 +95,14 @@ fn keyboard_map() -> HashMap<(Key, u8), u8> {
         (Key::F5F6, 0xBF, 0x7F),
         // Column c7 (port_b = 0x7F)
         (Key::Single('2'), 0x7F, 0xFE),
+        (Key::Restore, 0x7F, 0xFE),
         (Key::Single('4'), 0x7F, 0xFD),
         (Key::Single('6'), 0x7F, 0xFB),
         (Key::Single('8'), 0x7F, 0xF7),
         (Key::Single('0'), 0x7F, 0xEF),
         (Key::Single('-'), 0x7F, 0xDF),
         (Key::ClrHome, 0x7F, 0xBF),
+        (Key::ShiftLock, 0xF7, 0xFD),
         (Key::F7F8, 0x7F, 0x7F),
     ];
     for (key, port_b, value) in base_mappings {
@@ -118,11 +123,18 @@ impl Keyboard {
         }
     }
 
+    pub fn is_restore_pressed(&self) -> bool {
+        self.cache.contains(&Key::Restore)
+    }
+
     // 0x9120: column drive (port b, input)
     // 0x9121: row (port a, output)
     #[must_use]
     pub fn step(&mut self, port_b: u8) -> Option<u8> {
         if let Ok(keys) = self.receiver.try_recv() {
+            if log::log_enabled!(Level::Info) && keys != self.cache {
+                info!("Key change: {:?}", keys);
+            }
             self.cache = keys;
         }
         if !self.cache.is_empty() {
@@ -315,5 +327,43 @@ mod tests {
 
         keyboard.inject_paste_into_buffer(&mut mem);
         assert_eq!(mem.read_byte(KBD_BUFFER_COUNT), 0);
+    }
+
+    #[test]
+    fn is_restore_pressed_returns_false_when_no_keys() {
+        let (_tx, rx) = make_keyboard_channel();
+        let keyboard = Keyboard::new(rx, None);
+        assert!(!keyboard.is_restore_pressed());
+    }
+
+    #[test]
+    fn is_restore_pressed_returns_true_when_restore_in_cache() {
+        let mut keyboard = keyboard_with_keys(HashSet::from([Key::Restore]));
+        let _ = keyboard.step(0x7F);
+        assert!(keyboard.is_restore_pressed());
+    }
+
+    #[test]
+    fn step_returns_restore_in_column_7() {
+        let mut keyboard = keyboard_with_keys(HashSet::from([Key::Restore]));
+        assert_eq!(keyboard.step(0x7F), Some(0xFE));
+    }
+
+    #[test]
+    fn step_returns_some_when_key_8_pressed() {
+        let mut keyboard = keyboard_with_keys(HashSet::from([Key::Single('8')]));
+        assert_eq!(keyboard.step(0x7F), Some(0xF7));
+    }
+
+    #[test]
+    fn step_returns_some_when_key_0_pressed() {
+        let mut keyboard = keyboard_with_keys(HashSet::from([Key::Single('0')]));
+        assert_eq!(keyboard.step(0x7F), Some(0xEF));
+    }
+
+    #[test]
+    fn step_returns_some_when_clr_home_pressed() {
+        let mut keyboard = keyboard_with_keys(HashSet::from([Key::ClrHome]));
+        assert_eq!(keyboard.step(0x7F), Some(0xBF));
     }
 }

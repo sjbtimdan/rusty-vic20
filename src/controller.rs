@@ -205,7 +205,13 @@ impl Vic20Controller {
                 }
             }
 
+            let restore_nmi = keyboard.is_restore_pressed() && (bus.via2.port_b() & 0x80 == 0);
+            bus.via1.set_ca1_pin(restore_nmi);
+
             bus.step_devices(&mut cpu);
+            if restore_nmi {
+                cpu.nmi_latch.set_level(true);
+            }
             cpu.step(&mut bus, &instruction_executor);
 
             if last_frame_publish.elapsed() >= FRAME_PUBLISH_INTERVAL {

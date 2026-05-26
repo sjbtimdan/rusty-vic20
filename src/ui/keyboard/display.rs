@@ -419,6 +419,7 @@ fn keycode_to_vickeys(key: KeyCode) -> Vec<Key> {
         KeyCode::F6 => vec![Key::LeftShift, Key::F5F6],
         KeyCode::F7 => vec![Key::F7F8],
         KeyCode::F8 => vec![Key::LeftShift, Key::F7F8],
+        KeyCode::PageUp => vec![Key::Restore],
         _ => vec![],
     }
 }
@@ -457,7 +458,6 @@ mod tests {
 
     #[rstest]
     #[case(KeyCode::End)]
-    #[case(KeyCode::PageUp)]
     fn unmapped_key_returns_empty(#[case] keycode: KeyCode) {
         assert_eq!(keycode_to_vickeys(keycode), vec![]);
     }

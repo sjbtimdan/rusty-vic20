@@ -15,12 +15,6 @@ pub trait InterruptHandler {
         memory: &mut dyn Addressable,
         interrupt: Interrupt,
     );
-
-    fn nmi_inhibited(&self) -> bool {
-        false
-    }
-
-    fn clear_nmi_inhibit(&mut self) {}
 }
 #[derive(Default)]
 pub struct NoOpInterruptHandler;

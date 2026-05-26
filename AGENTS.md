@@ -15,17 +15,14 @@ VIC-20 hardware references in [docs/REFERENCES.md](docs/REFERENCES.md).
 - Run disassembler: `cargo run --bin disassembler -- <file> [base_address] [disassemble_start_addr]`
 - Enable logging: `RUST_LOG=info cargo run --bin vic20` (uses `env_logger`)
 
-## ROM File Prerequisites
+## Development Rules
 
-The emulator and integration tests load ROM files from the `data/` directory (not in git):
-
-```
-data/basic.901486-01.bin      (BASIC ROM, 8KB at 0xC000)
-data/characters.901460-03.bin (Character ROM, 4KB at 0x8000)
-data/kernal.901486-07.bin     (KERNEL ROM, 8KB at 0xE000)
-```
-
-`cargo test` panics without these files — unit tests in `src/bus.rs` call `load_standard_roms_from_data_dir()`.
+- Write in a TDD style where possible. 
+  - Write tests for the functionality first.
+  - Write a small number of tests only - small incremental changes.
+  - Make sure the tests are red.
+  - Fix the code in the simplest possible way to make the tests work.
+  - Repeat the cycle until the change is ready.
 
 ## Architecture Overview
 

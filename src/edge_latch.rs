@@ -51,6 +51,10 @@ impl EdgeLatch {
         }
     }
 
+    pub fn set_edge(&mut self, edge: Edge) {
+        self.edge = edge;
+    }
+
     pub fn is_latched(&self) -> bool {
         self.latched
     }

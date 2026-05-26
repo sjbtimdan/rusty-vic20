@@ -13,7 +13,6 @@ use log::{Level, debug, log};
 pub struct InstructionTracking {
     pub current_instruction_info: Option<InstructionInfo>,
     pub interrupt_requested: Option<Interrupt>,
-    nmi_inhibit: bool,
 }
 impl InterruptHandler for InstructionTracking {
     fn handle_interrupt(&mut self, registers: &mut Registers, memory: &mut dyn Addressable, interrupt: Interrupt) {
@@ -30,14 +29,6 @@ impl InterruptHandler for InstructionTracking {
             );
             self.interrupt_requested = Some(interrupt);
         }
-    }
-
-    fn nmi_inhibited(&self) -> bool {
-        self.nmi_inhibit
-    }
-
-    fn clear_nmi_inhibit(&mut self) {
-        self.nmi_inhibit = false;
     }
 }
 
@@ -76,9 +67,6 @@ impl InstructionTracking {
         registers.set_flag(INTERRUPT_FLAG_BITMASK, true);
         registers.set_flag(BREAK_FLAG_BITMASK, is_break);
         self.interrupt_requested = None;
-        if interrupt == Interrupt::NMI {
-            self.nmi_inhibit = true;
-        }
     }
 }
 
@@ -374,53 +362,5 @@ mod tests {
             tracking.interrupt_requested == Some(Interrupt::IRQ),
             "IRQ should be queued as interrupt_requested"
         );
-    }
-
-    #[rstest]
-    fn test_nmi_inhibit_is_false_by_default() {
-        let tracking = InstructionTracking::default();
-        assert!(!tracking.nmi_inhibited(), "nmi_inhibit should be false by default");
-    }
-
-    #[rstest]
-    fn test_nmi_inhibit_set_after_handling_nmi(mut memory: [u8; 65536]) {
-        let mut registers = Registers::default();
-        let mut tracking = InstructionTracking::default();
-        registers.pc = 0x8000;
-        registers.sp = 0xFF;
-        memory[0xFFFA] = 0x34;
-        memory[0xFFFB] = 0x12;
-
-        assert!(!tracking.nmi_inhibited());
-        tracking.handle_interrupt(&mut registers, &mut memory, Interrupt::NMI);
-        assert!(tracking.nmi_inhibited(), "nmi_inhibit should be set after handling NMI");
-    }
-
-    #[rstest]
-    fn test_clear_nmi_inhibit_clears_flag(mut memory: [u8; 65536]) {
-        let mut registers = Registers::default();
-        let mut tracking = InstructionTracking::default();
-        registers.pc = 0x8000;
-        registers.sp = 0xFF;
-        memory[0xFFFA] = 0x34;
-        memory[0xFFFB] = 0x12;
-
-        tracking.handle_interrupt(&mut registers, &mut memory, Interrupt::NMI);
-        assert!(tracking.nmi_inhibited());
-        tracking.clear_nmi_inhibit();
-        assert!(!tracking.nmi_inhibited(), "nmi_inhibit should be cleared");
-    }
-
-    #[rstest]
-    fn test_nmi_inhibit_not_set_by_irq(mut memory: [u8; 65536]) {
-        let mut registers = Registers::default();
-        let mut tracking = InstructionTracking::default();
-        registers.pc = 0x8000;
-        registers.sp = 0xFF;
-        memory[0xFFFE] = 0x34;
-        memory[0xFFFF] = 0x12;
-
-        tracking.handle_interrupt(&mut registers, &mut memory, Interrupt::IRQ);
-        assert!(!tracking.nmi_inhibited(), "nmi_inhibit should NOT be set by IRQ");
     }
 }

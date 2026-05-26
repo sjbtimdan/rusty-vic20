@@ -5,7 +5,7 @@ use crate::{
         instruction_executor::InstructionExecutor,
         instruction_tracking::InstructionTracking,
         instructions::{Instruction, InstructionInfo, decode},
-        interrupt_handler::{Interrupt, InterruptHandler},
+        interrupt_handler::Interrupt,
         registers::{DECIMAL_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK, Registers},
     },
     edge_latch::EdgeLatch,
@@ -83,7 +83,7 @@ impl CPU6502 {
 
     pub fn step(&mut self, memory: &mut impl Addressable, instruction_executor: &impl InstructionExecutor) {
         if self.instruction_tracking.current_instruction_info.is_none() {
-            if self.nmi_latch.take() && !self.instruction_tracking.nmi_inhibited() {
+            if self.nmi_latch.take() {
                 self.instruction_tracking
                     .do_interrupt(&mut self.registers, memory, Interrupt::NMI);
                 return;
@@ -174,7 +174,7 @@ impl CPU6502 {
                 self.instruction_tracking.current_instruction_info = None;
                 self.cycle_count = 0;
 
-                if self.nmi_latch.take() && !self.instruction_tracking.nmi_inhibited() {
+                if self.nmi_latch.take() {
                     self.instruction_tracking
                         .do_interrupt(&mut self.registers, memory, Interrupt::NMI);
                     return;
@@ -366,28 +366,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_nmi_does_not_fire_when_inhibit_set(mut memory: [u8; 65536], mut cpu: CPU6502) {
-        cpu.registers.pc = 0x8000;
-        cpu.registers.sp = 0xFF;
-        memory[0x8000] = NOP_IMPLIED.opcode;
-        memory[0x1234] = NOP_IMPLIED.opcode;
-        memory[0xFFFA] = 0x34;
-        memory[0xFFFB] = 0x12;
-        let instruction_executor = instruction_executor::DefaultInstructionExecutor;
-
-        cpu.instruction_tracking
-            .handle_interrupt(&mut cpu.registers, &mut memory, Interrupt::NMI);
-        assert!(cpu.instruction_tracking.nmi_inhibited());
-
-        cpu.nmi_latch.set_level(true);
-
-        cpu.step(&mut memory, &instruction_executor);
-        cpu.step(&mut memory, &instruction_executor);
-        assert_eq!(cpu.registers.pc, 0x1235, "NOP should execute, NMI inhibited");
-    }
-
-    #[rstest]
-    fn test_nmi_fires_after_inhibit_cleared_and_new_edge(mut memory: [u8; 65536], mut cpu: CPU6502) {
+    fn test_nmi_fires_again_on_new_edge(mut memory: [u8; 65536], mut cpu: CPU6502) {
         cpu.registers.pc = 0x8000;
         cpu.registers.sp = 0xFF;
         memory[0x8000] = NOP_IMPLIED.opcode;
@@ -396,18 +375,16 @@ mod tests {
         memory[0x1234] = NOP_IMPLIED.opcode;
         let instruction_executor = instruction_executor::DefaultInstructionExecutor;
 
-        cpu.instruction_tracking
-            .handle_interrupt(&mut cpu.registers, &mut memory, Interrupt::NMI);
-        assert!(cpu.instruction_tracking.nmi_inhibited());
+        cpu.nmi_latch.set_level(true);
+        cpu.step(&mut memory, &instruction_executor);
+        assert_eq!(cpu.registers.pc, 0x1234, "First NMI fires");
 
-        cpu.instruction_tracking.clear_nmi_inhibit();
-        assert!(!cpu.instruction_tracking.nmi_inhibited());
-
-        cpu.nmi_latch.reset();
+        cpu.nmi_latch.set_level(false);
         cpu.nmi_latch.set_level(true);
 
         cpu.step(&mut memory, &instruction_executor);
-        assert_eq!(cpu.registers.pc, 0x1234, "New NMI should fire after inhibit cleared");
+        cpu.step(&mut memory, &instruction_executor);
+        assert_eq!(cpu.registers.pc, 0x1234, "Second NMI should fire on new edge");
     }
 
     #[rstest]
@@ -435,5 +412,19 @@ mod tests {
         assert!(cpu.nmi_latch.is_latched(), "latch should be set before reset");
         cpu.reset(0x8000);
         assert!(!cpu.nmi_latch.take(), "latch should be cleared on reset");
+    }
+
+    #[rstest]
+    fn test_nmi_fires_when_only_restore_asserts(mut memory: [u8; 65536], mut cpu: CPU6502) {
+        cpu.registers.pc = 0x8000;
+        cpu.registers.sp = 0xFF;
+        memory[0x8000] = NOP_IMPLIED.opcode;
+        memory[0xFFFA] = 0x34;
+        memory[0xFFFB] = 0x12;
+        let instruction_executor = instruction_executor::DefaultInstructionExecutor;
+
+        cpu.nmi_latch.set_level(true);
+        cpu.step(&mut memory, &instruction_executor);
+        assert_eq!(cpu.registers.pc, 0x1234, "NMI should fire from RESTORE alone");
     }
 }
