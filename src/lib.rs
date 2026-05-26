@@ -3,6 +3,7 @@ pub mod bus;
 pub mod controller;
 pub mod cpu;
 pub mod debug;
+pub mod edge_latch;
 pub mod keyboard;
 pub mod memory;
 pub mod paste;

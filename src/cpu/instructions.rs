@@ -138,7 +138,10 @@ const fn illegal(opcode: u8) -> InstructionInfo {
 
 pub const BRK_IMPLIED: InstructionInfo = info(0x00, Instruction::BRK, AddressingMode::Implied, 7);
 pub const LDA_IMMEDIATE: InstructionInfo = info(0xA9, Instruction::LDA, AddressingMode::Immediate, 2);
+pub const LDA_ABSOLUTE_X: InstructionInfo = info(0xBD, Instruction::LDA, AddressingMode::AbsoluteX, 4);
 pub const BNE_RELATIVE: InstructionInfo = info(0xD0, Instruction::BNE, AddressingMode::Relative, 2);
+pub const INX_IMPLIED: InstructionInfo = info(0xE8, Instruction::INX, AddressingMode::Implied, 2);
+pub const NOP_IMPLIED: InstructionInfo = info(0xEA, Instruction::NOP, AddressingMode::Implied, 2);
 
 // Base cycle counts are provided here. Some instructions (branches/page crossings)
 // can take extra cycles depending on runtime conditions.
@@ -255,7 +258,7 @@ pub const fn decode(opcode: u8) -> InstructionInfo {
         0xB9 => info(0xB9, Instruction::LDA, AddressingMode::AbsoluteY, 4),
         0xBA => info(0xBA, Instruction::TSX, AddressingMode::Implied, 2),
         0xBC => info(0xBC, Instruction::LDY, AddressingMode::AbsoluteX, 4),
-        0xBD => info(0xBD, Instruction::LDA, AddressingMode::AbsoluteX, 4),
+        0xBD => LDA_ABSOLUTE_X,
         0xBE => info(0xBE, Instruction::LDX, AddressingMode::AbsoluteY, 4),
         0xC0 => info(0xC0, Instruction::CPY, AddressingMode::Immediate, 2),
         0xC1 => info(0xC1, Instruction::CMP, AddressingMode::IndexedIndirect, 6),
@@ -281,9 +284,9 @@ pub const fn decode(opcode: u8) -> InstructionInfo {
         0xE4 => info(0xE4, Instruction::CPX, AddressingMode::ZeroPage, 3),
         0xE5 => info(0xE5, Instruction::SBC, AddressingMode::ZeroPage, 3),
         0xE6 => info(0xE6, Instruction::INC, AddressingMode::ZeroPage, 5),
-        0xE8 => info(0xE8, Instruction::INX, AddressingMode::Implied, 2),
+        0xE8 => INX_IMPLIED,
         0xE9 => info(0xE9, Instruction::SBC, AddressingMode::Immediate, 2),
-        0xEA => info(0xEA, Instruction::NOP, AddressingMode::Implied, 2),
+        0xEA => NOP_IMPLIED,
         0xEC => info(0xEC, Instruction::CPX, AddressingMode::Absolute, 4),
         0xED => info(0xED, Instruction::SBC, AddressingMode::Absolute, 4),
         0xEE => info(0xEE, Instruction::INC, AddressingMode::Absolute, 6),

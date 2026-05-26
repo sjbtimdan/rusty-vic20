@@ -1,6 +1,6 @@
 use crate::{
     addressable::Addressable,
-    cpu::{cpu6502::CPU6502, interrupt_handler::Interrupt},
+    cpu::cpu6502::CPU6502,
     memory::Memory,
     tools::debug::MemoryWriteWatchpoint,
     ui::screen::renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH},
@@ -76,13 +76,9 @@ impl Bus {
     }
 
     pub fn step_devices(&mut self, cpu: &mut CPU6502) {
-        self.via1.step(
-            &mut cpu.registers,
-            &mut self.memory,
-            &mut cpu.instruction_tracking,
-            Interrupt::NMI,
-        );
-        self.via2.step_internal(); // avoiding interrupts for now...
+        self.via1.step_internal();
+        cpu.nmi_latch.set_level(self.via1.irq_active());
+        self.via2.step_internal();
         cpu.irq_line_low = self.via2.irq_active();
     }
 

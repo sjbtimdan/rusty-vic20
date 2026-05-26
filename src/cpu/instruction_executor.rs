@@ -204,6 +204,7 @@ fn execute_instruction(
             let lo = stack_pull(registers, memory);
             let hi = stack_pull(registers, memory);
             registers.pc = (hi as u16) << 8 | lo as u16;
+            interrupt_handler.clear_nmi_inhibit();
             return false;
         }
         Instruction::RTS => {

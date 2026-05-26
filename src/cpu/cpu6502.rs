@@ -5,9 +5,10 @@ use crate::{
         instruction_executor::InstructionExecutor,
         instruction_tracking::InstructionTracking,
         instructions::{Instruction, InstructionInfo, decode},
-        interrupt_handler::Interrupt,
+        interrupt_handler::{Interrupt, InterruptHandler},
         registers::{DECIMAL_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK, Registers},
     },
+    edge_latch::EdgeLatch,
     tools::{
         debug::{Breakpoint, LoggingAddressBreakpoint},
         disassembler::disassemble_instruction,
@@ -30,6 +31,7 @@ pub struct CPU6502 {
     breakpoints: Vec<Box<dyn Breakpoint>>,
     pub instruction_tracking: InstructionTracking,
     pub irq_line_low: bool,
+    pub nmi_latch: EdgeLatch,
 }
 
 impl Default for CPU6502 {
@@ -47,6 +49,7 @@ impl Default for CPU6502 {
             breakpoints: vec![],
             instruction_tracking: InstructionTracking::default(),
             irq_line_low: false,
+            nmi_latch: EdgeLatch::new_rising(),
         }
     }
 }
@@ -67,6 +70,7 @@ impl CPU6502 {
         self.operands_index = 0;
         self.instruction_tracking = InstructionTracking::default();
         self.irq_line_low = false;
+        self.nmi_latch.reset();
     }
 
     pub fn add_breakpoint_address(&mut self, address: u16) {
@@ -79,6 +83,11 @@ impl CPU6502 {
 
     pub fn step(&mut self, memory: &mut impl Addressable, instruction_executor: &impl InstructionExecutor) {
         if self.instruction_tracking.current_instruction_info.is_none() {
+            if self.nmi_latch.take() && !self.instruction_tracking.nmi_inhibited() {
+                self.instruction_tracking
+                    .do_interrupt(&mut self.registers, memory, Interrupt::NMI);
+                return;
+            }
             if let Some(interrupt) = self.instruction_tracking.interrupt_requested.take() {
                 self.instruction_tracking
                     .do_interrupt(&mut self.registers, memory, interrupt);
@@ -165,6 +174,11 @@ impl CPU6502 {
                 self.instruction_tracking.current_instruction_info = None;
                 self.cycle_count = 0;
 
+                if self.nmi_latch.take() && !self.instruction_tracking.nmi_inhibited() {
+                    self.instruction_tracking
+                        .do_interrupt(&mut self.registers, memory, Interrupt::NMI);
+                    return;
+                }
                 if let Some(interrupt) = self.instruction_tracking.interrupt_requested.take() {
                     self.instruction_tracking
                         .do_interrupt(&mut self.registers, memory, interrupt);
@@ -211,6 +225,7 @@ mod tests {
     use crate::cpu::instruction_executor;
 
     use super::*;
+    use crate::cpu::instructions::{INX_IMPLIED, LDA_ABSOLUTE_X, LDA_IMMEDIATE, NOP_IMPLIED};
     use rstest::{fixture, rstest};
 
     #[fixture]
@@ -228,7 +243,7 @@ mod tests {
         let instruction_executor: instruction_executor::DefaultInstructionExecutor =
             instruction_executor::DefaultInstructionExecutor;
         cpu.registers.pc = 0x8000;
-        memory[0x8000] = 0xE8; // INX opcode
+        memory[0x8000] = INX_IMPLIED.opcode;
 
         cpu.step(&mut memory, &instruction_executor);
         assert_eq!(cpu.registers.x, 0x00, "INX should not execute on first cycle");
@@ -243,7 +258,7 @@ mod tests {
     fn test_lda_immediate_executes_after_two_cycles(mut memory: [u8; 65536], mut cpu: CPU6502) {
         let instruction_executor = instruction_executor::DefaultInstructionExecutor;
         cpu.registers.pc = 0x8000;
-        memory[0x8000] = 0xA9; // LDA immediate opcode
+        memory[0x8000] = LDA_IMMEDIATE.opcode;
         memory[0x8001] = 0x20; // LDA immediate operand
 
         cpu.step(&mut memory, &instruction_executor);
@@ -261,7 +276,7 @@ mod tests {
             instruction_executor::DefaultInstructionExecutor;
         cpu.registers.pc = 0x8000;
         cpu.registers.x = 0x01;
-        memory[0x8000] = 0xBD; // LDA absolute,X opcode
+        memory[0x8000] = LDA_ABSOLUTE_X.opcode;
         memory[0x8001] = 0x10; // low byte
         memory[0x8002] = 0x20; // high byte
         memory[0x2011] = 0x42; // target value
@@ -287,7 +302,7 @@ mod tests {
     ) {
         cpu.registers.pc = 0x8000;
         cpu.registers.x = 0x01;
-        memory[0x8000] = 0xBD; // LDA absolute,X opcode
+        memory[0x8000] = LDA_ABSOLUTE_X.opcode;
         memory[0x8001] = 0xFF; // low byte
         memory[0x8002] = 0x20; // high byte
         memory[0x2100] = 0x99; // target value after page crossing
@@ -310,5 +325,115 @@ mod tests {
             "LDA absolute,X should load on cycle 5 when crossing a page"
         );
         assert_eq!(cpu.registers.pc, 0x8003, "Program counter should advance by 3");
+    }
+
+    #[rstest]
+    fn test_nmi_fires_on_falling_edge(mut memory: [u8; 65536], mut cpu: CPU6502) {
+        cpu.registers.pc = 0x8000;
+        cpu.registers.sp = 0xFF;
+        memory[0x8000] = NOP_IMPLIED.opcode;
+        memory[0xFFFA] = 0x34;
+        memory[0xFFFB] = 0x12;
+        let instruction_executor = instruction_executor::DefaultInstructionExecutor;
+
+        cpu.nmi_latch.set_level(false);
+        cpu.step(&mut memory, &instruction_executor);
+        assert_eq!(cpu.registers.pc, 0x8000, "PC unchanged when no NMI edge");
+
+        cpu.nmi_latch.set_level(true);
+        cpu.step(&mut memory, &instruction_executor);
+        assert_eq!(cpu.registers.pc, 0x1234, "NMI should fire on falling edge");
+    }
+
+    #[rstest]
+    fn test_nmi_does_not_refire_when_line_stays_low(mut memory: [u8; 65536], mut cpu: CPU6502) {
+        cpu.registers.pc = 0x8000;
+        cpu.registers.sp = 0xFF;
+        memory[0x8000] = NOP_IMPLIED.opcode;
+        memory[0xFFFA] = 0x34;
+        memory[0xFFFB] = 0x12;
+        memory[0x1234] = NOP_IMPLIED.opcode;
+        let instruction_executor = instruction_executor::DefaultInstructionExecutor;
+
+        cpu.nmi_latch.set_level(true);
+        cpu.step(&mut memory, &instruction_executor);
+        assert_eq!(cpu.registers.pc, 0x1234, "First NMI should fire");
+
+        cpu.nmi_latch.set_level(true);
+        cpu.step(&mut memory, &instruction_executor);
+        cpu.step(&mut memory, &instruction_executor);
+        assert_eq!(cpu.registers.pc, 0x1235, "PC should advance normally, no second NMI");
+    }
+
+    #[rstest]
+    fn test_nmi_does_not_fire_when_inhibit_set(mut memory: [u8; 65536], mut cpu: CPU6502) {
+        cpu.registers.pc = 0x8000;
+        cpu.registers.sp = 0xFF;
+        memory[0x8000] = NOP_IMPLIED.opcode;
+        memory[0x1234] = NOP_IMPLIED.opcode;
+        memory[0xFFFA] = 0x34;
+        memory[0xFFFB] = 0x12;
+        let instruction_executor = instruction_executor::DefaultInstructionExecutor;
+
+        cpu.instruction_tracking
+            .handle_interrupt(&mut cpu.registers, &mut memory, Interrupt::NMI);
+        assert!(cpu.instruction_tracking.nmi_inhibited());
+
+        cpu.nmi_latch.set_level(true);
+
+        cpu.step(&mut memory, &instruction_executor);
+        cpu.step(&mut memory, &instruction_executor);
+        assert_eq!(cpu.registers.pc, 0x1235, "NOP should execute, NMI inhibited");
+    }
+
+    #[rstest]
+    fn test_nmi_fires_after_inhibit_cleared_and_new_edge(mut memory: [u8; 65536], mut cpu: CPU6502) {
+        cpu.registers.pc = 0x8000;
+        cpu.registers.sp = 0xFF;
+        memory[0x8000] = NOP_IMPLIED.opcode;
+        memory[0xFFFA] = 0x34;
+        memory[0xFFFB] = 0x12;
+        memory[0x1234] = NOP_IMPLIED.opcode;
+        let instruction_executor = instruction_executor::DefaultInstructionExecutor;
+
+        cpu.instruction_tracking
+            .handle_interrupt(&mut cpu.registers, &mut memory, Interrupt::NMI);
+        assert!(cpu.instruction_tracking.nmi_inhibited());
+
+        cpu.instruction_tracking.clear_nmi_inhibit();
+        assert!(!cpu.instruction_tracking.nmi_inhibited());
+
+        cpu.nmi_latch.reset();
+        cpu.nmi_latch.set_level(true);
+
+        cpu.step(&mut memory, &instruction_executor);
+        assert_eq!(cpu.registers.pc, 0x1234, "New NMI should fire after inhibit cleared");
+    }
+
+    #[rstest]
+    fn test_nmi_latches_mid_instruction_and_fires_after(mut memory: [u8; 65536], mut cpu: CPU6502) {
+        cpu.registers.pc = 0x8000;
+        cpu.registers.sp = 0xFF;
+        memory[0x8000] = LDA_IMMEDIATE.opcode;
+        memory[0x8001] = 0x42;
+        memory[0xFFFA] = 0x34;
+        memory[0xFFFB] = 0x12;
+        let instruction_executor = instruction_executor::DefaultInstructionExecutor;
+
+        cpu.nmi_latch.set_level(false);
+        cpu.step(&mut memory, &instruction_executor);
+        assert_eq!(cpu.registers.pc, 0x8000, "LDA not yet executed");
+
+        cpu.nmi_latch.set_level(true);
+        cpu.step(&mut memory, &instruction_executor);
+        assert_eq!(cpu.registers.pc, 0x1234, "NMI should fire after instruction completes");
+    }
+
+    #[rstest]
+    fn test_reset_clears_nmi_state(mut cpu: CPU6502) {
+        cpu.nmi_latch.set_level(true);
+        assert!(cpu.nmi_latch.is_latched(), "latch should be set before reset");
+        cpu.reset(0x8000);
+        assert!(!cpu.nmi_latch.take(), "latch should be cleared on reset");
     }
 }

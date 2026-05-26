@@ -131,7 +131,7 @@ mod tests {
                 .returns("LDA\t#$45".to_string()),
         ));
 
-        let result = disassemble_bytes(&[0xA9, 0x45], &mock, 0x1000, 0x1000);
+        let result = disassemble_bytes(&[LDA_IMMEDIATE.opcode, 0x45], &mock, 0x1000, 0x1000);
 
         assert_eq!(result, vec!["0x1000:\tLDA\t#$45"]);
     }
