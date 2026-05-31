@@ -11,6 +11,7 @@ use winit::{
 };
 
 use super::{
+    CassetteAction,
     DebugMode,
     DebugState,
     PendingRegisterWrites,
@@ -53,6 +54,19 @@ const REG_SR_X: i32 = REG_PC_X + 8 * CHAR_W * SCALE;
 
 const PERF_Y: i32 = REG_LINE2_Y + ROW_H + 4;
 const PERF_VALUE_COLOR: [u8; 4] = [140, 200, 140, 255];
+
+const CAS_DIVIDER_X: i32 = 312;
+const CAS_X: i32 = 328;
+const CAS_BTN_OPEN_X: i32 = CAS_X;
+const CAS_BTN_PLAY_X: i32 = CAS_X + 12 * CHAR_W * SCALE;
+const CAS_BTN_W: i32 = 11 * CHAR_W * SCALE;
+const CAS_BTN_PLAY_W: i32 = 6 * CHAR_W * SCALE;
+const CAS_BTN_H: i32 = ROW_H + 2;
+const CAS_BTN_Y: i32 = REG_LINE1_Y - 1;
+
+const BTN_COLOR: [u8; 4] = [55, 55, 80, 255];
+const BTN_TEXT_COLOR: [u8; 4] = [220, 220, 220, 255];
+const DIVIDER_COLOR: [u8; 4] = [70, 70, 70, 255];
 
 const REG_VALUE_COLOR: [u8; 4] = [200, 200, 200, 255];
 const REG_LABEL_COLOR: [u8; 4] = [100, 100, 100, 255];
@@ -150,6 +164,9 @@ impl DebugWindow {
                 ..
             } => {
                 self.handle_mouse_click(state);
+                if let Some(window) = self.window.as_ref() {
+                    window.request_redraw();
+                }
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 self.handle_key(
@@ -190,6 +207,10 @@ impl DebugWindow {
             && let Some(field) = reg_field_at_x(px as i32)
         {
             state.start_register_edit(field);
+        }
+
+        if let Some(action) = cass_button_at(px as i32, py as i32) {
+            state.cassette_action_pending = Some(action);
         }
     }
 
@@ -415,6 +436,8 @@ impl DebugWindow {
         };
         draw_registers(frame, state, &regs);
         drop(regs);
+
+        draw_cassette_controls(frame, state);
 
         draw_performance_metrics(frame, perf);
 
@@ -694,6 +717,54 @@ fn draw_registers(frame: &mut [u8], state: &DebugState, regs: &super::SharedRegi
     }
 }
 
+fn draw_cassette_controls(frame: &mut [u8], state: &DebugState) {
+    for row in REG_LINE1_Y..PERF_Y {
+        draw_char(frame, CAS_DIVIDER_X, row, '|', DIVIDER_COLOR);
+    }
+
+    fill_rect_at(
+        frame,
+        PIXEL_WIDTH as usize,
+        CAS_BTN_OPEN_X,
+        CAS_BTN_Y,
+        CAS_BTN_W,
+        CAS_BTN_H,
+        BTN_COLOR,
+    );
+    draw_str(
+        frame,
+        CAS_BTN_OPEN_X + CHAR_W,
+        CAS_BTN_Y + 1,
+        "Open File",
+        BTN_TEXT_COLOR,
+    );
+
+    fill_rect_at(
+        frame,
+        PIXEL_WIDTH as usize,
+        CAS_BTN_PLAY_X,
+        CAS_BTN_Y,
+        CAS_BTN_PLAY_W,
+        CAS_BTN_H,
+        BTN_COLOR,
+    );
+    let play_text = if state.cassette_playing { "Stop" } else { "Play" };
+    draw_str(frame, CAS_BTN_PLAY_X + CHAR_W, CAS_BTN_Y + 1, play_text, BTN_TEXT_COLOR);
+
+    if let Some(ref path) = state.cassette_file {
+        let fname = std::path::Path::new(path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(path);
+        draw_str(frame, CAS_X, REG_LINE2_Y, fname, [140u8, 160, 200, 255]);
+    } else {
+        draw_str(frame, CAS_X, REG_LINE2_Y, "(no file)", HEADER_COLOR);
+    }
+
+    let status = if state.cassette_playing { "Playing" } else { "Stopped" };
+    draw_str(frame, CAS_X, REG_LINE2_Y + ROW_H, status, PERF_VALUE_COLOR);
+}
+
 fn reg_field_at_x(px: i32) -> Option<RegisterField> {
     let check = |x: i32, w_chars: i32| px >= x && px < x + w_chars * CHAR_W * SCALE;
     if check(REG_A_X, 4) {
@@ -711,6 +782,18 @@ fn reg_field_at_x(px: i32) -> Option<RegisterField> {
     } else {
         None
     }
+}
+
+fn cass_button_at(px: i32, py: i32) -> Option<CassetteAction> {
+    if (CAS_BTN_Y..CAS_BTN_Y + CAS_BTN_H).contains(&py) {
+        if (CAS_BTN_OPEN_X..CAS_BTN_OPEN_X + CAS_BTN_W).contains(&px) {
+            return Some(CassetteAction::OpenFile);
+        }
+        if (CAS_BTN_PLAY_X..CAS_BTN_PLAY_X + CAS_BTN_PLAY_W).contains(&px) {
+            return Some(CassetteAction::TogglePlay);
+        }
+    }
+    None
 }
 
 fn draw_performance_metrics(frame: &mut [u8], perf: &SharedPerfState) {

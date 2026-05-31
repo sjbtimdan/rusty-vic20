@@ -3,7 +3,7 @@ use crate::{
     paste::{KBD_BUFFER_COUNT, KBD_BUFFER_SIZE, KBD_BUFFER_START, PasteQueue},
     ui::keyboard::key::Key,
 };
-use log::{Level, info};
+use log::{Level, debug};
 use std::{
     collections::{HashMap, HashSet},
     sync::mpsc::{self, Receiver, SyncSender},
@@ -133,7 +133,7 @@ impl Keyboard {
     pub fn step(&mut self, port_b: u8) -> Option<u8> {
         if let Ok(keys) = self.receiver.try_recv() {
             if log::log_enabled!(Level::Info) && keys != self.cache {
-                info!("Key change: {:?}", keys);
+                debug!("Key change: {:?}", keys);
             }
             self.cache = keys;
         }

@@ -59,6 +59,9 @@ pub struct DebugState {
     pub edit_byte_input: String,
     pub mode: DebugMode,
     pub blink_phase: bool,
+    pub cassette_playing: bool,
+    pub cassette_file: Option<String>,
+    pub cassette_action_pending: Option<CassetteAction>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -67,6 +70,12 @@ pub enum DebugMode {
     EditingAddress,
     EditingByte,
     EditingRegister(RegisterField),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum CassetteAction {
+    OpenFile,
+    TogglePlay,
 }
 
 impl Default for DebugState {
@@ -84,6 +93,9 @@ impl DebugState {
             edit_byte_input: String::new(),
             mode: DebugMode::Browse,
             blink_phase: false,
+            cassette_playing: false,
+            cassette_file: None,
+            cassette_action_pending: None,
         }
     }
 

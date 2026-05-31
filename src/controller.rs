@@ -3,6 +3,7 @@ use crate::{
     bus::Bus,
     cpu::{cpu6502::CPU6502, instruction_executor},
     debug::{
+        CassetteAction,
         DebugState,
         PendingRegisterWrites,
         PendingWrites,
@@ -16,17 +17,18 @@ use crate::{
     keyboard::make_keyboard_channel,
     paste::{self, PasteQueue},
     ui::{
+        self,
+        cassette_player::CassettePlayer,
         keyboard::{KeyboardState, display::KeyboardWindow},
         screen::{
             display::{ScreenWindow, SharedVideoState},
             renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH},
         },
-        tape::{self, LoadQueue},
     },
 };
 use arboard::Clipboard;
 use std::{
-    collections::HashSet,
+    collections::{HashSet, VecDeque},
     sync::{Arc, Mutex, mpsc::SyncSender},
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -53,6 +55,7 @@ struct SharedState {
     keyboard_sender: SyncSender<HashSet<crate::ui::keyboard::key::Key>>,
     paste_queue: PasteQueue,
     load_queue: LoadQueue,
+    cassette_sender: SyncSender<bool>,
 }
 
 #[derive(Default)]
@@ -95,8 +98,9 @@ impl Vic20Controller {
         let pending_register_writes: PendingRegisterWrites = Arc::new(Mutex::new(Vec::new()));
         let perf: SharedPerfState = Arc::new(Mutex::new(SharedPerformanceMetrics::default()));
         let (keyboard_sender, keyboard_receiver) = make_keyboard_channel();
+        let (cassette_sender, cassette_receiver) = ui::cassette_player::make_cassette_channel();
         let paste_queue: PasteQueue = paste::new_paste_queue();
-        let load_queue: LoadQueue = tape::new_load_queue();
+        let load_queue: LoadQueue = new_load_queue();
 
         let handle = thread::Builder::new()
             .name("vic20-core-loop".to_string())
@@ -120,6 +124,7 @@ impl Vic20Controller {
                         keyboard_receiver,
                         paste_queue,
                         load_queue,
+                        cassette_receiver,
                     )
                 }
             })
@@ -137,6 +142,7 @@ impl Vic20Controller {
                 keyboard_sender,
                 paste_queue,
                 load_queue,
+                cassette_sender,
             },
         )
     }
@@ -152,6 +158,7 @@ impl Vic20Controller {
         keyboard_receiver: std::sync::mpsc::Receiver<HashSet<crate::ui::keyboard::key::Key>>,
         paste_queue: PasteQueue,
         load_queue: LoadQueue,
+        cassette_receiver: std::sync::mpsc::Receiver<bool>,
     ) {
         let mut cpu = CPU6502::default();
         let mut bus = Bus::default();
@@ -163,11 +170,11 @@ impl Vic20Controller {
         let mut last_perf_total_cycles: u64 = 0;
         let mut last_perf_frame_count: u64 = 0;
         let mut keyboard = crate::keyboard::Keyboard::new(keyboard_receiver, Some(paste_queue));
+        let mut cassette_player = CassettePlayer::default();
 
         // bus.add_watchpoint(MemoryWriteWatchpoint::watch_address_range(0x9110, 0x911F));
 
-        bus.via1
-            .set_port_b_callback(Box::new(crate::ui::tape::cassette_motor_control));
+        bus.via1.set_port_b_callback(Box::new(cassette_motor_control));
 
         bus.load_standard_roms_from_data_dir();
         let reset_vector = bus.read_word(0xFFFC);
@@ -181,6 +188,11 @@ impl Vic20Controller {
             } else {
                 bus.via2.set_port_a(0xFF);
             }
+
+            if let Ok(pressed) = cassette_receiver.try_recv() {
+                cassette_player.set_play_button(pressed);
+            }
+
             // Apply any pending writes from the debugger (non-blocking)
             if let Ok(mut writes) = pending_writes.try_lock() {
                 for (addr, value) in writes.drain(..) {
@@ -189,7 +201,7 @@ impl Vic20Controller {
             }
 
             // Process any pending .prg load requests
-            tape::process_load_queue(&mut bus, &mut cpu, &load_queue);
+            process_load_queue(&mut bus, &mut cpu, &load_queue);
 
             // Apply any pending register writes from the debugger (non-blocking)
             if let Ok(mut reg_writes) = pending_register_writes.try_lock() {
@@ -207,6 +219,7 @@ impl Vic20Controller {
 
             let restore_nmi = keyboard.is_restore_pressed() && (bus.via2.port_b() & 0x80 == 0);
             bus.via1.set_ca1_pin(restore_nmi);
+            bus.via1.cassette_sense(!cassette_player.play_button());
 
             bus.step_devices(&mut cpu);
             if restore_nmi {
@@ -300,10 +313,6 @@ impl ApplicationHandler for Vic20Controller {
                         self.handle_paste();
                         return;
                     }
-                    if key_event.state == ElementState::Pressed && self.is_open_shortcut(key_event) {
-                        self.handle_open_prg();
-                        return;
-                    }
                     self.keyboard.handle_event(event_loop, event, &mut self.keyboard_state);
                     let _ = self
                         .shared_state()
@@ -327,10 +336,6 @@ impl ApplicationHandler for Vic20Controller {
                 } => {
                     if key_event.state == ElementState::Pressed && self.is_paste_shortcut(key_event) {
                         self.handle_paste();
-                        return;
-                    }
-                    if key_event.state == ElementState::Pressed && self.is_open_shortcut(key_event) {
-                        self.handle_open_prg();
                         return;
                     }
                     self.keyboard.handle_event(event_loop, event, &mut self.keyboard_state);
@@ -368,6 +373,9 @@ impl ApplicationHandler for Vic20Controller {
                         &pending_register_writes,
                         &perf,
                     );
+                    if let Some(action) = self.debug_state.cassette_action_pending.take() {
+                        self.handle_cassette_action(action);
+                    }
                 }
             }
         }
@@ -409,31 +417,28 @@ impl Vic20Controller {
         }
     }
 
-    fn is_open_shortcut(&self, key_event: &winit::event::KeyEvent) -> bool {
-        if key_event.logical_key == winit::keyboard::Key::Character("o".into())
-            || key_event.logical_key == winit::keyboard::Key::Character("O".into())
-        {
-            #[cfg(target_os = "macos")]
-            {
-                self.modifiers.super_key()
+    fn handle_cassette_action(&mut self, action: CassetteAction) {
+        match action {
+            CassetteAction::OpenFile => self.handle_cassette_open_file(),
+            CassetteAction::TogglePlay => {
+                self.debug_state.cassette_playing = !self.debug_state.cassette_playing;
+                let _ = self
+                    .shared_state()
+                    .cassette_sender
+                    .send(self.debug_state.cassette_playing);
             }
-            #[cfg(not(target_os = "macos"))]
-            {
-                self.modifiers.control_key()
-            }
-        } else {
-            false
         }
     }
 
-    fn handle_open_prg(&mut self) {
+    fn handle_cassette_open_file(&mut self) {
         let path = rfd::FileDialog::new()
-            .add_filter("VIC-20 programs", &["prg"])
+            .add_filter("Tape files", &["tap", "prg"])
             .pick_file();
         if let Some(path) = path
             && let Some(path_str) = path.to_str()
         {
-            match tape::read_prg_file(path_str) {
+            self.debug_state.cassette_file = Some(path_str.to_string());
+            match read_prg_file(path_str) {
                 Ok(request) => {
                     if let Ok(mut q) = self.shared_state().load_queue.lock() {
                         q.push_back(request);
@@ -457,4 +462,72 @@ impl Vic20Controller {
             q.extend(petscii_bytes);
         }
     }
+}
+
+struct PrgLoadRequest {
+    path: String,
+    data: Vec<u8>,
+}
+
+type LoadQueue = Arc<Mutex<VecDeque<PrgLoadRequest>>>;
+
+fn new_load_queue() -> LoadQueue {
+    Arc::new(Mutex::new(VecDeque::new()))
+}
+
+fn read_prg_file(path: &str) -> Result<PrgLoadRequest, String> {
+    let data = std::fs::read(path).map_err(|e| format!("Failed to read '{}': {}", path, e))?;
+    if data.len() < 2 {
+        return Err(format!("'{}' is too small to be a valid .prg file", path));
+    }
+    Ok(PrgLoadRequest {
+        path: path.to_string(),
+        data,
+    })
+}
+
+fn process_load_queue(bus: &mut Bus, cpu: &mut CPU6502, queue: &LoadQueue) {
+    if let Ok(mut q) = queue.try_lock() {
+        while let Some(request) = q.pop_front() {
+            apply_prg(bus, cpu, &request);
+        }
+    }
+}
+
+fn apply_prg(bus: &mut Bus, _cpu: &mut CPU6502, request: &PrgLoadRequest) {
+    if request.data.len() < 2 {
+        log::warn!("Skipping invalid .prg (too small): {}", request.path);
+        return;
+    }
+    let load_address = u16::from_le_bytes([request.data[0], request.data[1]]);
+    log::info!("Loading program into memory starting at {}", load_address);
+    let program = &request.data[2..];
+
+    let max_len = 65536usize.saturating_sub(load_address as usize);
+    if program.len() > max_len {
+        log::warn!(
+            "Truncating .prg '{}': load ${:04X} + {} bytes exceeds 64KB",
+            request.path,
+            load_address,
+            program.len()
+        );
+    }
+    let len = program.len().min(max_len);
+    bus.load_data(load_address as usize, program);
+
+    log::info!(
+        "Loaded '{}' at ${:04X} ({} bytes), resetting PC to ${:04X}",
+        request.path,
+        load_address,
+        len,
+        load_address
+    );
+}
+
+fn cassette_motor_control(port_b: u8) {
+    if port_b & 0x08 == 0x08 {
+        log::debug!("Cassette motor on")
+    } else {
+        log::debug!("Cassette motor off")
+    };
 }
