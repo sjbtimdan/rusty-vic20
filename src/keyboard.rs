@@ -15,12 +15,20 @@ pub fn make_keyboard_channel() -> (SyncSender<HashSet<Key>>, Receiver<HashSet<Ke
     mpsc::sync_channel(2)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RestoreKeyStatus {
+    PressedDown,
+    HeldDown,
+    Up,
+}
+
 pub struct Keyboard {
     cache: HashSet<Key>,
     receiver: Receiver<HashSet<Key>>,
     keyboard_map: HashMap<(Key, u8), u8>,
     paste_queue: Option<PasteQueue>,
     paste_cooldown: u32,
+    restore_key_status: RestoreKeyStatus,
 }
 
 fn keyboard_map() -> HashMap<(Key, u8), u8> {
@@ -120,11 +128,12 @@ impl Keyboard {
             keyboard_map: keyboard_map(),
             paste_queue,
             paste_cooldown: 0,
+            restore_key_status: RestoreKeyStatus::Up,
         }
     }
 
-    pub fn is_restore_pressed(&self) -> bool {
-        self.cache.contains(&Key::Restore)
+    pub fn restore_key_status(&self) -> RestoreKeyStatus {
+        self.restore_key_status
     }
 
     // 0x9120: column drive (port b, input)
@@ -135,6 +144,13 @@ impl Keyboard {
             if log::log_enabled!(Level::Info) && keys != self.cache {
                 debug!("Key change: {:?}", keys);
             }
+            self.restore_key_status = if !keys.contains(&Key::Restore) {
+                RestoreKeyStatus::Up
+            } else if self.cache.contains(&Key::Restore) {
+                RestoreKeyStatus::HeldDown
+            } else {
+                RestoreKeyStatus::PressedDown
+            };
             self.cache = keys;
         }
         if !self.cache.is_empty() {
@@ -330,17 +346,21 @@ mod tests {
     }
 
     #[test]
-    fn is_restore_pressed_returns_false_when_no_keys() {
+    fn is_restore_pressed_returns_up_when_no_keys() {
         let (_tx, rx) = make_keyboard_channel();
         let keyboard = Keyboard::new(rx, None);
-        assert!(!keyboard.is_restore_pressed());
+        assert_eq!(keyboard.restore_key_status(), RestoreKeyStatus::Up);
     }
 
     #[test]
-    fn is_restore_pressed_returns_true_when_restore_in_cache() {
-        let mut keyboard = keyboard_with_keys(HashSet::from([Key::Restore]));
+    fn restore_key_status_returns_held_down_when_restore_in_cache() {
+        let (tx, rx) = make_keyboard_channel();
+        let mut keyboard = Keyboard::new(rx, None);
+        tx.send(HashSet::from([Key::Restore])).unwrap();
         let _ = keyboard.step(0x7F);
-        assert!(keyboard.is_restore_pressed());
+        tx.send(HashSet::from([Key::Restore])).unwrap();
+        let _ = keyboard.step(0x7F);
+        assert_eq!(keyboard.restore_key_status(), RestoreKeyStatus::HeldDown);
     }
 
     #[test]

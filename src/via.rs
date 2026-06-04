@@ -44,6 +44,7 @@ pub struct VIA {
     ier: u8,
     t1_counter: Cell<u16>,
     t1_latch: Cell<u16>,
+    ca1_pin_level: bool,
     ca1_latch: EdgeLatch,
     port_b_callback: Option<Box<dyn FnMut(u8)>>,
 }
@@ -64,6 +65,7 @@ impl Default for VIA {
             ier: 0,
             t1_counter: Cell::new(0x0000),
             t1_latch: Cell::new(0x0000),
+            ca1_pin_level: false,
             ca1_latch: EdgeLatch::new_rising(),
             port_b_callback: None,
         }
@@ -151,7 +153,12 @@ impl VIA {
     }
 
     pub fn set_ca1_pin(&mut self, level: bool) {
+        self.ca1_pin_level = level;
         self.ca1_latch.set_level(level);
+    }
+
+    pub fn ca1_pin_high(&self) -> bool {
+        self.ca1_pin_level
     }
 
     fn check_ca1_edge(&mut self) {
@@ -250,6 +257,7 @@ impl Addressable for VIA {
                 } else {
                     self.ier &= !(value & 0x7F);
                 }
+                self.update_ifr_irq();
             }
             PORTA_HANDSHAKE_OFFSET => self.pa = value,
             _ => panic!("Invalid VIA2 register write at address {:04X}", address),

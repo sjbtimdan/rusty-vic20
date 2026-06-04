@@ -14,7 +14,7 @@ use crate::{
         SharedRegistersState,
         display::DebugWindow,
     },
-    keyboard::make_keyboard_channel,
+    keyboard::{RestoreKeyStatus, make_keyboard_channel},
     paste::{self, PasteQueue},
     ui::{
         self,
@@ -217,14 +217,11 @@ impl Vic20Controller {
                 }
             }
 
-            let restore_nmi = keyboard.is_restore_pressed() && (bus.via2.port_b() & 0x80 == 0);
-            bus.via1.set_ca1_pin(restore_nmi);
+            let restore_key_status = keyboard.restore_key_status(); // && (bus.via2.port_b() & 0x80 == 0);
+            bus.via1.set_ca1_pin(restore_key_status != RestoreKeyStatus::Up);
             bus.via1.cassette_sense(!cassette_player.play_button());
 
             bus.step_devices(&mut cpu);
-            if restore_nmi {
-                cpu.nmi_latch.set_level(true);
-            }
             cpu.step(&mut bus, &instruction_executor);
 
             if last_frame_publish.elapsed() >= FRAME_PUBLISH_INTERVAL {

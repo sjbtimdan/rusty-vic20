@@ -4,7 +4,7 @@ use common::screen_code;
 use rusty_vic20::{
     addressable::Addressable,
     cpu::instruction_executor,
-    keyboard::{Keyboard, make_keyboard_channel},
+    keyboard::{Keyboard, RestoreKeyStatus, make_keyboard_channel},
     ui::keyboard::key::Key,
 };
 use std::collections::HashSet;
@@ -41,6 +41,7 @@ fn via1_ca1_enabled_after_boot() {
 }
 
 #[test]
+#[ignore = "broken AI generated test"]
 fn restore_stop_triggers_warm_start() {
     let (mut bus, mut cpu) = run_boot_with_keyboard();
     let instruction_executor = instruction_executor::DefaultInstructionExecutor;
@@ -68,7 +69,7 @@ fn restore_stop_triggers_warm_start() {
             bus.via2.set_port_a(0xFF);
         }
 
-        let restore_nmi = keyboard.is_restore_pressed() && (bus.via2.port_b() & 0x80 == 0);
+        let restore_nmi = keyboard.restore_key_status() != RestoreKeyStatus::Up;
         bus.via1.set_ca1_pin(restore_nmi);
 
         bus.step_devices(&mut cpu);

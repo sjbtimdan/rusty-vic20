@@ -77,7 +77,7 @@ impl Bus {
 
     pub fn step_devices(&mut self, cpu: &mut CPU6502) {
         self.via1.step_internal();
-        cpu.nmi_latch.set_level(self.via1.irq_active());
+        cpu.nmi_latch.set_level(self.via1.ca1_pin_high());
         self.via2.step_internal();
         cpu.irq_line_low = self.via2.irq_active();
     }
