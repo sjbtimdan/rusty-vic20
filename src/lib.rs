@@ -7,6 +7,7 @@ pub mod edge_latch;
 pub mod keyboard;
 pub mod memory;
 pub mod paste;
+pub mod runner;
 pub mod tools;
 pub mod ui;
 pub mod via;

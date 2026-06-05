@@ -1,10 +1,6 @@
 #![allow(dead_code)]
 
-use rusty_vic20::{
-    addressable::Addressable,
-    bus::Bus,
-    cpu::{cpu6502::CPU6502, instruction_executor},
-};
+use rusty_vic20::{addressable::Addressable, bus::Bus, runner::EmulatorRunner};
 
 pub const SCREEN_RAM_START: u16 = 0x1E00;
 pub const SCREEN_LINE_LEN: u16 = 22;
@@ -74,25 +70,22 @@ pub fn count_screen_chars(bus: &Bus, screen_code: u8) -> usize {
         .count()
 }
 
-pub fn run_boot() -> (Bus, CPU6502) {
-    let mut cpu = CPU6502::default();
-    let mut bus = Bus::default();
-    let instruction_executor = instruction_executor::DefaultInstructionExecutor;
-    bus.load_standard_roms_from_data_dir();
-    let reset_vector = bus.read_word(0xFFFC);
-    cpu.reset(reset_vector);
-
-    for _ in 0..600_000 {
-        bus.step_devices(&mut cpu);
-        cpu.step(&mut bus, &instruction_executor);
-    }
-    (bus, cpu)
+pub fn run_boot() -> EmulatorRunner {
+    let mut runner = EmulatorRunner::default();
+    runner.step_multiple(600_000);
+    runner
 }
 
-pub fn run_extra_steps(bus: &mut Bus, cpu: &mut CPU6502, steps: usize) {
-    let instruction_executor = instruction_executor::DefaultInstructionExecutor;
-    for _ in 0..steps {
-        bus.step_devices(cpu);
-        cpu.step(bus, &instruction_executor);
-    }
+pub fn run_extra_steps(runner: &mut EmulatorRunner, steps: usize) {
+    runner.step_multiple(steps);
+}
+
+pub fn splash_screen_lines() -> Vec<[u8; 22]> {
+    vec![
+        screen_code("**** CBM BASIC V2 ****"),
+        screen_code("                      "),
+        screen_code("3583 BYTES FREE       "),
+        screen_code("                      "),
+        screen_code("READY.                "),
+    ]
 }

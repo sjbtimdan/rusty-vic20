@@ -1,7 +1,7 @@
 use crate::{
     addressable::Addressable,
     bus::Bus,
-    cpu::{cpu6502::CPU6502, instruction_executor},
+    cpu::cpu6502::CPU6502,
     debug::{
         CassetteAction,
         DebugState,
@@ -14,11 +14,10 @@ use crate::{
         SharedRegistersState,
         display::DebugWindow,
     },
-    keyboard::{RestoreKeyStatus, make_keyboard_channel},
     paste::{self, PasteQueue},
+    runner::EmulatorRunner,
     ui::{
         self,
-        cassette_player::CassettePlayer,
         keyboard::{KeyboardState, display::KeyboardWindow},
         screen::{
             display::{ScreenWindow, SharedVideoState},
@@ -97,10 +96,12 @@ impl Vic20Controller {
         }));
         let pending_register_writes: PendingRegisterWrites = Arc::new(Mutex::new(Vec::new()));
         let perf: SharedPerfState = Arc::new(Mutex::new(SharedPerformanceMetrics::default()));
-        let (keyboard_sender, keyboard_receiver) = make_keyboard_channel();
         let (cassette_sender, cassette_receiver) = ui::cassette_player::make_cassette_channel();
-        let paste_queue: PasteQueue = paste::new_paste_queue();
         let load_queue: LoadQueue = new_load_queue();
+        let load_queue_for_thread = load_queue.clone();
+        let (keyboard_sender, keyboard_receiver) = crate::keyboard::make_keyboard_channel();
+        let paste_queue: PasteQueue = paste::new_paste_queue();
+        let paste_queue_for_state = paste_queue.clone();
 
         let handle = thread::Builder::new()
             .name("vic20-core-loop".to_string())
@@ -111,19 +112,17 @@ impl Vic20Controller {
                 let registers = Arc::clone(&registers);
                 let pending_register_writes = Arc::clone(&pending_register_writes);
                 let perf = Arc::clone(&perf);
-                let paste_queue = Arc::clone(&paste_queue);
-                let load_queue = Arc::clone(&load_queue);
                 move || {
+                    let runner = EmulatorRunner::from_receiver(keyboard_receiver, paste_queue);
                     Self::run_emulator(
+                        runner,
                         video,
                         memory,
                         pending_writes,
                         registers,
                         pending_register_writes,
                         perf,
-                        keyboard_receiver,
-                        paste_queue,
-                        load_queue,
+                        load_queue_for_thread,
                         cassette_receiver,
                     )
                 }
@@ -140,7 +139,7 @@ impl Vic20Controller {
                 pending_register_writes,
                 perf,
                 keyboard_sender,
-                paste_queue,
+                paste_queue: paste_queue_for_state,
                 load_queue,
                 cassette_sender,
             },
@@ -149,89 +148,66 @@ impl Vic20Controller {
 
     #[allow(clippy::too_many_arguments)]
     fn run_emulator(
+        mut runner: EmulatorRunner,
         shared_video_state: Arc<Mutex<SharedVideoState>>,
         shared_memory: SharedMemory,
         pending_writes: PendingWrites,
         shared_registers: SharedRegistersState,
         pending_register_writes: PendingRegisterWrites,
         shared_perf: SharedPerfState,
-        keyboard_receiver: std::sync::mpsc::Receiver<HashSet<crate::ui::keyboard::key::Key>>,
-        paste_queue: PasteQueue,
         load_queue: LoadQueue,
         cassette_receiver: std::sync::mpsc::Receiver<bool>,
     ) {
-        let mut cpu = CPU6502::default();
-        let mut bus = Bus::default();
         let mut last_frame_publish = Instant::now();
         let mut last_memory_publish = Instant::now();
         let mut last_perf_publish = Instant::now();
-        let instruction_executor = instruction_executor::DefaultInstructionExecutor;
         let mut frame_count: u64 = 0;
         let mut last_perf_total_cycles: u64 = 0;
         let mut last_perf_frame_count: u64 = 0;
-        let mut keyboard = crate::keyboard::Keyboard::new(keyboard_receiver, Some(paste_queue));
-        let mut cassette_player = CassettePlayer::default();
 
-        // bus.add_watchpoint(MemoryWriteWatchpoint::watch_address_range(0x9110, 0x911F));
-
-        bus.via1.set_port_b_callback(Box::new(cassette_motor_control));
-
-        bus.load_standard_roms_from_data_dir();
-        let reset_vector = bus.read_word(0xFFFC);
-        cpu.reset(reset_vector);
+        runner.bus.via1.set_port_b_callback(Box::new(cassette_motor_control));
 
         loop {
-            keyboard.inject_paste_into_buffer(&mut bus);
-
-            if let Some(port_a) = keyboard.step(bus.via2.port_b()) {
-                bus.via2.set_port_a(port_a);
-            } else {
-                bus.via2.set_port_a(0xFF);
-            }
+            runner.step_keyboard();
 
             if let Ok(pressed) = cassette_receiver.try_recv() {
-                cassette_player.set_play_button(pressed);
+                runner.cassette_player.set_play_button(pressed);
             }
 
             // Apply any pending writes from the debugger (non-blocking)
             if let Ok(mut writes) = pending_writes.try_lock() {
                 for (addr, value) in writes.drain(..) {
-                    bus.write_byte(addr, value);
+                    runner.bus.write_byte(addr, value);
                 }
             }
 
             // Process any pending .prg load requests
-            process_load_queue(&mut bus, &mut cpu, &load_queue);
+            process_load_queue(&mut runner.bus, &mut runner.cpu, &load_queue);
 
             // Apply any pending register writes from the debugger (non-blocking)
             if let Ok(mut reg_writes) = pending_register_writes.try_lock() {
                 for (field, value) in reg_writes.drain(..) {
                     match field {
-                        crate::debug::RegisterField::A => cpu.registers.a = value as u8,
-                        crate::debug::RegisterField::X => cpu.registers.x = value as u8,
-                        crate::debug::RegisterField::Y => cpu.registers.y = value as u8,
-                        crate::debug::RegisterField::SP => cpu.registers.sp = value as u8,
-                        crate::debug::RegisterField::PC => cpu.registers.pc = value,
-                        crate::debug::RegisterField::Status => cpu.registers.status = value as u8,
+                        crate::debug::RegisterField::A => runner.cpu.registers.a = value as u8,
+                        crate::debug::RegisterField::X => runner.cpu.registers.x = value as u8,
+                        crate::debug::RegisterField::Y => runner.cpu.registers.y = value as u8,
+                        crate::debug::RegisterField::SP => runner.cpu.registers.sp = value as u8,
+                        crate::debug::RegisterField::PC => runner.cpu.registers.pc = value,
+                        crate::debug::RegisterField::Status => runner.cpu.registers.status = value as u8,
                     }
                 }
             }
 
-            let restore_key_status = keyboard.restore_key_status(); // && (bus.via2.port_b() & 0x80 == 0);
-            bus.via1.set_ca1_pin(restore_key_status != RestoreKeyStatus::Up);
-
-            bus.step_devices(&mut cpu);
-            cpu.step(&mut bus, &instruction_executor);
-            cassette_player.step(&mut bus.via1);
+            runner.step();
 
             if last_frame_publish.elapsed() >= FRAME_PUBLISH_INTERVAL {
-                bus.render_active_screen();
-                let latest_border_rgba = bus.border_rgba();
+                runner.bus.render_active_screen();
+                let latest_border_rgba = runner.bus.border_rgba();
                 let mut shared = match shared_video_state.lock() {
                     Ok(guard) => guard,
                     Err(poisoned) => poisoned.into_inner(),
                 };
-                shared.screen_rgba.copy_from_slice(bus.frame_buffer());
+                shared.screen_rgba.copy_from_slice(runner.bus.frame_buffer());
                 shared.border_rgba = latest_border_rgba;
                 last_frame_publish = Instant::now();
                 frame_count += 1;
@@ -241,12 +217,12 @@ impl Vic20Controller {
                     Ok(guard) => guard,
                     Err(poisoned) => poisoned.into_inner(),
                 };
-                regs.a = cpu.registers.a;
-                regs.x = cpu.registers.x;
-                regs.y = cpu.registers.y;
-                regs.sp = cpu.registers.sp;
-                regs.pc = cpu.registers.pc;
-                regs.status = cpu.registers.status;
+                regs.a = runner.cpu.registers.a;
+                regs.x = runner.cpu.registers.x;
+                regs.y = runner.cpu.registers.y;
+                regs.sp = runner.cpu.registers.sp;
+                regs.pc = runner.cpu.registers.pc;
+                regs.status = runner.cpu.registers.status;
             }
 
             if last_memory_publish.elapsed() >= MEMORY_PUBLISH_INTERVAL {
@@ -254,13 +230,13 @@ impl Vic20Controller {
                     Ok(guard) => guard,
                     Err(poisoned) => poisoned.into_inner(),
                 };
-                bus.copy_memory_to(&mut mem);
+                runner.bus.copy_memory_to(&mut mem);
                 last_memory_publish = Instant::now();
             }
 
             if last_perf_publish.elapsed() >= PERF_PUBLISH_INTERVAL {
                 let elapsed = last_perf_publish.elapsed().as_secs_f64();
-                let cycles_delta = cpu.total_cycles() - last_perf_total_cycles;
+                let cycles_delta = runner.cpu.total_cycles() - last_perf_total_cycles;
                 let frames_delta = frame_count - last_perf_frame_count;
                 let mut perf = match shared_perf.lock() {
                     Ok(guard) => guard,
@@ -268,9 +244,9 @@ impl Vic20Controller {
                 };
                 perf.cycles_per_second = cycles_delta as f64 / elapsed;
                 perf.frames_per_second = frames_delta as f64 / elapsed;
-                perf.total_cycles = cpu.total_cycles();
+                perf.total_cycles = runner.cpu.total_cycles();
                 perf.total_frames = frame_count;
-                last_perf_total_cycles = cpu.total_cycles();
+                last_perf_total_cycles = runner.cpu.total_cycles();
                 last_perf_frame_count = frame_count;
                 last_perf_publish = Instant::now();
             }

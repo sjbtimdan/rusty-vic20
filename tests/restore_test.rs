@@ -1,38 +1,22 @@
 mod common;
 
 use common::screen_code;
-use rusty_vic20::{
-    addressable::Addressable,
-    cpu::instruction_executor,
-    keyboard::{Keyboard, RestoreKeyStatus, make_keyboard_channel},
-    ui::keyboard::key::Key,
-};
+use rusty_vic20::{addressable::Addressable, cpu::instruction_executor, ui::keyboard::key::Key};
 use std::collections::HashSet;
 
-fn run_boot_with_keyboard() -> (rusty_vic20::bus::Bus, rusty_vic20::cpu::cpu6502::CPU6502) {
-    let (_tx, rx) = make_keyboard_channel();
-    let mut keyboard = Keyboard::new(rx, None);
-    let (mut bus, mut cpu) = common::run_boot();
-    let instruction_executor = instruction_executor::DefaultInstructionExecutor;
-
+fn run_boot_with_keyboard() -> rusty_vic20::runner::EmulatorRunner {
+    let mut runner = common::run_boot();
     for _ in 0..100_000 {
-        keyboard.inject_paste_into_buffer(&mut bus);
-        if let Some(port_a) = keyboard.step(bus.via2.port_b()) {
-            bus.via2.set_port_a(port_a);
-        } else {
-            bus.via2.set_port_a(0xFF);
-        }
-        bus.via1.set_ca1_pin(false);
-        bus.step_devices(&mut cpu);
-        cpu.step(&mut bus, &instruction_executor);
+        runner.step_keyboard();
+        runner.step();
     }
-    (bus, cpu)
+    runner
 }
 
 #[test]
 fn via1_ca1_enabled_after_boot() {
-    let (bus, _cpu) = common::run_boot();
-    let via1_ier = bus.read_byte(0x911E);
+    let runner = common::run_boot();
+    let via1_ier = runner.bus.read_byte(0x911E);
     assert!(
         via1_ier & 0x02 != 0,
         "KERNAL should enable VIA1 CA1 interrupts, got IER={:02X}",
@@ -43,11 +27,10 @@ fn via1_ca1_enabled_after_boot() {
 #[test]
 #[ignore = "broken AI generated test"]
 fn restore_stop_triggers_warm_start() {
-    let (mut bus, mut cpu) = run_boot_with_keyboard();
-    let instruction_executor = instruction_executor::DefaultInstructionExecutor;
+    let mut runner = run_boot_with_keyboard();
 
     common::assert_screen_lines(
-        &bus,
+        &runner.bus,
         &[
             screen_code("**** CBM BASIC V2 ****"),
             screen_code("                      "),
@@ -57,30 +40,23 @@ fn restore_stop_triggers_warm_start() {
         ],
     );
 
-    let (tx, rx) = make_keyboard_channel();
-    tx.send(HashSet::from([Key::RunStop, Key::Restore])).ok();
-    let mut keyboard = Keyboard::new(rx, None);
+    runner
+        .keyboard_sender
+        .send(HashSet::from([Key::RunStop, Key::Restore]))
+        .ok();
 
     for _ in 0..300_000 {
-        keyboard.inject_paste_into_buffer(&mut bus);
-        if let Some(port_a) = keyboard.step(bus.via2.port_b()) {
-            bus.via2.set_port_a(port_a);
-        } else {
-            bus.via2.set_port_a(0xFF);
-        }
-
-        let restore_nmi = keyboard.restore_key_status() != RestoreKeyStatus::Up;
-        bus.via1.set_ca1_pin(restore_nmi);
-
-        bus.step_devices(&mut cpu);
-        if restore_nmi {
-            cpu.nmi_latch.set_level(true);
-        }
-        cpu.step(&mut bus, &instruction_executor);
+        runner.step_keyboard();
+        runner.bus.step_devices(&mut runner.cpu);
+        runner.cpu.nmi_latch.set_level(true);
+        runner
+            .cpu
+            .step(&mut runner.bus, &instruction_executor::DefaultInstructionExecutor);
+        runner.cassette_player.step(&mut runner.bus.via1);
     }
 
     common::assert_screen_lines(
-        &bus,
+        &runner.bus,
         &[
             screen_code("                      "),
             screen_code("READY.                "),
@@ -90,11 +66,10 @@ fn restore_stop_triggers_warm_start() {
 
 #[test]
 fn held_key_repeats_in_kernal() {
-    let (mut bus, mut cpu) = run_boot_with_keyboard();
-    let instruction_executor = instruction_executor::DefaultInstructionExecutor;
+    let mut runner = run_boot_with_keyboard();
 
     common::assert_screen_lines(
-        &bus,
+        &runner.bus,
         &[
             screen_code("**** CBM BASIC V2 ****"),
             screen_code("                      "),
@@ -104,24 +79,14 @@ fn held_key_repeats_in_kernal() {
         ],
     );
 
-    let (tx, rx) = make_keyboard_channel();
-    tx.send(HashSet::from([Key::Single('A')])).ok();
-    let mut keyboard = Keyboard::new(rx, None);
+    runner.keyboard_sender.send(HashSet::from([Key::Single('A')])).ok();
 
     for _ in 0..500_000 {
-        keyboard.inject_paste_into_buffer(&mut bus);
-        if let Some(port_a) = keyboard.step(bus.via2.port_b()) {
-            bus.via2.set_port_a(port_a);
-        } else {
-            bus.via2.set_port_a(0xFF);
-        }
-
-        bus.via1.set_ca1_pin(false);
-        bus.step_devices(&mut cpu);
-        cpu.step(&mut bus, &instruction_executor);
+        runner.step_keyboard();
+        runner.step();
     }
 
-    let screen_a_count = common::count_screen_chars(&bus, 0x01);
+    let screen_a_count = common::count_screen_chars(&runner.bus, 0x01);
     eprintln!("Found {} 'A' characters on screen", screen_a_count);
     assert!(
         screen_a_count > 1,
