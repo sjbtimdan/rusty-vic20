@@ -48,6 +48,7 @@ pub fn screen_line_to_string(line: &[u8]) -> String {
             0x00 => '@',
             0x01..=0x1A => (b - 0x01 + b'A') as char,
             0x20 => ' ',
+            0x26 => '&',
             0x2A => '*',
             0x2E => '.',
             0x30..=0x39 => b as char,
