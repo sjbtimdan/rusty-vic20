@@ -7,10 +7,10 @@ VIC-20 hardware references in [docs/REFERENCES.md](docs/REFERENCES.md).
 ## Fast Start
 
 - Build: `cargo build`
-- Test: `cargo test`
-- Format: `cargo +nightly fmt` (config in `rustfmt.toml` — uses nightly-only features)
+- Test: `cargo test` (unit tests: `cargo test --lib`)
+- Format: `cargo +nightly fmt` — **must use nightly**; `cargo fmt` will error due to `unstable_features = true` in `rustfmt.toml`
 - Lint: `cargo clippy` — run after every change and fix all warnings
-- Bench: `cargo +nightly bench` (uses `#![feature(test)]`)
+- Bench: `cargo +nightly bench` (requires ROM files in `data/`, uses `#![feature(test)]`)
 - Run emulator: `cargo run --bin vic20`
 - Run disassembler: `cargo run --bin disassembler -- <file> [base_address] [disassemble_start_addr]`
 - Enable logging: `RUST_LOG=info cargo run --bin vic20` (uses `env_logger`)
@@ -41,6 +41,7 @@ VIC-20 hardware references in [docs/REFERENCES.md](docs/REFERENCES.md).
 - **Controller** (`src/controller.rs`): `winit::ApplicationHandler` — spawns `"vic20-core-loop"` worker thread in `resumed`, manages frame timing at 50Hz in `about_to_wait`.
 - **Tools** (`src/tools/`): Breakpoints/watchpoints (`debug.rs`), 6502 disassembler (`disassembler.rs`).
 - **`Clock` trait** (`src/virtual_clock.rs`): `SystemClock`/`MockClock` abstraction for testing time-dependent keyboard interactions.
+- **`EdgeLatch`** (`src/edge_latch.rs`): Rising/falling edge detector used by VIA for CA1. `set_level()` captures edges; `take()` consumes the latched state.
 
 Full detail: [ARCHITECTURE.md](ARCHITECTURE.md).
 
@@ -62,9 +63,9 @@ Full detail: [ARCHITECTURE.md](ARCHITECTURE.md).
 ## Testing
 
 - Inline `#[cfg(test)]` modules with `rstest` fixtures and `unimock` for trait mocking.
-- Integration tests in `tests/` require ROM files in `data/`.
+- Integration tests in `tests/` (smoke_test, cassette_test, restore_test) require ROM files in `data/`; they'll panic if ROMs are missing.
 - `cargo test` runs both unit and integration tests. Use `cargo test --lib` for unit tests only.
-- Benchmarks: `cargo +nightly bench`.
+- Benchmarks: `cargo +nightly bench` (also requires `data/` ROM files).
 
 ## File Hygiene
 
