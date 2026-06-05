@@ -111,22 +111,6 @@ impl VIA {
         self.pb
     }
 
-    pub fn cassette_motor_control(&mut self, value: bool) {
-        self.set_port_b_internal(set_bit(self.pb, 3, value))
-    }
-
-    pub fn cassette_read_data(&mut self, value: bool) {
-        self.set_port_b_internal(set_bit(self.pb, 4, value))
-    }
-
-    pub fn cassette_write_data(&mut self, value: bool) {
-        self.set_port_b_internal(set_bit(self.pb, 5, value))
-    }
-
-    pub fn cassette_sense(&mut self, value: bool) {
-        self.set_port_b_internal(set_bit(self.pb, 6, value))
-    }
-
     pub fn set_port_a(&mut self, value: u8) {
         self.pa = value;
     }
@@ -161,6 +145,23 @@ impl VIA {
         self.ca1_pin_level
     }
 
+    /* Mapping the Vic 20, p148
+       0x9111
+        bit 6: sense tape button down. value of 1 in this bit means that there are no tape buttons down, while value of 0 means that there are some down.
+       0x911F mirrors 0x9111
+    */
+    pub fn set_cassette_sense(&mut self, value: bool) {
+        set_bit(&mut self.pa, 6, value);
+    }
+
+    pub fn set_pb2_pin(&mut self, value: bool) {
+        set_bit(&mut self.pb, 2, value);
+    }
+
+    pub fn get_pb2_pin(&self) -> bool {
+        self.pb & 0x04 != 0
+    }
+
     fn check_ca1_edge(&mut self) {
         if self.ca1_latch.take() {
             self.ifr.set(self.ifr.get() | IFR_CA1);
@@ -168,9 +169,9 @@ impl VIA {
     }
 }
 
-fn set_bit(value: u8, bit_index: u8, bit: bool) -> u8 {
+fn set_bit(value: &mut u8, bit_index: u8, bit: bool) {
     let bit_mask = 1 << bit_index;
-    if bit { value | bit_mask } else { value & !bit_mask }
+    *value = if bit { *value | bit_mask } else { *value & !bit_mask };
 }
 
 impl Addressable for VIA {

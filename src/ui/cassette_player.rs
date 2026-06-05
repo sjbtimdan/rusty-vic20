@@ -1,19 +1,21 @@
 use log::info;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 
+use crate::via::VIA;
+
 #[derive(Default)]
 pub struct CassettePlayer {
-    play_button: bool,
+    pressed: bool,
 }
 
 impl CassettePlayer {
-    pub fn play_button(&self) -> bool {
-        self.play_button
+    pub fn step(&self, via: &mut VIA) {
+        via.set_cassette_sense(!self.pressed);
     }
 
     pub fn set_play_button(&mut self, pressed: bool) {
         info!("Play button pressed={}", pressed);
-        self.play_button = pressed;
+        self.pressed = pressed;
     }
 }
 

@@ -17,6 +17,19 @@ pub fn read_screen_line(bus: &Bus, addr: u16) -> [u8; 22] {
     line
 }
 
+pub fn assert_screen_line(bus: &Bus, row: usize, expected_line: &str) {
+    let actual_bytes = read_screen_line(bus, SCREEN_RAM_START + row as u16 * SCREEN_LINE_LEN);
+    let actual = screen_line_to_string(&actual_bytes);
+    if actual != expected_line {
+        panic!(
+            "Line {} does not match:\n  expected: \"{}\"\n  got:      \"{}\"",
+            row + 1,
+            actual,
+            expected_line
+        );
+    }
+}
+
 pub fn screen_code(s: &str) -> [u8; 22] {
     let mut buf = [0x20u8; 22];
     for (i, ch) in s.chars().take(22).enumerate() {
@@ -33,7 +46,7 @@ pub fn screen_code(s: &str) -> [u8; 22] {
     buf
 }
 
-fn screen_line_to_string(line: &[u8]) -> String {
+pub fn screen_line_to_string(line: &[u8]) -> String {
     line.iter()
         .map(|&b| match b {
             0x00 => '@',
@@ -49,15 +62,7 @@ fn screen_line_to_string(line: &[u8]) -> String {
 
 pub fn assert_screen_lines(bus: &Bus, expected: &[[u8; 22]]) {
     for (i, expected_line) in expected.iter().enumerate() {
-        let actual = read_screen_line(bus, SCREEN_RAM_START + i as u16 * SCREEN_LINE_LEN);
-        if actual != *expected_line {
-            panic!(
-                "Line {} does not match:\n  expected: \"{}\"\n  got:      \"{}\"",
-                i + 1,
-                screen_line_to_string(expected_line),
-                screen_line_to_string(&actual),
-            );
-        }
+        assert_screen_line(bus, i, &screen_line_to_string(expected_line));
     }
 }
 

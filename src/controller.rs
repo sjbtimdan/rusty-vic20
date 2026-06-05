@@ -219,10 +219,10 @@ impl Vic20Controller {
 
             let restore_key_status = keyboard.restore_key_status(); // && (bus.via2.port_b() & 0x80 == 0);
             bus.via1.set_ca1_pin(restore_key_status != RestoreKeyStatus::Up);
-            bus.via1.cassette_sense(!cassette_player.play_button());
 
             bus.step_devices(&mut cpu);
             cpu.step(&mut bus, &instruction_executor);
+            cassette_player.step(&mut bus.via1);
 
             if last_frame_publish.elapsed() >= FRAME_PUBLISH_INTERVAL {
                 bus.render_active_screen();
