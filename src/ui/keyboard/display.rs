@@ -2,7 +2,11 @@ use font8x8::{BASIC_FONTS, UnicodeFonts};
 use image::{ImageFormat, load_from_memory_with_format};
 use log::error;
 use pixels::{Pixels, SurfaceTexture};
-use std::{sync::Arc, time::Instant};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Instant,
+};
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::{ElementState, MouseButton, WindowEvent},
@@ -41,6 +45,7 @@ pub struct KeyboardWindow {
     image_width: u32,
     image_height: u32,
     cursor_pos: Option<(f64, f64)>,
+    active_mappings: HashMap<KeyCode, Vec<Key>>,
 }
 
 impl Default for KeyboardWindow {
@@ -58,6 +63,7 @@ impl Default for KeyboardWindow {
             image_width,
             image_height,
             cursor_pos: None,
+            active_mappings: HashMap::new(),
         }
     }
 }
@@ -132,7 +138,16 @@ impl KeyboardWindow {
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(keycode) = event.physical_key {
                     let pressed = event.state == ElementState::Pressed;
-                    for vic_key in keycode_to_vickeys(keycode) {
+                    let vic_keys = if pressed {
+                        let mapping = keycode_to_vickeys_shifted(keycode, &state.physical_keys);
+                        self.active_mappings.insert(keycode, mapping.clone());
+                        mapping
+                    } else {
+                        self.active_mappings
+                            .remove(&keycode)
+                            .unwrap_or_else(|| keycode_to_vickeys_shifted(keycode, &state.physical_keys))
+                    };
+                    for vic_key in vic_keys {
                         self.handle_physical_key_event(pressed, vic_key, state);
                     }
                 }
@@ -361,7 +376,7 @@ fn keycode_to_vickeys(key: KeyCode) -> Vec<Key> {
         KeyCode::Digit0 => vec![Key::Single('0')],
         KeyCode::Minus => vec![Key::Single('-')],
         KeyCode::Equal => vec![Key::Single('=')],
-        KeyCode::Tab => vec![Key::RunStop],
+        KeyCode::Escape => vec![Key::RunStop],
         KeyCode::AltLeft => vec![Key::Cbm],
         KeyCode::Backslash => vec![Key::Single('£')],
         KeyCode::Home => vec![Key::ClrHome],
@@ -419,9 +434,23 @@ fn keycode_to_vickeys(key: KeyCode) -> Vec<Key> {
         KeyCode::F6 => vec![Key::LeftShift, Key::F5F6],
         KeyCode::F7 => vec![Key::F7F8],
         KeyCode::F8 => vec![Key::LeftShift, Key::F7F8],
-        KeyCode::PageUp => vec![Key::Restore],
+        KeyCode::Tab => vec![Key::Restore],
         _ => vec![],
     }
+}
+
+fn keycode_to_vickeys_shifted(key: KeyCode, physical_keys: &HashSet<Key>) -> Vec<Key> {
+    let shift_held = physical_keys.contains(&Key::LeftShift) || physical_keys.contains(&Key::RightShift);
+    if shift_held {
+        match key {
+            KeyCode::Digit8 => return vec![Key::Single('*')],
+            KeyCode::Digit9 => return vec![Key::Single('8')],
+            KeyCode::Digit0 => return vec![Key::Single('9')],
+            KeyCode::Equal => return vec![Key::Single('+')],
+            _ => {}
+        }
+    }
+    keycode_to_vickeys(key)
 }
 
 #[cfg(test)]
@@ -460,5 +489,77 @@ mod tests {
     #[case(KeyCode::End)]
     fn unmapped_key_returns_empty(#[case] keycode: KeyCode) {
         assert_eq!(keycode_to_vickeys(keycode), vec![]);
+    }
+
+    #[test]
+    fn shifted_digit8_maps_to_asterisk() {
+        let mut keys = HashSet::new();
+        keys.insert(Key::LeftShift);
+        assert_eq!(
+            keycode_to_vickeys_shifted(KeyCode::Digit8, &keys),
+            vec![Key::Single('*')]
+        );
+    }
+
+    #[test]
+    fn shifted_digit9_maps_to_8() {
+        let mut keys = HashSet::new();
+        keys.insert(Key::RightShift);
+        assert_eq!(
+            keycode_to_vickeys_shifted(KeyCode::Digit9, &keys),
+            vec![Key::Single('8')]
+        );
+    }
+
+    #[test]
+    fn shifted_digit0_maps_to_9() {
+        let mut keys = HashSet::new();
+        keys.insert(Key::LeftShift);
+        assert_eq!(
+            keycode_to_vickeys_shifted(KeyCode::Digit0, &keys),
+            vec![Key::Single('9')]
+        );
+    }
+
+    #[test]
+    fn shifted_equal_maps_to_plus() {
+        let mut keys = HashSet::new();
+        keys.insert(Key::LeftShift);
+        assert_eq!(
+            keycode_to_vickeys_shifted(KeyCode::Equal, &keys),
+            vec![Key::Single('+')]
+        );
+    }
+
+    #[test]
+    fn unshifted_digits_unchanged() {
+        let keys = HashSet::new();
+        assert_eq!(
+            keycode_to_vickeys_shifted(KeyCode::Digit8, &keys),
+            vec![Key::Single('8')]
+        );
+        assert_eq!(
+            keycode_to_vickeys_shifted(KeyCode::Digit9, &keys),
+            vec![Key::Single('9')]
+        );
+        assert_eq!(
+            keycode_to_vickeys_shifted(KeyCode::Digit0, &keys),
+            vec![Key::Single('0')]
+        );
+    }
+
+    #[test]
+    fn non_digit_keys_unaffected_by_shift() {
+        let mut keys = HashSet::new();
+        keys.insert(Key::LeftShift);
+        assert_eq!(keycode_to_vickeys_shifted(KeyCode::KeyA, &keys), vec![Key::Single('A')]);
+        assert_eq!(
+            keycode_to_vickeys_shifted(KeyCode::Digit1, &keys),
+            vec![Key::Single('1')]
+        );
+        assert_eq!(
+            keycode_to_vickeys_shifted(KeyCode::Minus, &keys),
+            vec![Key::Single('-')]
+        );
     }
 }

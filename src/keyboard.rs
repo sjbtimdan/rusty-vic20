@@ -11,6 +11,10 @@ use std::{
 
 const PASTE_COOLDOWN_CYCLES: u32 = 100;
 
+/// Keys that should never be combined with shift in the matrix output.
+/// When any of these keys appears alongside a shift key, the shift contribution is suppressed.
+const SHIFT_SUPPRESS_KEYS: &[Key] = &[Key::Single('*'), Key::Single('+')];
+
 pub fn make_keyboard_channel() -> (SyncSender<HashSet<Key>>, Receiver<HashSet<Key>>) {
     mpsc::sync_channel(2)
 }
@@ -154,9 +158,12 @@ impl Keyboard {
             self.cache = keys;
         }
         if !self.cache.is_empty() {
+            let suppress_shift = SHIFT_SUPPRESS_KEYS.iter().any(|k| self.cache.contains(k))
+                && (self.cache.contains(&Key::LeftShift) || self.cache.contains(&Key::RightShift));
             let result = self
                 .cache
                 .iter()
+                .filter(|&&k| !suppress_shift || !matches!(k, Key::LeftShift | Key::RightShift))
                 .filter_map(|&k| self.keyboard_map.get(&(k, port_b)).copied())
                 .fold(0xFFu8, |acc, val| acc & val);
             if result == 0xFF { None } else { Some(result) }
@@ -385,5 +392,24 @@ mod tests {
     fn step_returns_some_when_clr_home_pressed() {
         let mut keyboard = keyboard_with_keys(HashSet::from([Key::ClrHome]));
         assert_eq!(keyboard.step(0x7F), Some(0xBF));
+    }
+
+    #[test]
+    fn shift_suppressed_when_asterisk_and_left_shift_held() {
+        let mut keyboard = keyboard_with_keys(HashSet::from([Key::Single('*'), Key::LeftShift]));
+        assert_eq!(keyboard.step(0xFD), Some(0xBF));
+    }
+
+    #[test]
+    fn shift_suppressed_when_plus_and_right_shift_held() {
+        let mut keyboard = keyboard_with_keys(HashSet::from([Key::Single('+'), Key::RightShift]));
+        assert_eq!(keyboard.step(0xFE), Some(0xDF));
+    }
+
+    #[test]
+    fn shift_not_suppressed_when_other_key_with_shift() {
+        let mut keyboard = keyboard_with_keys(HashSet::from([Key::Single('A'), Key::LeftShift]));
+        assert_eq!(keyboard.step(0xFB), Some(0xFD));
+        assert_eq!(keyboard.step(0xF7), Some(0xFD));
     }
 }
