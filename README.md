@@ -12,10 +12,10 @@ Still a WIP.
 - [X] VIA 1 chip
 - [X] Keyboard interaction.
 - [X] Load basic programs (maybe cut and paste)
-- [ ] NMI handling + RESTORE key
-- [ ] Sound.
+- [X] NMI handling + RESTORE key
 - [ ] Joystick support
 - [ ] Load programs from cassette or binary data.
+- [ ] Sound.
 - [ ] Speed control.
 - [ ] Accurate emulation down to the cycle and raster level.
 - [ ] Lightpen

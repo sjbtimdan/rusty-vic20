@@ -107,7 +107,6 @@ fn keyboard_map() -> HashMap<(Key, u8), u8> {
         (Key::F5F6, 0xBF, 0x7F),
         // Column c7 (port_b = 0x7F)
         (Key::Single('2'), 0x7F, 0xFE),
-        (Key::Restore, 0x7F, 0xFE),
         (Key::Single('4'), 0x7F, 0xFD),
         (Key::Single('6'), 0x7F, 0xFB),
         (Key::Single('8'), 0x7F, 0xF7),
@@ -371,9 +370,9 @@ mod tests {
     }
 
     #[test]
-    fn step_returns_restore_in_column_7() {
+    fn step_returns_none_for_restore_since_it_uses_ca1() {
         let mut keyboard = keyboard_with_keys(HashSet::from([Key::Restore]));
-        assert_eq!(keyboard.step(0x7F), Some(0xFE));
+        assert_eq!(keyboard.step(0x7F), None);
     }
 
     #[test]
