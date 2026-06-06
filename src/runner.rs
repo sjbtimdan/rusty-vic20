@@ -72,7 +72,7 @@ impl EmulatorRunner {
             self.bus.via2.set_port_a(0xFF);
         }
         let restore = self.keyboard.restore_key_status();
-        self.bus.via1.set_ca1_pin(restore != RestoreKeyStatus::Up);
+        self.bus.via1.set_ca1_pin(restore == RestoreKeyStatus::Up);
     }
 
     pub fn step(&mut self) {

@@ -65,8 +65,8 @@ impl Default for VIA {
             ier: 0,
             t1_counter: Cell::new(0x0000),
             t1_latch: Cell::new(0x0000),
-            ca1_pin_level: false,
-            ca1_latch: EdgeLatch::new_rising(),
+            ca1_pin_level: true,
+            ca1_latch: EdgeLatch::new_falling(),
             port_b_callback: None,
         }
     }
@@ -240,7 +240,7 @@ impl Addressable for VIA {
                 let new_bit0 = value & 0x01;
                 self.peripheral_control = value;
                 self.ca1_latch
-                    .set_edge(if new_bit0 == 0 { Edge::Rising } else { Edge::Falling });
+                    .set_edge(if new_bit0 == 0 { Edge::Falling } else { Edge::Rising });
                 self.ca1_latch.reset();
             }
             IFR_OFFSET => {
@@ -487,13 +487,14 @@ mod tests {
         handler.verify();
     }
 
+    /// PCR defaults to 0x00 → interrupt on falling (negative) edge of CA1
     #[rstest]
-    fn set_ca1_pin_rising_edge_sets_ifr_ca1(mut via: VIA) {
-        via.set_ca1_pin(false);
+    fn pcr_default_detects_falling_edge(mut via: VIA) {
+        via.set_ca1_pin(true);
         via.step_internal();
         assert_eq!(via.ifr.get() & IFR_CA1, 0);
 
-        via.set_ca1_pin(true);
+        via.set_ca1_pin(false);
         via.step_internal();
         assert_eq!(via.ifr.get() & IFR_CA1, IFR_CA1);
     }
@@ -502,11 +503,13 @@ mod tests {
     fn set_ca1_pin_no_edge_when_level_unchanged(mut via: VIA) {
         via.set_ca1_pin(true);
         via.step_internal();
+        via.set_ca1_pin(false);
+        via.step_internal();
         assert_eq!(via.ifr.get() & IFR_CA1, IFR_CA1);
 
         via.ifr.set(via.ifr.get() & !IFR_CA1);
 
-        via.set_ca1_pin(true);
+        via.set_ca1_pin(false);
         via.step_internal();
         assert_eq!(via.ifr.get() & IFR_CA1, 0);
     }
@@ -515,16 +518,22 @@ mod tests {
     fn pcr_write_resets_ca1_latch_state(mut via: VIA) {
         via.set_ca1_pin(true);
         via.step_internal();
+        via.set_ca1_pin(false);
+        via.step_internal();
         assert_eq!(via.ifr.get() & IFR_CA1, IFR_CA1);
 
         via.ifr.set(via.ifr.get() & !IFR_CA1);
         via.write_byte(addr(PERIPHERAL_CONTROL_OFFSET), 0x00);
 
-        via.set_ca1_pin(false);
-        via.step_internal();
-        assert_eq!(via.ifr.get() & IFR_CA1, 0);
-
         via.set_ca1_pin(true);
+        via.step_internal();
+        assert_eq!(
+            via.ifr.get() & IFR_CA1,
+            0,
+            "rising edge should not trigger with falling-edge PCR"
+        );
+
+        via.set_ca1_pin(false);
         via.step_internal();
         assert_eq!(
             via.ifr.get() & IFR_CA1,
@@ -533,15 +542,16 @@ mod tests {
         );
     }
 
+    /// PCR bit 0 = 1 selects positive (rising) edge on CA1
     #[rstest]
-    fn pcr_bit0_set_detects_falling_edge_on_ca1(mut via: VIA) {
+    fn pcr_bit0_set_detects_rising_edge_on_ca1(mut via: VIA) {
         via.write_byte(addr(PERIPHERAL_CONTROL_OFFSET), 0x01);
 
-        via.set_ca1_pin(true);
+        via.set_ca1_pin(false);
         via.step_internal();
         assert_eq!(via.ifr.get() & IFR_CA1, 0);
 
-        via.set_ca1_pin(false);
+        via.set_ca1_pin(true);
         via.step_internal();
         assert_eq!(via.ifr.get() & IFR_CA1, IFR_CA1);
     }

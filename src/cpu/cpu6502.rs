@@ -49,7 +49,7 @@ impl Default for CPU6502 {
             breakpoints: vec![],
             instruction_tracking: InstructionTracking::default(),
             irq_line_low: false,
-            nmi_latch: EdgeLatch::new_rising(),
+            nmi_latch: EdgeLatch::new_falling(),
         }
     }
 }
@@ -71,6 +71,7 @@ impl CPU6502 {
         self.instruction_tracking = InstructionTracking::default();
         self.irq_line_low = false;
         self.nmi_latch.reset();
+        self.nmi_latch.set_level(true); // NMI line idles HIGH
     }
 
     pub fn add_breakpoint_address(&mut self, address: u16) {
@@ -336,11 +337,11 @@ mod tests {
         memory[0xFFFB] = 0x12;
         let instruction_executor = instruction_executor::DefaultInstructionExecutor;
 
-        cpu.nmi_latch.set_level(false);
-        cpu.step(&mut memory, &instruction_executor);
-        assert_eq!(cpu.registers.pc, 0x8000, "PC unchanged when no NMI edge");
-
         cpu.nmi_latch.set_level(true);
+        cpu.step(&mut memory, &instruction_executor);
+        assert_eq!(cpu.registers.pc, 0x8000, "PC unchanged when NMI line stays HIGH");
+
+        cpu.nmi_latch.set_level(false);
         cpu.step(&mut memory, &instruction_executor);
         assert_eq!(cpu.registers.pc, 0x1234, "NMI should fire on falling edge");
     }
@@ -356,10 +357,11 @@ mod tests {
         let instruction_executor = instruction_executor::DefaultInstructionExecutor;
 
         cpu.nmi_latch.set_level(true);
+        cpu.nmi_latch.set_level(false);
         cpu.step(&mut memory, &instruction_executor);
         assert_eq!(cpu.registers.pc, 0x1234, "First NMI should fire");
 
-        cpu.nmi_latch.set_level(true);
+        cpu.nmi_latch.set_level(false);
         cpu.step(&mut memory, &instruction_executor);
         cpu.step(&mut memory, &instruction_executor);
         assert_eq!(cpu.registers.pc, 0x1235, "PC should advance normally, no second NMI");
@@ -376,11 +378,12 @@ mod tests {
         let instruction_executor = instruction_executor::DefaultInstructionExecutor;
 
         cpu.nmi_latch.set_level(true);
+        cpu.nmi_latch.set_level(false);
         cpu.step(&mut memory, &instruction_executor);
         assert_eq!(cpu.registers.pc, 0x1234, "First NMI fires");
 
-        cpu.nmi_latch.set_level(false);
         cpu.nmi_latch.set_level(true);
+        cpu.nmi_latch.set_level(false);
 
         cpu.step(&mut memory, &instruction_executor);
         cpu.step(&mut memory, &instruction_executor);
@@ -397,11 +400,11 @@ mod tests {
         memory[0xFFFB] = 0x12;
         let instruction_executor = instruction_executor::DefaultInstructionExecutor;
 
-        cpu.nmi_latch.set_level(false);
+        cpu.nmi_latch.set_level(true);
         cpu.step(&mut memory, &instruction_executor);
         assert_eq!(cpu.registers.pc, 0x8000, "LDA not yet executed");
 
-        cpu.nmi_latch.set_level(true);
+        cpu.nmi_latch.set_level(false);
         cpu.step(&mut memory, &instruction_executor);
         assert_eq!(cpu.registers.pc, 0x1234, "NMI should fire after instruction completes");
     }
@@ -409,6 +412,7 @@ mod tests {
     #[rstest]
     fn test_reset_clears_nmi_state(mut cpu: CPU6502) {
         cpu.nmi_latch.set_level(true);
+        cpu.nmi_latch.set_level(false);
         assert!(cpu.nmi_latch.is_latched(), "latch should be set before reset");
         cpu.reset(0x8000);
         assert!(!cpu.nmi_latch.take(), "latch should be cleared on reset");
@@ -424,6 +428,7 @@ mod tests {
         let instruction_executor = instruction_executor::DefaultInstructionExecutor;
 
         cpu.nmi_latch.set_level(true);
+        cpu.nmi_latch.set_level(false);
         cpu.step(&mut memory, &instruction_executor);
         assert_eq!(cpu.registers.pc, 0x1234, "NMI should fire from RESTORE alone");
     }
