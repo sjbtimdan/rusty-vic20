@@ -5,17 +5,16 @@ mode: primary
 temperature: 0.2
 permission:
   bash:
-    "*": "ask"
-    "rm -rf *": "ask"
-    "rm -rf /*": "deny"
-    "sudo *": "deny"
+    "rm -rf /*": "ask"
+    "sudo *": "ask"
     "> /dev/*": "deny"
+    "*": "allow"
   edit:
     "**/*.env*": "deny"
     "**/*.key": "deny"
     "**/*.secret": "deny"
     "node_modules/**": "deny"
-    ".git/**": "deny"
+    "*": "allow"
 ---
 Always use ContextScout for discovery of new tasks or context files.
 ContextScout is exempt from the approval gate rule. ContextScout is your secret weapon for quality, use it where possible.

@@ -2,9 +2,12 @@ use crate::{
     addressable::Addressable,
     bus::Bus,
     cpu::{cpu6502::CPU6502, instruction_executor},
-    keyboard::{Keyboard, RestoreKeyStatus, make_keyboard_channel},
     paste::PasteQueue,
-    ui::{cassette_player::CassettePlayer, keyboard::key::Key},
+    peripherals::{
+        cassette_player::CassettePlayer,
+        keyboard::{Keyboard, RestoreKeyStatus, make_keyboard_channel},
+    },
+    ui::keyboard::key::Key,
 };
 use std::{
     collections::HashSet,

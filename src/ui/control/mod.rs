@@ -52,7 +52,7 @@ impl Default for SharedPerformanceMetrics {
 
 pub type SharedPerfState = Arc<Mutex<SharedPerformanceMetrics>>;
 
-pub struct DebugState {
+pub struct ControlState {
     pub current_tab: DebugTab,
     pub start_address: u16,
     pub selected_offset: Option<usize>,
@@ -101,13 +101,13 @@ pub enum CassetteAction {
     TogglePlay,
 }
 
-impl Default for DebugState {
+impl Default for ControlState {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl DebugState {
+impl ControlState {
     pub fn new() -> Self {
         Self {
             current_tab: DebugTab::Debug,

@@ -12,8 +12,8 @@ use winit::{
 
 use super::{
     CassetteAction,
+    ControlState,
     DebugMode,
-    DebugState,
     DebugTab,
     JoystickDirection,
     PendingRegisterWrites,
@@ -143,14 +143,14 @@ const HIGHLIGHT_COLOR: [u8; 4] = [60, 60, 100, 255];
 const INPUT_BG: [u8; 4] = [50, 50, 50, 255];
 
 #[derive(Default)]
-pub struct DebugWindow {
+pub struct ControlWindow {
     window: Option<Arc<Window>>,
     pixels: Option<Pixels<'static>>,
     cursor_pos: Option<(f64, f64)>,
     mouse_down: bool,
 }
 
-impl DebugWindow {
+impl ControlWindow {
     pub fn create(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
             return;
@@ -198,7 +198,7 @@ impl DebugWindow {
         &mut self,
         event_loop: &ActiveEventLoop,
         event: WindowEvent,
-        state: &mut DebugState,
+        state: &mut ControlState,
         memory: &SharedMemory,
         pending_writes: &super::PendingWrites,
         registers: &SharedRegistersState,
@@ -252,7 +252,7 @@ impl DebugWindow {
         }
     }
 
-    fn handle_mouse(&mut self, state: &mut DebugState, element_state: ElementState) {
+    fn handle_mouse(&mut self, state: &mut ControlState, element_state: ElementState) {
         let Some((cursor_x, cursor_y)) = self.cursor_pos else {
             return;
         };
@@ -267,34 +267,15 @@ impl DebugWindow {
             ElementState::Pressed => {
                 self.mouse_down = true;
                 if state.current_tab == DebugTab::Joystick {
-                    // 3x3 direction grid
-                    for (row, cells) in JOY_GRID.iter().enumerate() {
-                        for (col, &(dir, _)) in cells.iter().enumerate() {
-                            let x = joy_cell_x(col);
-                            let y = joy_cell_y(row);
-                            if px as i32 >= x
-                                && (px as i32) < x + JOY_PAD_SIZE
-                                && py as i32 >= y
-                                && (py as i32) < y + JOY_PAD_SIZE
-                            {
-                                match dir {
-                                    Some(d) => {
-                                        state.joystick_direction = Some(d);
-                                        state.joystick_fire = false;
-                                    }
-                                    None => {
-                                        state.joystick_direction = None;
-                                        state.joystick_fire = true;
-                                    }
-                                }
-                                return;
-                            }
-                        }
-                    }
+                    apply_joystick_cell(state, px as i32, py as i32);
                 }
             }
             ElementState::Released => {
                 self.mouse_down = false;
+                // Always clear joystick on release, regardless of where cursor ends up
+                state.joystick_direction = None;
+                state.joystick_fire = false;
+
                 if let Some(tab) = tab_at(px as i32, py as i32) {
                     if tab != state.current_tab {
                         state.current_tab = tab;
@@ -327,9 +308,6 @@ impl DebugWindow {
                         }
                     }
                     DebugTab::Joystick => {
-                        // Release always clears direction and fire
-                        state.joystick_direction = None;
-                        state.joystick_fire = false;
                         // Checkbox toggle (independent)
                         if px as i32 >= JOY_CHECKBOX_X
                             && (px as i32) < JOY_CHECKBOX_X + 220
@@ -343,8 +321,33 @@ impl DebugWindow {
             }
         }
     }
+}
 
-    fn update_joystick_from_cursor(&self, state: &mut DebugState) {
+fn apply_joystick_cell(state: &mut ControlState, px: i32, py: i32) -> bool {
+    for (row, cells) in JOY_GRID.iter().enumerate() {
+        for (col, &(dir, _)) in cells.iter().enumerate() {
+            let x = joy_cell_x(col);
+            let y = joy_cell_y(row);
+            if px >= x && px < x + JOY_PAD_SIZE && py >= y && py < y + JOY_PAD_SIZE {
+                match dir {
+                    Some(d) => {
+                        state.joystick_direction = Some(d);
+                        state.joystick_fire = false;
+                    }
+                    None => {
+                        state.joystick_direction = None;
+                        state.joystick_fire = true;
+                    }
+                }
+                return true;
+            }
+        }
+    }
+    false
+}
+
+impl ControlWindow {
+    fn update_joystick_from_cursor(&self, state: &mut ControlState) {
         if state.current_tab != DebugTab::Joystick {
             return;
         }
@@ -358,35 +361,15 @@ impl DebugWindow {
             return;
         };
 
-        // Check 3x3 grid
-        for (row, cells) in JOY_GRID.iter().enumerate() {
-            for (col, &(dir, _)) in cells.iter().enumerate() {
-                let x = joy_cell_x(col);
-                let y = joy_cell_y(row);
-                if px as i32 >= x && (px as i32) < x + JOY_PAD_SIZE && py as i32 >= y && (py as i32) < y + JOY_PAD_SIZE
-                {
-                    match dir {
-                        Some(d) => {
-                            state.joystick_direction = Some(d);
-                            state.joystick_fire = false;
-                        }
-                        None => {
-                            state.joystick_direction = None;
-                            state.joystick_fire = true;
-                        }
-                    }
-                    return;
-                }
-            }
+        if !apply_joystick_cell(state, px as i32, py as i32) {
+            state.joystick_direction = None;
+            state.joystick_fire = false;
         }
-        // Cursor not over any cell
-        state.joystick_direction = None;
-        state.joystick_fire = false;
     }
 
     fn handle_key(
         &self,
-        state: &mut DebugState,
+        state: &mut ControlState,
         key: &Key,
         text: Option<&str>,
         pending_writes: &super::PendingWrites,
@@ -526,7 +509,7 @@ impl DebugWindow {
 
     pub fn draw(
         &mut self,
-        state: &DebugState,
+        state: &ControlState,
         memory: &SharedMemory,
         registers: &SharedRegistersState,
         perf: &SharedPerfState,
@@ -607,7 +590,7 @@ fn draw_tab_bar(frame: &mut [u8], active_tab: DebugTab) {
 
 fn draw_debug_tab(
     frame: &mut [u8],
-    state: &DebugState,
+    state: &ControlState,
     memory: &SharedMemory,
     registers: &SharedRegistersState,
     perf: &SharedPerfState,
@@ -686,7 +669,7 @@ fn draw_debug_tab(
     drop(mem);
 }
 
-fn draw_io_tab(frame: &mut [u8], state: &DebugState) {
+fn draw_io_tab(frame: &mut [u8], state: &ControlState) {
     draw_str(frame, MARGIN, IO_SECTION_Y, "Cassette Tape", HEADER_COLOR);
 
     fill_rect_at(
@@ -727,7 +710,7 @@ fn draw_io_tab(frame: &mut [u8], state: &DebugState) {
     draw_str(frame, MARGIN, info_y + ROW_H, status, PERF_VALUE_COLOR);
 }
 
-fn draw_joystick_tab(frame: &mut [u8], state: &DebugState) {
+fn draw_joystick_tab(frame: &mut [u8], state: &ControlState) {
     draw_str(frame, MARGIN, CONTENT_START_Y + ROW_H, "Joystick", HEADER_COLOR);
 
     let rw = PIXEL_WIDTH as usize;
@@ -807,7 +790,7 @@ fn set_pixel(frame: &mut [u8], x: i32, y: i32, color: [u8; 4]) {
     }
 }
 
-fn draw_address_bar(frame: &mut [u8], state: &DebugState) {
+fn draw_address_bar(frame: &mut [u8], state: &ControlState) {
     let x = ADDR_COL_X;
     let y = ADDRESS_BAR_Y;
 
@@ -840,7 +823,7 @@ fn draw_address_bar(frame: &mut [u8], state: &DebugState) {
     }
 }
 
-fn draw_status_line(frame: &mut [u8], state: &DebugState) {
+fn draw_status_line(frame: &mut [u8], state: &ControlState) {
     let y = DATA_START_Y + ROWS as i32 * ROW_H + 8;
     let x = ADDR_COL_X;
 
@@ -972,7 +955,7 @@ fn draw_char(pixels: &mut [u8], x: i32, y: i32, ch: char, color: [u8; 4]) {
     }
 }
 
-fn draw_registers(frame: &mut [u8], state: &DebugState, regs: &super::SharedRegisters) {
+fn draw_registers(frame: &mut [u8], state: &ControlState, regs: &super::SharedRegisters) {
     let y = REG_LINE1_Y;
     let rw = PIXEL_WIDTH as usize;
 

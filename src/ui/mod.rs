@@ -1,4 +1,3 @@
-pub mod cassette_player;
+pub mod control;
 pub mod keyboard;
 pub mod screen;
-pub mod speaker;

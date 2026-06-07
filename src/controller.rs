@@ -2,22 +2,22 @@ use crate::{
     addressable::Addressable,
     bus::Bus,
     cpu::cpu6502::CPU6502,
-    debug::{
-        CassetteAction,
-        DebugState,
-        PendingRegisterWrites,
-        PendingWrites,
-        SharedMemory,
-        SharedPerfState,
-        SharedPerformanceMetrics,
-        SharedRegisters,
-        SharedRegistersState,
-        display::DebugWindow,
-    },
     paste::{self, PasteQueue},
+    peripherals,
     runner::EmulatorRunner,
     ui::{
-        self,
+        control::{
+            CassetteAction,
+            ControlState,
+            PendingRegisterWrites,
+            PendingWrites,
+            SharedMemory,
+            SharedPerfState,
+            SharedPerformanceMetrics,
+            SharedRegisters,
+            SharedRegistersState,
+            display::ControlWindow,
+        },
         keyboard::{KeyboardState, display::KeyboardWindow},
         screen::{
             display::{ScreenWindow, SharedVideoState},
@@ -61,10 +61,10 @@ struct SharedState {
 pub struct Vic20Controller {
     screen: ScreenWindow,
     keyboard: KeyboardWindow,
-    debug: DebugWindow,
+    debug: ControlWindow,
     shared_state: Option<SharedState>,
     keyboard_state: KeyboardState,
-    debug_state: DebugState,
+    debug_state: ControlState,
     vic_thread: Option<JoinHandle<()>>,
     modifiers: ModifiersState,
 }
@@ -96,10 +96,10 @@ impl Vic20Controller {
         }));
         let pending_register_writes: PendingRegisterWrites = Arc::new(Mutex::new(Vec::new()));
         let perf: SharedPerfState = Arc::new(Mutex::new(SharedPerformanceMetrics::default()));
-        let (cassette_sender, cassette_receiver) = ui::cassette_player::make_cassette_channel();
+        let (cassette_sender, cassette_receiver) = peripherals::cassette_player::make_cassette_channel();
         let load_queue: LoadQueue = new_load_queue();
         let load_queue_for_thread = load_queue.clone();
-        let (keyboard_sender, keyboard_receiver) = crate::keyboard::make_keyboard_channel();
+        let (keyboard_sender, keyboard_receiver) = crate::peripherals::keyboard::make_keyboard_channel();
         let paste_queue: PasteQueue = paste::new_paste_queue();
         let paste_queue_for_state = paste_queue.clone();
 
@@ -188,12 +188,12 @@ impl Vic20Controller {
             if let Ok(mut reg_writes) = pending_register_writes.try_lock() {
                 for (field, value) in reg_writes.drain(..) {
                     match field {
-                        crate::debug::RegisterField::A => runner.cpu.registers.a = value as u8,
-                        crate::debug::RegisterField::X => runner.cpu.registers.x = value as u8,
-                        crate::debug::RegisterField::Y => runner.cpu.registers.y = value as u8,
-                        crate::debug::RegisterField::SP => runner.cpu.registers.sp = value as u8,
-                        crate::debug::RegisterField::PC => runner.cpu.registers.pc = value,
-                        crate::debug::RegisterField::Status => runner.cpu.registers.status = value as u8,
+                        crate::ui::control::RegisterField::A => runner.cpu.registers.a = value as u8,
+                        crate::ui::control::RegisterField::X => runner.cpu.registers.x = value as u8,
+                        crate::ui::control::RegisterField::Y => runner.cpu.registers.y = value as u8,
+                        crate::ui::control::RegisterField::SP => runner.cpu.registers.sp = value as u8,
+                        crate::ui::control::RegisterField::PC => runner.cpu.registers.pc = value,
+                        crate::ui::control::RegisterField::Status => runner.cpu.registers.status = value as u8,
                     }
                 }
             }
