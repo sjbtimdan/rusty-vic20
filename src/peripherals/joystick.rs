@@ -1,6 +1,8 @@
 use log::info;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 
+use crate::via::VIA;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum JoystickDirection {
     Up,
@@ -26,6 +28,10 @@ pub struct Joystick {
 }
 
 impl Joystick {
+    pub fn step(&self, via1: &mut VIA) {
+        via1.joystick_control(!self.fire);
+    }
+
     pub fn set_state(&mut self, update: JoystickUpdate) {
         if update.direction == self.direction && update.fire == self.fire {
             return;

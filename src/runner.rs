@@ -86,6 +86,7 @@ impl EmulatorRunner {
         self.bus.step_devices(&mut self.cpu);
         self.cpu.step(&mut self.bus, &self.instruction_executor);
         self.cassette_player.step(&mut self.bus.via1);
+        self.joystick.step(&mut self.bus.via1);
     }
 
     pub fn step_multiple(&mut self, count: usize) {

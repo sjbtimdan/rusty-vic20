@@ -111,6 +111,10 @@ impl VIA {
         self.pb
     }
 
+    pub fn joystick_control(&mut self, value: bool) {
+        set_bit(&mut self.pa, 5, value);
+    }
+
     pub fn set_port_a(&mut self, value: u8) {
         self.pa = value;
     }
@@ -178,10 +182,10 @@ impl Addressable for VIA {
     fn read_byte(&self, address: u16) -> u8 {
         let offset = address as usize;
         match offset {
-            PORT_A_OFFSET => self.pa,
             PORT_B_OFFSET => self.pb,
-            DATA_DIRECTION_A_OFFSET => self.ddra,
+            PORT_A_OFFSET => self.pa,
             DATA_DIRECTION_B_OFFSET => self.ddrb,
+            DATA_DIRECTION_A_OFFSET => self.ddra,
             TIMER1_LATCH_LO_OFFSET => {
                 let ifr = self.ifr.get();
                 self.ifr.set(ifr & !IFR_TIMER1);
