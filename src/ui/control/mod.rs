@@ -68,6 +68,7 @@ pub struct ControlState {
     pub joystick_fire: bool,
     pub use_arrow_keys: bool,
     pub joystick_action_pending: Option<JoystickAction>,
+    pub arrow_keys_mask: u8,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -119,6 +120,7 @@ impl ControlState {
             joystick_fire: false,
             use_arrow_keys: false,
             joystick_action_pending: None,
+            arrow_keys_mask: 0,
         }
     }
 

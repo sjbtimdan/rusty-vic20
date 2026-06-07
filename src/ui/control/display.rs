@@ -4,7 +4,7 @@ use pixels::{Pixels, SurfaceTexture};
 use std::sync::Arc;
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
-    event::{ElementState, MouseButton, WindowEvent},
+    event::{ElementState, KeyEvent, MouseButton, WindowEvent},
     event_loop::ActiveEventLoop,
     keyboard::Key,
     window::Window,
@@ -237,14 +237,8 @@ impl ControlWindow {
                     window.request_redraw();
                 }
             }
-            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
-                self.handle_key(
-                    state,
-                    &event.logical_key,
-                    event.text.as_deref(),
-                    pending_writes,
-                    pending_register_writes,
-                );
+            WindowEvent::KeyboardInput { event, .. } => {
+                self.handle_keyboard(state, &event, pending_writes, pending_register_writes);
                 if let Some(window) = self.window.as_ref() {
                     window.request_redraw();
                 }
@@ -327,6 +321,20 @@ impl ControlWindow {
     }
 }
 
+fn mask_to_direction(mask: u8) -> Option<JoystickDirection> {
+    match mask {
+        0b0001 => Some(JoystickDirection::Up),
+        0b0010 => Some(JoystickDirection::Down),
+        0b0100 => Some(JoystickDirection::Left),
+        0b1000 => Some(JoystickDirection::Right),
+        0b0101 => Some(JoystickDirection::UpLeft),
+        0b1001 => Some(JoystickDirection::UpRight),
+        0b0110 => Some(JoystickDirection::DownLeft),
+        0b1010 => Some(JoystickDirection::DownRight),
+        _ => None,
+    }
+}
+
 fn apply_joystick_cell(state: &mut ControlState, px: i32, py: i32) -> bool {
     for (row, cells) in JOY_GRID.iter().enumerate() {
         for (col, &(dir, _)) in cells.iter().enumerate() {
@@ -369,6 +377,73 @@ impl ControlWindow {
         if !apply_joystick_cell(state, px as i32, py as i32) {
             state.joystick_direction = None;
             state.joystick_fire = false;
+        }
+    }
+
+    fn handle_keyboard(
+        &self,
+        state: &mut ControlState,
+        event: &KeyEvent,
+        pending_writes: &super::PendingWrites,
+        pending_register_writes: &PendingRegisterWrites,
+    ) {
+        if state.use_arrow_keys {
+            if event.state == ElementState::Pressed {
+                match event.logical_key {
+                    Key::Named(winit::keyboard::NamedKey::ArrowUp) => {
+                        state.arrow_keys_mask |= 0b0001;
+                        state.joystick_direction = mask_to_direction(state.arrow_keys_mask);
+                        state.joystick_action_pending = Some(JoystickAction::StateChanged);
+                        return;
+                    }
+                    Key::Named(winit::keyboard::NamedKey::ArrowDown) => {
+                        state.arrow_keys_mask |= 0b0010;
+                        state.joystick_direction = mask_to_direction(state.arrow_keys_mask);
+                        state.joystick_action_pending = Some(JoystickAction::StateChanged);
+                        return;
+                    }
+                    Key::Named(winit::keyboard::NamedKey::ArrowLeft) => {
+                        state.arrow_keys_mask |= 0b0100;
+                        state.joystick_direction = mask_to_direction(state.arrow_keys_mask);
+                        state.joystick_action_pending = Some(JoystickAction::StateChanged);
+                        return;
+                    }
+                    Key::Named(winit::keyboard::NamedKey::ArrowRight) => {
+                        state.arrow_keys_mask |= 0b1000;
+                        state.joystick_direction = mask_to_direction(state.arrow_keys_mask);
+                        state.joystick_action_pending = Some(JoystickAction::StateChanged);
+                        return;
+                    }
+                    Key::Named(winit::keyboard::NamedKey::Space) => {
+                        state.joystick_fire = true;
+                        state.joystick_action_pending = Some(JoystickAction::StateChanged);
+                        return;
+                    }
+                    _ => {}
+                }
+            } else {
+                match event.logical_key {
+                    Key::Named(winit::keyboard::NamedKey::ArrowUp) => state.arrow_keys_mask &= !0b0001,
+                    Key::Named(winit::keyboard::NamedKey::ArrowDown) => state.arrow_keys_mask &= !0b0010,
+                    Key::Named(winit::keyboard::NamedKey::ArrowLeft) => state.arrow_keys_mask &= !0b0100,
+                    Key::Named(winit::keyboard::NamedKey::ArrowRight) => state.arrow_keys_mask &= !0b1000,
+                    Key::Named(winit::keyboard::NamedKey::Space) => state.joystick_fire = false,
+                    _ => return,
+                }
+                state.joystick_direction = mask_to_direction(state.arrow_keys_mask);
+                state.joystick_action_pending = Some(JoystickAction::StateChanged);
+                return;
+            }
+        }
+
+        if event.state == ElementState::Pressed {
+            self.handle_key(
+                state,
+                &event.logical_key,
+                event.text.as_deref(),
+                pending_writes,
+                pending_register_writes,
+            );
         }
     }
 
