@@ -53,6 +53,7 @@ impl Default for SharedPerformanceMetrics {
 pub type SharedPerfState = Arc<Mutex<SharedPerformanceMetrics>>;
 
 pub struct DebugState {
+    pub current_tab: DebugTab,
     pub start_address: u16,
     pub selected_offset: Option<usize>,
     pub address_input: String,
@@ -73,6 +74,12 @@ pub enum DebugMode {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+pub enum DebugTab {
+    Debug,
+    Io,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum CassetteAction {
     OpenFile,
     TogglePlay,
@@ -87,6 +94,7 @@ impl Default for DebugState {
 impl DebugState {
     pub fn new() -> Self {
         Self {
+            current_tab: DebugTab::Debug,
             start_address: 0x1000,
             selected_offset: None,
             address_input: String::new(),

@@ -14,6 +14,7 @@ use super::{
     CassetteAction,
     DebugMode,
     DebugState,
+    DebugTab,
     PendingRegisterWrites,
     RegisterField,
     SharedMemory,
@@ -29,9 +30,13 @@ const SCALE: i32 = 1;
 
 const MARGIN: i32 = 8;
 const ROW_H: i32 = 10;
-const HEADER_Y: i32 = MARGIN + ROW_H;
+
+const TAB_BAR_H: i32 = 16;
+const CONTENT_START_Y: i32 = TAB_BAR_H + 4;
+
+const HEADER_Y: i32 = CONTENT_START_Y + ROW_H;
 const DATA_START_Y: i32 = HEADER_Y + ROW_H;
-const ADDRESS_BAR_Y: i32 = MARGIN;
+const ADDRESS_BAR_Y: i32 = CONTENT_START_Y;
 const ADDR_COL_X: i32 = MARGIN;
 const HEX_COL_X: i32 = ADDR_COL_X + 4 * CHAR_W * SCALE + 4;
 const ASCII_COL_X: i32 = HEX_COL_X + 48 * CHAR_W * SCALE + 8;
@@ -40,7 +45,7 @@ const COLS: usize = 16;
 const ROWS: usize = 16;
 
 const PIXEL_WIDTH: u32 = (ASCII_COL_X + 16 * CHAR_W * SCALE + MARGIN) as u32;
-const PIXEL_HEIGHT: u32 = 270;
+const PIXEL_HEIGHT: u32 = 300;
 
 const REG_LINE1_Y: i32 = DATA_START_Y + ROWS as i32 * ROW_H + ROW_H * 3;
 const REG_LINE2_Y: i32 = REG_LINE1_Y + ROW_H;
@@ -55,18 +60,27 @@ const REG_SR_X: i32 = REG_PC_X + 8 * CHAR_W * SCALE;
 const PERF_Y: i32 = REG_LINE2_Y + ROW_H + 4;
 const PERF_VALUE_COLOR: [u8; 4] = [140, 200, 140, 255];
 
-const CAS_DIVIDER_X: i32 = 312;
-const CAS_X: i32 = 328;
-const CAS_BTN_OPEN_X: i32 = CAS_X;
-const CAS_BTN_PLAY_X: i32 = CAS_X + 12 * CHAR_W * SCALE;
-const CAS_BTN_W: i32 = 11 * CHAR_W * SCALE;
-const CAS_BTN_PLAY_W: i32 = 6 * CHAR_W * SCALE;
-const CAS_BTN_H: i32 = ROW_H + 2;
-const CAS_BTN_Y: i32 = REG_LINE1_Y - 1;
+const TAB_DEBUG_X: i32 = MARGIN;
+const TAB_IO_X: i32 = TAB_DEBUG_X + 6 * CHAR_W * SCALE + 12;
+const TAB_W: i32 = 6 * CHAR_W * SCALE;
+const TAB_H: i32 = 12;
+const TAB_LABEL_Y: i32 = 2;
+
+const TAB_ACTIVE_BG: [u8; 4] = [50, 50, 60, 255];
+const TAB_INACTIVE_BG: [u8; 4] = [35, 35, 42, 255];
+const TAB_BORDER_COLOR: [u8; 4] = [70, 70, 70, 255];
+const TAB_TEXT_COLOR: [u8; 4] = [200, 200, 200, 255];
+
+const IO_SECTION_Y: i32 = CONTENT_START_Y + ROW_H;
+const IO_BTN_Y: i32 = IO_SECTION_Y + ROW_H + 4;
+const IO_BTN_H: i32 = ROW_H + 4;
+const IO_BTN_OPEN_X: i32 = MARGIN;
+const IO_BTN_OPEN_W: i32 = 16 * CHAR_W * SCALE;
+const IO_BTN_PLAY_X: i32 = IO_BTN_OPEN_X + IO_BTN_OPEN_W + 12;
+const IO_BTN_PLAY_W: i32 = 8 * CHAR_W * SCALE;
 
 const BTN_COLOR: [u8; 4] = [55, 55, 80, 255];
 const BTN_TEXT_COLOR: [u8; 4] = [220, 220, 220, 255];
-const DIVIDER_COLOR: [u8; 4] = [70, 70, 70, 255];
 
 const REG_VALUE_COLOR: [u8; 4] = [200, 200, 200, 255];
 const REG_LABEL_COLOR: [u8; 4] = [100, 100, 100, 255];
@@ -94,7 +108,7 @@ impl DebugWindow {
             return;
         }
 
-        let scale: f64 = 1.5;
+        let scale: f64 = 2.0;
         let width = PIXEL_WIDTH as f64 * scale;
         let height = PIXEL_HEIGHT as f64 * scale;
 
@@ -195,22 +209,37 @@ impl DebugWindow {
             return;
         };
 
-        let row = (py as i32 - DATA_START_Y) / ROW_H;
-        let col = (px as i32 - HEX_COL_X) / (3 * CHAR_W * SCALE);
-        if row >= 0 && row < ROWS as i32 && col >= 0 && col < COLS as i32 {
-            state.selected_offset = Some((row as usize) * COLS + col as usize);
+        if let Some(tab) = tab_at(px as i32, py as i32) {
+            if tab != state.current_tab {
+                state.current_tab = tab;
+                state.mode = DebugMode::Browse;
+                state.address_input.clear();
+                state.edit_byte_input.clear();
+            }
             return;
         }
 
-        if py as i32 >= REG_LINE1_Y
-            && (py as i32) < REG_LINE1_Y + ROW_H
-            && let Some(field) = reg_field_at_x(px as i32)
-        {
-            state.start_register_edit(field);
-        }
+        match state.current_tab {
+            DebugTab::Debug => {
+                let row = (py as i32 - DATA_START_Y) / ROW_H;
+                let col = (px as i32 - HEX_COL_X) / (3 * CHAR_W * SCALE);
+                if row >= 0 && row < ROWS as i32 && col >= 0 && col < COLS as i32 {
+                    state.selected_offset = Some((row as usize) * COLS + col as usize);
+                    return;
+                }
 
-        if let Some(action) = cass_button_at(px as i32, py as i32) {
-            state.cassette_action_pending = Some(action);
+                if py as i32 >= REG_LINE1_Y
+                    && (py as i32) < REG_LINE1_Y + ROW_H
+                    && let Some(field) = reg_field_at_x(px as i32)
+                {
+                    state.start_register_edit(field);
+                }
+            }
+            DebugTab::Io => {
+                if let Some(action) = io_button_at(px as i32, py as i32) {
+                    state.cassette_action_pending = Some(action);
+                }
+            }
         }
     }
 
@@ -368,80 +397,12 @@ impl DebugWindow {
         let frame = pixels.frame_mut();
         fill_rect(frame, PIXEL_WIDTH as usize, PIXEL_HEIGHT as usize, BG_COLOR);
 
-        let mem = match memory.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        draw_tab_bar(frame, state.current_tab);
 
-        draw_address_bar(frame, state);
-
-        for col in 0..COLS {
-            let cx = HEX_COL_X + col as i32 * 3 * CHAR_W * SCALE;
-            let h = if col < 10 {
-                (b'0' + col as u8) as char
-            } else {
-                (b'A' + (col as u8 - 10)) as char
-            };
-            draw_char(frame, cx, HEADER_Y, h, HEADER_COLOR);
+        match state.current_tab {
+            DebugTab::Debug => draw_debug_tab(frame, state, memory, registers, perf),
+            DebugTab::Io => draw_io_tab(frame, state),
         }
-
-        for row in 0..ROWS {
-            let y = DATA_START_Y + row as i32 * ROW_H;
-            let addr = state.start_address.wrapping_add((row * COLS) as u16);
-            let addr_str = format!("{:04X}", addr);
-            draw_str(frame, ADDR_COL_X, y, &addr_str, ADDR_COLOR);
-
-            for col in 0..COLS {
-                let offset = row * COLS + col;
-                let byte_addr = addr.wrapping_add(col as u16);
-                let byte = mem[byte_addr as usize];
-                let cx = HEX_COL_X + col as i32 * 3 * CHAR_W * SCALE;
-
-                let highlight = state.selected_offset == Some(offset);
-                if highlight {
-                    let px = cx as usize;
-                    let py = y as usize;
-                    for dy in 0..CHAR_H as usize * SCALE as usize {
-                        for dx in 0..(2 * CHAR_W as usize * SCALE as usize) {
-                            let idx = ((py + dy) * PIXEL_WIDTH as usize + px + dx) * 4;
-                            if idx + 3 < frame.len() {
-                                frame[idx] = HIGHLIGHT_COLOR[0];
-                                frame[idx + 1] = HIGHLIGHT_COLOR[1];
-                                frame[idx + 2] = HIGHLIGHT_COLOR[2];
-                                frame[idx + 3] = HIGHLIGHT_COLOR[3];
-                            }
-                        }
-                    }
-                }
-
-                let byte_str = format!("{:02X}", byte);
-                let color = if highlight { [255u8, 255, 120, 255] } else { HEX_COLOR };
-                draw_str(frame, cx, y, &byte_str, color);
-
-                let ascii_char = if (0x20..=0x7E).contains(&byte) {
-                    byte as char
-                } else {
-                    '.'
-                };
-                let ax = ASCII_COL_X + col as i32 * CHAR_W * SCALE;
-                draw_char(frame, ax, y, ascii_char, ASCII_COLOR);
-            }
-        }
-
-        draw_status_line(frame, state);
-
-        let regs = match registers.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        draw_registers(frame, state, &regs);
-        drop(regs);
-
-        draw_cassette_controls(frame, state);
-
-        draw_performance_metrics(frame, perf);
-
-        drop(mem);
 
         if let Err(err) = pixels.render() {
             error!("debug pixels render failed: {err}");
@@ -453,6 +414,170 @@ impl DebugWindow {
             window.request_redraw();
         }
     }
+}
+
+fn draw_tab_bar(frame: &mut [u8], active_tab: DebugTab) {
+    for y in 0..TAB_BAR_H {
+        for x in 0..PIXEL_WIDTH as i32 {
+            let idx = (y as usize * PIXEL_WIDTH as usize + x as usize) * 4;
+            if idx + 3 < frame.len() {
+                frame[idx] = 25;
+                frame[idx + 1] = 25;
+                frame[idx + 2] = 30;
+                frame[idx + 3] = 255;
+            }
+        }
+    }
+
+    for y in (TAB_BAR_H - 1)..TAB_BAR_H {
+        for x in 0..PIXEL_WIDTH as i32 {
+            let idx = (y as usize * PIXEL_WIDTH as usize + x as usize) * 4;
+            if idx + 3 < frame.len() {
+                frame[idx] = TAB_BORDER_COLOR[0];
+                frame[idx + 1] = TAB_BORDER_COLOR[1];
+                frame[idx + 2] = TAB_BORDER_COLOR[2];
+                frame[idx + 3] = TAB_BORDER_COLOR[3];
+            }
+        }
+    }
+
+    let tabs = [(DebugTab::Debug, "Debug", TAB_DEBUG_X), (DebugTab::Io, "I/O", TAB_IO_X)];
+    for &(tab, label, tx) in &tabs {
+        let bg = if active_tab == tab {
+            TAB_ACTIVE_BG
+        } else {
+            TAB_INACTIVE_BG
+        };
+        fill_rect_at(frame, PIXEL_WIDTH as usize, tx, 0, TAB_W, TAB_H, bg);
+        let text_color = if active_tab == tab {
+            [255u8, 255, 255, 255]
+        } else {
+            TAB_TEXT_COLOR
+        };
+        draw_str(frame, tx + CHAR_W, TAB_LABEL_Y, label, text_color);
+    }
+}
+
+fn draw_debug_tab(
+    frame: &mut [u8],
+    state: &DebugState,
+    memory: &SharedMemory,
+    registers: &SharedRegistersState,
+    perf: &SharedPerfState,
+) {
+    let mem = match memory.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+
+    draw_address_bar(frame, state);
+
+    for col in 0..COLS {
+        let cx = HEX_COL_X + col as i32 * 3 * CHAR_W * SCALE;
+        let h = if col < 10 {
+            (b'0' + col as u8) as char
+        } else {
+            (b'A' + (col as u8 - 10)) as char
+        };
+        draw_char(frame, cx, HEADER_Y, h, HEADER_COLOR);
+    }
+
+    for row in 0..ROWS {
+        let y = DATA_START_Y + row as i32 * ROW_H;
+        let addr = state.start_address.wrapping_add((row * COLS) as u16);
+        let addr_str = format!("{:04X}", addr);
+        draw_str(frame, ADDR_COL_X, y, &addr_str, ADDR_COLOR);
+
+        for col in 0..COLS {
+            let offset = row * COLS + col;
+            let byte_addr = addr.wrapping_add(col as u16);
+            let byte = mem[byte_addr as usize];
+            let cx = HEX_COL_X + col as i32 * 3 * CHAR_W * SCALE;
+
+            let highlight = state.selected_offset == Some(offset);
+            if highlight {
+                let px = cx as usize;
+                let py = y as usize;
+                for dy in 0..CHAR_H as usize * SCALE as usize {
+                    for dx in 0..(2 * CHAR_W as usize * SCALE as usize) {
+                        let idx = ((py + dy) * PIXEL_WIDTH as usize + px + dx) * 4;
+                        if idx + 3 < frame.len() {
+                            frame[idx] = HIGHLIGHT_COLOR[0];
+                            frame[idx + 1] = HIGHLIGHT_COLOR[1];
+                            frame[idx + 2] = HIGHLIGHT_COLOR[2];
+                            frame[idx + 3] = HIGHLIGHT_COLOR[3];
+                        }
+                    }
+                }
+            }
+
+            let byte_str = format!("{:02X}", byte);
+            let color = if highlight { [255u8, 255, 120, 255] } else { HEX_COLOR };
+            draw_str(frame, cx, y, &byte_str, color);
+
+            let ascii_char = if (0x20..=0x7E).contains(&byte) {
+                byte as char
+            } else {
+                '.'
+            };
+            let ax = ASCII_COL_X + col as i32 * CHAR_W * SCALE;
+            draw_char(frame, ax, y, ascii_char, ASCII_COLOR);
+        }
+    }
+
+    draw_status_line(frame, state);
+
+    let regs = match registers.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    draw_registers(frame, state, &regs);
+    drop(regs);
+
+    draw_performance_metrics(frame, perf);
+
+    drop(mem);
+}
+
+fn draw_io_tab(frame: &mut [u8], state: &DebugState) {
+    draw_str(frame, MARGIN, IO_SECTION_Y, "Cassette Tape", HEADER_COLOR);
+
+    fill_rect_at(
+        frame,
+        PIXEL_WIDTH as usize,
+        IO_BTN_OPEN_X,
+        IO_BTN_Y,
+        IO_BTN_OPEN_W,
+        IO_BTN_H,
+        BTN_COLOR,
+    );
+    draw_str(frame, IO_BTN_OPEN_X + CHAR_W, IO_BTN_Y + 2, "Open File", BTN_TEXT_COLOR);
+
+    fill_rect_at(
+        frame,
+        PIXEL_WIDTH as usize,
+        IO_BTN_PLAY_X,
+        IO_BTN_Y,
+        IO_BTN_PLAY_W,
+        IO_BTN_H,
+        BTN_COLOR,
+    );
+    let play_text = if state.cassette_playing { "Stop" } else { "Play" };
+    draw_str(frame, IO_BTN_PLAY_X + CHAR_W, IO_BTN_Y + 2, play_text, BTN_TEXT_COLOR);
+
+    let info_y = IO_BTN_Y + IO_BTN_H + ROW_H;
+    if let Some(ref path) = state.cassette_file {
+        let fname = std::path::Path::new(path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(path);
+        draw_str(frame, MARGIN, info_y, fname, [140u8, 160, 200, 255]);
+    } else {
+        draw_str(frame, MARGIN, info_y, "(no file)", HEADER_COLOR);
+    }
+
+    let status = if state.cassette_playing { "Playing" } else { "Stopped" };
+    draw_str(frame, MARGIN, info_y + ROW_H, status, PERF_VALUE_COLOR);
 }
 
 fn draw_address_bar(frame: &mut [u8], state: &DebugState) {
@@ -717,54 +842,6 @@ fn draw_registers(frame: &mut [u8], state: &DebugState, regs: &super::SharedRegi
     }
 }
 
-fn draw_cassette_controls(frame: &mut [u8], state: &DebugState) {
-    for row in REG_LINE1_Y..PERF_Y {
-        draw_char(frame, CAS_DIVIDER_X, row, '|', DIVIDER_COLOR);
-    }
-
-    fill_rect_at(
-        frame,
-        PIXEL_WIDTH as usize,
-        CAS_BTN_OPEN_X,
-        CAS_BTN_Y,
-        CAS_BTN_W,
-        CAS_BTN_H,
-        BTN_COLOR,
-    );
-    draw_str(
-        frame,
-        CAS_BTN_OPEN_X + CHAR_W,
-        CAS_BTN_Y + 1,
-        "Open File",
-        BTN_TEXT_COLOR,
-    );
-
-    fill_rect_at(
-        frame,
-        PIXEL_WIDTH as usize,
-        CAS_BTN_PLAY_X,
-        CAS_BTN_Y,
-        CAS_BTN_PLAY_W,
-        CAS_BTN_H,
-        BTN_COLOR,
-    );
-    let play_text = if state.cassette_playing { "Stop" } else { "Play" };
-    draw_str(frame, CAS_BTN_PLAY_X + CHAR_W, CAS_BTN_Y + 1, play_text, BTN_TEXT_COLOR);
-
-    if let Some(ref path) = state.cassette_file {
-        let fname = std::path::Path::new(path)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(path);
-        draw_str(frame, CAS_X, REG_LINE2_Y, fname, [140u8, 160, 200, 255]);
-    } else {
-        draw_str(frame, CAS_X, REG_LINE2_Y, "(no file)", HEADER_COLOR);
-    }
-
-    let status = if state.cassette_playing { "Playing" } else { "Stopped" };
-    draw_str(frame, CAS_X, REG_LINE2_Y + ROW_H, status, PERF_VALUE_COLOR);
-}
-
 fn reg_field_at_x(px: i32) -> Option<RegisterField> {
     let check = |x: i32, w_chars: i32| px >= x && px < x + w_chars * CHAR_W * SCALE;
     if check(REG_A_X, 4) {
@@ -784,16 +861,30 @@ fn reg_field_at_x(px: i32) -> Option<RegisterField> {
     }
 }
 
-fn cass_button_at(px: i32, py: i32) -> Option<CassetteAction> {
-    if (CAS_BTN_Y..CAS_BTN_Y + CAS_BTN_H).contains(&py) {
-        if (CAS_BTN_OPEN_X..CAS_BTN_OPEN_X + CAS_BTN_W).contains(&px) {
-            return Some(CassetteAction::OpenFile);
-        }
-        if (CAS_BTN_PLAY_X..CAS_BTN_PLAY_X + CAS_BTN_PLAY_W).contains(&px) {
-            return Some(CassetteAction::TogglePlay);
-        }
+fn tab_at(px: i32, py: i32) -> Option<DebugTab> {
+    if !(0..TAB_BAR_H).contains(&py) {
+        return None;
     }
-    None
+    if (TAB_DEBUG_X..TAB_DEBUG_X + TAB_W).contains(&px) {
+        Some(DebugTab::Debug)
+    } else if (TAB_IO_X..TAB_IO_X + TAB_W).contains(&px) {
+        Some(DebugTab::Io)
+    } else {
+        None
+    }
+}
+
+fn io_button_at(px: i32, py: i32) -> Option<CassetteAction> {
+    if !(IO_BTN_Y..IO_BTN_Y + IO_BTN_H).contains(&py) {
+        return None;
+    }
+    if (IO_BTN_OPEN_X..IO_BTN_OPEN_X + IO_BTN_OPEN_W).contains(&px) {
+        Some(CassetteAction::OpenFile)
+    } else if (IO_BTN_PLAY_X..IO_BTN_PLAY_X + IO_BTN_PLAY_W).contains(&px) {
+        Some(CassetteAction::TogglePlay)
+    } else {
+        None
+    }
 }
 
 fn draw_performance_metrics(frame: &mut [u8], perf: &SharedPerfState) {
