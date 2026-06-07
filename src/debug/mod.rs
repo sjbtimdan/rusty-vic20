@@ -63,6 +63,9 @@ pub struct DebugState {
     pub cassette_playing: bool,
     pub cassette_file: Option<String>,
     pub cassette_action_pending: Option<CassetteAction>,
+    pub joystick_direction: Option<JoystickDirection>,
+    pub joystick_fire: bool,
+    pub use_arrow_keys: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -77,6 +80,15 @@ pub enum DebugMode {
 pub enum DebugTab {
     Debug,
     Io,
+    Joystick,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum JoystickDirection {
+    Up,
+    Down,
+    Left,
+    Right,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -104,6 +116,9 @@ impl DebugState {
             cassette_playing: false,
             cassette_file: None,
             cassette_action_pending: None,
+            joystick_direction: None,
+            joystick_fire: false,
+            use_arrow_keys: false,
         }
     }
 

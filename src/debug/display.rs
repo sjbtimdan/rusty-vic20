@@ -15,6 +15,7 @@ use super::{
     DebugMode,
     DebugState,
     DebugTab,
+    JoystickDirection,
     PendingRegisterWrites,
     RegisterField,
     SharedMemory,
@@ -62,6 +63,7 @@ const PERF_VALUE_COLOR: [u8; 4] = [140, 200, 140, 255];
 
 const TAB_DEBUG_X: i32 = MARGIN;
 const TAB_IO_X: i32 = TAB_DEBUG_X + 6 * CHAR_W * SCALE + 12;
+const TAB_JOYSTICK_X: i32 = TAB_IO_X + 6 * CHAR_W * SCALE + 12;
 const TAB_W: i32 = 6 * CHAR_W * SCALE;
 const TAB_H: i32 = 12;
 const TAB_LABEL_Y: i32 = 2;
@@ -78,6 +80,40 @@ const IO_BTN_OPEN_X: i32 = MARGIN;
 const IO_BTN_OPEN_W: i32 = 16 * CHAR_W * SCALE;
 const IO_BTN_PLAY_X: i32 = IO_BTN_OPEN_X + IO_BTN_OPEN_W + 12;
 const IO_BTN_PLAY_W: i32 = 8 * CHAR_W * SCALE;
+
+const JOY_CENTER_X: i32 = PIXEL_WIDTH as i32 / 2;
+const JOY_CENTER_Y: i32 = 110;
+const JOY_PAD_SIZE: i32 = 16;
+const JOY_GAP: i32 = 2;
+const JOY_HS: i32 = JOY_PAD_SIZE / 2;
+
+const JOY_CENTER_COLOR: [u8; 4] = [60, 60, 80, 255];
+const JOY_PAD_COLOR: [u8; 4] = [50, 50, 70, 255];
+const JOY_PAD_ACTIVE_COLOR: [u8; 4] = [90, 90, 140, 255];
+const JOY_ARROW_COLOR: [u8; 4] = [200, 200, 200, 255];
+const JOY_FIRE_COLOR: [u8; 4] = [160, 50, 40, 255];
+const JOY_FIRE_ACTIVE_COLOR: [u8; 4] = [220, 70, 50, 255];
+const JOY_FIRE_TEXT_COLOR: [u8; 4] = [255, 255, 255, 255];
+
+const JOY_UP_X: i32 = JOY_CENTER_X - JOY_HS;
+const JOY_UP_Y: i32 = JOY_CENTER_Y - JOY_HS - JOY_PAD_SIZE - JOY_GAP;
+const JOY_DOWN_X: i32 = JOY_CENTER_X - JOY_HS;
+const JOY_DOWN_Y: i32 = JOY_CENTER_Y + JOY_HS + JOY_GAP;
+const JOY_LEFT_X: i32 = JOY_CENTER_X - JOY_HS - JOY_PAD_SIZE - JOY_GAP;
+const JOY_LEFT_Y: i32 = JOY_CENTER_Y - JOY_HS;
+const JOY_RIGHT_X: i32 = JOY_CENTER_X + JOY_HS + JOY_GAP;
+const JOY_RIGHT_Y: i32 = JOY_CENTER_Y - JOY_HS;
+const JOY_PAD_X: i32 = JOY_CENTER_X - JOY_HS;
+const JOY_PAD_Y: i32 = JOY_CENTER_Y - JOY_HS;
+
+const JOY_FIRE_X: i32 = 380;
+const JOY_FIRE_Y: i32 = JOY_CENTER_Y - 11;
+const JOY_FIRE_W: i32 = 80;
+const JOY_FIRE_H: i32 = 22;
+
+const JOY_CHECKBOX_X: i32 = MARGIN;
+const JOY_CHECKBOX_Y: i32 = 185;
+const JOY_CHECKBOX_SIZE: i32 = 12;
 
 const BTN_COLOR: [u8; 4] = [55, 55, 80, 255];
 const BTN_TEXT_COLOR: [u8; 4] = [220, 220, 220, 255];
@@ -238,6 +274,46 @@ impl DebugWindow {
             DebugTab::Io => {
                 if let Some(action) = io_button_at(px as i32, py as i32) {
                     state.cassette_action_pending = Some(action);
+                }
+            }
+            DebugTab::Joystick => {
+                // Check direction pads
+                let dirs = [
+                    (JOY_UP_X, JOY_UP_Y, JoystickDirection::Up),
+                    (JOY_DOWN_X, JOY_DOWN_Y, JoystickDirection::Down),
+                    (JOY_LEFT_X, JOY_LEFT_Y, JoystickDirection::Left),
+                    (JOY_RIGHT_X, JOY_RIGHT_Y, JoystickDirection::Right),
+                ];
+                for &(x, y, dir) in &dirs {
+                    if px as i32 >= x
+                        && (px as i32) < x + JOY_PAD_SIZE
+                        && py as i32 >= y
+                        && (py as i32) < y + JOY_PAD_SIZE
+                    {
+                        state.joystick_direction = if state.joystick_direction == Some(dir) {
+                            None
+                        } else {
+                            Some(dir)
+                        };
+                        return;
+                    }
+                }
+                // Fire button
+                if px as i32 >= JOY_FIRE_X
+                    && (px as i32) < JOY_FIRE_X + JOY_FIRE_W
+                    && py as i32 >= JOY_FIRE_Y
+                    && (py as i32) < JOY_FIRE_Y + JOY_FIRE_H
+                {
+                    state.joystick_fire = !state.joystick_fire;
+                    return;
+                }
+                // Checkbox (including text label)
+                if px as i32 >= JOY_CHECKBOX_X
+                    && (px as i32) < JOY_CHECKBOX_X + 220
+                    && py as i32 >= JOY_CHECKBOX_Y
+                    && (py as i32) < JOY_CHECKBOX_Y + JOY_CHECKBOX_SIZE
+                {
+                    state.use_arrow_keys = !state.use_arrow_keys;
                 }
             }
         }
@@ -402,6 +478,7 @@ impl DebugWindow {
         match state.current_tab {
             DebugTab::Debug => draw_debug_tab(frame, state, memory, registers, perf),
             DebugTab::Io => draw_io_tab(frame, state),
+            DebugTab::Joystick => draw_joystick_tab(frame, state),
         }
 
         if let Err(err) = pixels.render() {
@@ -441,7 +518,11 @@ fn draw_tab_bar(frame: &mut [u8], active_tab: DebugTab) {
         }
     }
 
-    let tabs = [(DebugTab::Debug, "Debug", TAB_DEBUG_X), (DebugTab::Io, "I/O", TAB_IO_X)];
+    let tabs = [
+        (DebugTab::Debug, "Debug", TAB_DEBUG_X),
+        (DebugTab::Io, "I/O", TAB_IO_X),
+        (DebugTab::Joystick, "Joystk", TAB_JOYSTICK_X),
+    ];
     for &(tab, label, tx) in &tabs {
         let bg = if active_tab == tab {
             TAB_ACTIVE_BG
@@ -578,6 +659,107 @@ fn draw_io_tab(frame: &mut [u8], state: &DebugState) {
 
     let status = if state.cassette_playing { "Playing" } else { "Stopped" };
     draw_str(frame, MARGIN, info_y + ROW_H, status, PERF_VALUE_COLOR);
+}
+
+fn draw_joystick_tab(frame: &mut [u8], state: &DebugState) {
+    draw_str(frame, MARGIN, CONTENT_START_Y + ROW_H, "Joystick", HEADER_COLOR);
+
+    let active_dir = state.joystick_direction;
+
+    // Center pad
+    fill_rect_at(
+        frame,
+        PIXEL_WIDTH as usize,
+        JOY_PAD_X,
+        JOY_PAD_Y,
+        JOY_PAD_SIZE,
+        JOY_PAD_SIZE,
+        JOY_CENTER_COLOR,
+    );
+
+    // Direction pads with arrows
+    let dirs = [
+        (JOY_UP_X, JOY_UP_Y, JoystickDirection::Up, '^'),
+        (JOY_DOWN_X, JOY_DOWN_Y, JoystickDirection::Down, 'v'),
+        (JOY_LEFT_X, JOY_LEFT_Y, JoystickDirection::Left, '<'),
+        (JOY_RIGHT_X, JOY_RIGHT_Y, JoystickDirection::Right, '>'),
+    ];
+
+    for &(x, y, dir, arrow) in &dirs {
+        let color = if active_dir == Some(dir) {
+            JOY_PAD_ACTIVE_COLOR
+        } else {
+            JOY_PAD_COLOR
+        };
+        fill_rect_at(frame, PIXEL_WIDTH as usize, x, y, JOY_PAD_SIZE, JOY_PAD_SIZE, color);
+        let cx = x + (JOY_PAD_SIZE - CHAR_W) / 2;
+        let cy = y + (JOY_PAD_SIZE - CHAR_H) / 2;
+        draw_char(frame, cx, cy, arrow, JOY_ARROW_COLOR);
+    }
+
+    // Fire button
+    let fire_color = if state.joystick_fire {
+        JOY_FIRE_ACTIVE_COLOR
+    } else {
+        JOY_FIRE_COLOR
+    };
+    fill_rect_at(
+        frame,
+        PIXEL_WIDTH as usize,
+        JOY_FIRE_X,
+        JOY_FIRE_Y,
+        JOY_FIRE_W,
+        JOY_FIRE_H,
+        fire_color,
+    );
+    let fire_text_x = JOY_FIRE_X + (JOY_FIRE_W - 4 * CHAR_W) / 2;
+    let fire_text_y = JOY_FIRE_Y + (JOY_FIRE_H - CHAR_H) / 2;
+    draw_str(frame, fire_text_x, fire_text_y, "FIRE", JOY_FIRE_TEXT_COLOR);
+
+    // Arrow keys checkbox
+    draw_checkbox(frame, JOY_CHECKBOX_X, JOY_CHECKBOX_Y, state.use_arrow_keys);
+    draw_str(
+        frame,
+        JOY_CHECKBOX_X + JOY_CHECKBOX_SIZE + 6,
+        JOY_CHECKBOX_Y + 2,
+        "Arrow keys as joystick",
+        BTN_TEXT_COLOR,
+    );
+}
+
+fn draw_checkbox(frame: &mut [u8], x: i32, y: i32, checked: bool) {
+    let color = [180u8, 180, 180, 255];
+    let size = JOY_CHECKBOX_SIZE;
+    // Top and bottom borders
+    for dx in 0..size {
+        set_pixel(frame, x + dx, y, color);
+        set_pixel(frame, x + dx, y + size - 1, color);
+    }
+    // Left and right borders
+    for dy in 0..size {
+        set_pixel(frame, x, y + dy, color);
+        set_pixel(frame, x + size - 1, y + dy, color);
+    }
+    // Fill interior if checked
+    if checked {
+        for dy in 2..size - 2 {
+            for dx in 2..size - 2 {
+                set_pixel(frame, x + dx, y + dy, color);
+            }
+        }
+    }
+}
+
+fn set_pixel(frame: &mut [u8], x: i32, y: i32, color: [u8; 4]) {
+    if x >= 0 && y >= 0 && (x as u32) < PIXEL_WIDTH {
+        let idx = (y as usize * PIXEL_WIDTH as usize + x as usize) * 4;
+        if idx + 3 < frame.len() {
+            frame[idx] = color[0];
+            frame[idx + 1] = color[1];
+            frame[idx + 2] = color[2];
+            frame[idx + 3] = color[3];
+        }
+    }
 }
 
 fn draw_address_bar(frame: &mut [u8], state: &DebugState) {
@@ -869,6 +1051,8 @@ fn tab_at(px: i32, py: i32) -> Option<DebugTab> {
         Some(DebugTab::Debug)
     } else if (TAB_IO_X..TAB_IO_X + TAB_W).contains(&px) {
         Some(DebugTab::Io)
+    } else if (TAB_JOYSTICK_X..TAB_JOYSTICK_X + TAB_W).contains(&px) {
+        Some(DebugTab::Joystick)
     } else {
         None
     }
