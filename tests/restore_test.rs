@@ -1,7 +1,7 @@
 mod common;
 
 use common::screen_code;
-use rusty_vic20::{addressable::Addressable, cpu::instruction_executor, ui::keyboard::key::Key};
+use rusty_vic20::{addressable::Addressable, ui::keyboard::key::Key};
 use std::collections::HashSet;
 
 fn run_boot_with_keyboard() -> rusty_vic20::runner::EmulatorRunner {
