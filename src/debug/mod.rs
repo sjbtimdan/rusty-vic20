@@ -86,9 +86,13 @@ pub enum DebugTab {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum JoystickDirection {
     Up,
-    Down,
-    Left,
+    UpRight,
     Right,
+    DownRight,
+    Down,
+    DownLeft,
+    Left,
+    UpLeft,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

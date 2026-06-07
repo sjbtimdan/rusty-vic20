@@ -62,9 +62,9 @@ const PERF_Y: i32 = REG_LINE2_Y + ROW_H + 4;
 const PERF_VALUE_COLOR: [u8; 4] = [140, 200, 140, 255];
 
 const TAB_DEBUG_X: i32 = MARGIN;
-const TAB_IO_X: i32 = TAB_DEBUG_X + 6 * CHAR_W * SCALE + 12;
-const TAB_JOYSTICK_X: i32 = TAB_IO_X + 6 * CHAR_W * SCALE + 12;
-const TAB_W: i32 = 6 * CHAR_W * SCALE;
+const TAB_IO_X: i32 = TAB_DEBUG_X + TAB_W + 12;
+const TAB_JOYSTICK_X: i32 = TAB_IO_X + TAB_W + 12;
+const TAB_W: i32 = 10 * CHAR_W * SCALE;
 const TAB_H: i32 = 12;
 const TAB_LABEL_Y: i32 = 2;
 
@@ -85,31 +85,42 @@ const JOY_CENTER_X: i32 = PIXEL_WIDTH as i32 / 2;
 const JOY_CENTER_Y: i32 = 110;
 const JOY_PAD_SIZE: i32 = 16;
 const JOY_GAP: i32 = 2;
-const JOY_HS: i32 = JOY_PAD_SIZE / 2;
+const JOY_STEP: i32 = JOY_PAD_SIZE + JOY_GAP;
 
-const JOY_CENTER_COLOR: [u8; 4] = [60, 60, 80, 255];
 const JOY_PAD_COLOR: [u8; 4] = [50, 50, 70, 255];
 const JOY_PAD_ACTIVE_COLOR: [u8; 4] = [90, 90, 140, 255];
 const JOY_ARROW_COLOR: [u8; 4] = [200, 200, 200, 255];
 const JOY_FIRE_COLOR: [u8; 4] = [160, 50, 40, 255];
 const JOY_FIRE_ACTIVE_COLOR: [u8; 4] = [220, 70, 50, 255];
-const JOY_FIRE_TEXT_COLOR: [u8; 4] = [255, 255, 255, 255];
 
-const JOY_UP_X: i32 = JOY_CENTER_X - JOY_HS;
-const JOY_UP_Y: i32 = JOY_CENTER_Y - JOY_HS - JOY_PAD_SIZE - JOY_GAP;
-const JOY_DOWN_X: i32 = JOY_CENTER_X - JOY_HS;
-const JOY_DOWN_Y: i32 = JOY_CENTER_Y + JOY_HS + JOY_GAP;
-const JOY_LEFT_X: i32 = JOY_CENTER_X - JOY_HS - JOY_PAD_SIZE - JOY_GAP;
-const JOY_LEFT_Y: i32 = JOY_CENTER_Y - JOY_HS;
-const JOY_RIGHT_X: i32 = JOY_CENTER_X + JOY_HS + JOY_GAP;
-const JOY_RIGHT_Y: i32 = JOY_CENTER_Y - JOY_HS;
-const JOY_PAD_X: i32 = JOY_CENTER_X - JOY_HS;
-const JOY_PAD_Y: i32 = JOY_CENTER_Y - JOY_HS;
+type JoyCell = (Option<JoystickDirection>, char);
 
-const JOY_FIRE_X: i32 = 380;
-const JOY_FIRE_Y: i32 = JOY_CENTER_Y - 11;
-const JOY_FIRE_W: i32 = 80;
-const JOY_FIRE_H: i32 = 22;
+// 3x3 grid: (direction or None for fire, arrow glyph)
+// Row 0: NW N NE, Row 1: W FIRE E, Row 2: SW S SE
+const JOY_GRID: [[JoyCell; 3]; 3] = [
+    [
+        (Some(JoystickDirection::UpLeft), '\\'),
+        (Some(JoystickDirection::Up), '^'),
+        (Some(JoystickDirection::UpRight), '/'),
+    ],
+    [
+        (Some(JoystickDirection::Left), '<'),
+        (None, 'o'),
+        (Some(JoystickDirection::Right), '>'),
+    ],
+    [
+        (Some(JoystickDirection::DownLeft), '/'),
+        (Some(JoystickDirection::Down), 'v'),
+        (Some(JoystickDirection::DownRight), '\\'),
+    ],
+];
+
+fn joy_cell_x(col: usize) -> i32 {
+    JOY_CENTER_X + (col as i32 - 1) * JOY_STEP
+}
+fn joy_cell_y(row: usize) -> i32 {
+    JOY_CENTER_Y + (row as i32 - 1) * JOY_STEP
+}
 
 const JOY_CHECKBOX_X: i32 = MARGIN;
 const JOY_CHECKBOX_Y: i32 = 185;
@@ -136,6 +147,7 @@ pub struct DebugWindow {
     window: Option<Arc<Window>>,
     pixels: Option<Pixels<'static>>,
     cursor_pos: Option<(f64, f64)>,
+    mouse_down: bool,
 }
 
 impl DebugWindow {
@@ -207,13 +219,19 @@ impl DebugWindow {
             WindowEvent::RedrawRequested => self.draw(state, memory, registers, perf),
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor_pos = Some((position.x, position.y));
+                if self.mouse_down {
+                    self.update_joystick_from_cursor(state);
+                    if let Some(window) = self.window.as_ref() {
+                        window.request_redraw();
+                    }
+                }
             }
             WindowEvent::MouseInput {
-                state: ElementState::Released,
+                state: element_state,
                 button: MouseButton::Left,
                 ..
             } => {
-                self.handle_mouse_click(state);
+                self.handle_mouse(state, element_state);
                 if let Some(window) = self.window.as_ref() {
                     window.request_redraw();
                 }
@@ -234,7 +252,7 @@ impl DebugWindow {
         }
     }
 
-    fn handle_mouse_click(&self, state: &mut DebugState) {
+    fn handle_mouse(&mut self, state: &mut DebugState, element_state: ElementState) {
         let Some((cursor_x, cursor_y)) = self.cursor_pos else {
             return;
         };
@@ -245,78 +263,125 @@ impl DebugWindow {
             return;
         };
 
-        if let Some(tab) = tab_at(px as i32, py as i32) {
-            if tab != state.current_tab {
-                state.current_tab = tab;
-                state.mode = DebugMode::Browse;
-                state.address_input.clear();
-                state.edit_byte_input.clear();
-            }
-            return;
-        }
-
-        match state.current_tab {
-            DebugTab::Debug => {
-                let row = (py as i32 - DATA_START_Y) / ROW_H;
-                let col = (px as i32 - HEX_COL_X) / (3 * CHAR_W * SCALE);
-                if row >= 0 && row < ROWS as i32 && col >= 0 && col < COLS as i32 {
-                    state.selected_offset = Some((row as usize) * COLS + col as usize);
-                    return;
-                }
-
-                if py as i32 >= REG_LINE1_Y
-                    && (py as i32) < REG_LINE1_Y + ROW_H
-                    && let Some(field) = reg_field_at_x(px as i32)
-                {
-                    state.start_register_edit(field);
-                }
-            }
-            DebugTab::Io => {
-                if let Some(action) = io_button_at(px as i32, py as i32) {
-                    state.cassette_action_pending = Some(action);
-                }
-            }
-            DebugTab::Joystick => {
-                // Check direction pads
-                let dirs = [
-                    (JOY_UP_X, JOY_UP_Y, JoystickDirection::Up),
-                    (JOY_DOWN_X, JOY_DOWN_Y, JoystickDirection::Down),
-                    (JOY_LEFT_X, JOY_LEFT_Y, JoystickDirection::Left),
-                    (JOY_RIGHT_X, JOY_RIGHT_Y, JoystickDirection::Right),
-                ];
-                for &(x, y, dir) in &dirs {
-                    if px as i32 >= x
-                        && (px as i32) < x + JOY_PAD_SIZE
-                        && py as i32 >= y
-                        && (py as i32) < y + JOY_PAD_SIZE
-                    {
-                        state.joystick_direction = if state.joystick_direction == Some(dir) {
-                            None
-                        } else {
-                            Some(dir)
-                        };
-                        return;
+        match element_state {
+            ElementState::Pressed => {
+                self.mouse_down = true;
+                if state.current_tab == DebugTab::Joystick {
+                    // 3x3 direction grid
+                    for (row, cells) in JOY_GRID.iter().enumerate() {
+                        for (col, &(dir, _)) in cells.iter().enumerate() {
+                            let x = joy_cell_x(col);
+                            let y = joy_cell_y(row);
+                            if px as i32 >= x
+                                && (px as i32) < x + JOY_PAD_SIZE
+                                && py as i32 >= y
+                                && (py as i32) < y + JOY_PAD_SIZE
+                            {
+                                match dir {
+                                    Some(d) => {
+                                        state.joystick_direction = Some(d);
+                                        state.joystick_fire = false;
+                                    }
+                                    None => {
+                                        state.joystick_direction = None;
+                                        state.joystick_fire = true;
+                                    }
+                                }
+                                return;
+                            }
+                        }
                     }
                 }
-                // Fire button
-                if px as i32 >= JOY_FIRE_X
-                    && (px as i32) < JOY_FIRE_X + JOY_FIRE_W
-                    && py as i32 >= JOY_FIRE_Y
-                    && (py as i32) < JOY_FIRE_Y + JOY_FIRE_H
-                {
-                    state.joystick_fire = !state.joystick_fire;
+            }
+            ElementState::Released => {
+                self.mouse_down = false;
+                if let Some(tab) = tab_at(px as i32, py as i32) {
+                    if tab != state.current_tab {
+                        state.current_tab = tab;
+                        state.mode = DebugMode::Browse;
+                        state.address_input.clear();
+                        state.edit_byte_input.clear();
+                    }
                     return;
                 }
-                // Checkbox (including text label)
-                if px as i32 >= JOY_CHECKBOX_X
-                    && (px as i32) < JOY_CHECKBOX_X + 220
-                    && py as i32 >= JOY_CHECKBOX_Y
-                    && (py as i32) < JOY_CHECKBOX_Y + JOY_CHECKBOX_SIZE
-                {
-                    state.use_arrow_keys = !state.use_arrow_keys;
+
+                match state.current_tab {
+                    DebugTab::Debug => {
+                        let row = (py as i32 - DATA_START_Y) / ROW_H;
+                        let col = (px as i32 - HEX_COL_X) / (3 * CHAR_W * SCALE);
+                        if row >= 0 && row < ROWS as i32 && col >= 0 && col < COLS as i32 {
+                            state.selected_offset = Some((row as usize) * COLS + col as usize);
+                            return;
+                        }
+
+                        if py as i32 >= REG_LINE1_Y
+                            && (py as i32) < REG_LINE1_Y + ROW_H
+                            && let Some(field) = reg_field_at_x(px as i32)
+                        {
+                            state.start_register_edit(field);
+                        }
+                    }
+                    DebugTab::Io => {
+                        if let Some(action) = io_button_at(px as i32, py as i32) {
+                            state.cassette_action_pending = Some(action);
+                        }
+                    }
+                    DebugTab::Joystick => {
+                        // Release always clears direction and fire
+                        state.joystick_direction = None;
+                        state.joystick_fire = false;
+                        // Checkbox toggle (independent)
+                        if px as i32 >= JOY_CHECKBOX_X
+                            && (px as i32) < JOY_CHECKBOX_X + 220
+                            && py as i32 >= JOY_CHECKBOX_Y
+                            && (py as i32) < JOY_CHECKBOX_Y + JOY_CHECKBOX_SIZE
+                        {
+                            state.use_arrow_keys = !state.use_arrow_keys;
+                        }
+                    }
                 }
             }
         }
+    }
+
+    fn update_joystick_from_cursor(&self, state: &mut DebugState) {
+        if state.current_tab != DebugTab::Joystick {
+            return;
+        }
+        let Some((cx, cy)) = self.cursor_pos else {
+            return;
+        };
+        let Some(pixels) = self.pixels.as_ref() else {
+            return;
+        };
+        let Ok((px, py)) = pixels.window_pos_to_pixel((cx as f32, cy as f32)) else {
+            return;
+        };
+
+        // Check 3x3 grid
+        for (row, cells) in JOY_GRID.iter().enumerate() {
+            for (col, &(dir, _)) in cells.iter().enumerate() {
+                let x = joy_cell_x(col);
+                let y = joy_cell_y(row);
+                if px as i32 >= x && (px as i32) < x + JOY_PAD_SIZE && py as i32 >= y && (py as i32) < y + JOY_PAD_SIZE
+                {
+                    match dir {
+                        Some(d) => {
+                            state.joystick_direction = Some(d);
+                            state.joystick_fire = false;
+                        }
+                        None => {
+                            state.joystick_direction = None;
+                            state.joystick_fire = true;
+                        }
+                    }
+                    return;
+                }
+            }
+        }
+        // Cursor not over any cell
+        state.joystick_direction = None;
+        state.joystick_fire = false;
     }
 
     fn handle_key(
@@ -521,7 +586,7 @@ fn draw_tab_bar(frame: &mut [u8], active_tab: DebugTab) {
     let tabs = [
         (DebugTab::Debug, "Debug", TAB_DEBUG_X),
         (DebugTab::Io, "I/O", TAB_IO_X),
-        (DebugTab::Joystick, "Joystk", TAB_JOYSTICK_X),
+        (DebugTab::Joystick, "JOYSTICK", TAB_JOYSTICK_X),
     ];
     for &(tab, label, tx) in &tabs {
         let bg = if active_tab == tab {
@@ -535,7 +600,8 @@ fn draw_tab_bar(frame: &mut [u8], active_tab: DebugTab) {
         } else {
             TAB_TEXT_COLOR
         };
-        draw_str(frame, tx + CHAR_W, TAB_LABEL_Y, label, text_color);
+        let text_x = tx + (TAB_W - label.len() as i32 * CHAR_W * SCALE) / 2;
+        draw_str(frame, text_x, TAB_LABEL_Y, label, text_color);
     }
 }
 
@@ -664,57 +730,36 @@ fn draw_io_tab(frame: &mut [u8], state: &DebugState) {
 fn draw_joystick_tab(frame: &mut [u8], state: &DebugState) {
     draw_str(frame, MARGIN, CONTENT_START_Y + ROW_H, "Joystick", HEADER_COLOR);
 
-    let active_dir = state.joystick_direction;
+    let rw = PIXEL_WIDTH as usize;
 
-    // Center pad
-    fill_rect_at(
-        frame,
-        PIXEL_WIDTH as usize,
-        JOY_PAD_X,
-        JOY_PAD_Y,
-        JOY_PAD_SIZE,
-        JOY_PAD_SIZE,
-        JOY_CENTER_COLOR,
-    );
+    // 3x3 grid
+    for (row, cells) in JOY_GRID.iter().enumerate() {
+        for (col, &(dir, label)) in cells.iter().enumerate() {
+            let x = joy_cell_x(col);
+            let y = joy_cell_y(row);
 
-    // Direction pads with arrows
-    let dirs = [
-        (JOY_UP_X, JOY_UP_Y, JoystickDirection::Up, '^'),
-        (JOY_DOWN_X, JOY_DOWN_Y, JoystickDirection::Down, 'v'),
-        (JOY_LEFT_X, JOY_LEFT_Y, JoystickDirection::Left, '<'),
-        (JOY_RIGHT_X, JOY_RIGHT_Y, JoystickDirection::Right, '>'),
-    ];
+            let active = match dir {
+                Some(d) => state.joystick_direction == Some(d),
+                None => state.joystick_fire,
+            };
 
-    for &(x, y, dir, arrow) in &dirs {
-        let color = if active_dir == Some(dir) {
-            JOY_PAD_ACTIVE_COLOR
-        } else {
-            JOY_PAD_COLOR
-        };
-        fill_rect_at(frame, PIXEL_WIDTH as usize, x, y, JOY_PAD_SIZE, JOY_PAD_SIZE, color);
-        let cx = x + (JOY_PAD_SIZE - CHAR_W) / 2;
-        let cy = y + (JOY_PAD_SIZE - CHAR_H) / 2;
-        draw_char(frame, cx, cy, arrow, JOY_ARROW_COLOR);
+            let color = if active {
+                if dir.is_some() {
+                    JOY_PAD_ACTIVE_COLOR
+                } else {
+                    JOY_FIRE_ACTIVE_COLOR
+                }
+            } else if dir.is_none() {
+                JOY_FIRE_COLOR
+            } else {
+                JOY_PAD_COLOR
+            };
+            fill_rect_at(frame, rw, x, y, JOY_PAD_SIZE, JOY_PAD_SIZE, color);
+            let cx = x + (JOY_PAD_SIZE - CHAR_W) / 2;
+            let cy = y + (JOY_PAD_SIZE - CHAR_H) / 2;
+            draw_char(frame, cx, cy, label, JOY_ARROW_COLOR);
+        }
     }
-
-    // Fire button
-    let fire_color = if state.joystick_fire {
-        JOY_FIRE_ACTIVE_COLOR
-    } else {
-        JOY_FIRE_COLOR
-    };
-    fill_rect_at(
-        frame,
-        PIXEL_WIDTH as usize,
-        JOY_FIRE_X,
-        JOY_FIRE_Y,
-        JOY_FIRE_W,
-        JOY_FIRE_H,
-        fire_color,
-    );
-    let fire_text_x = JOY_FIRE_X + (JOY_FIRE_W - 4 * CHAR_W) / 2;
-    let fire_text_y = JOY_FIRE_Y + (JOY_FIRE_H - CHAR_H) / 2;
-    draw_str(frame, fire_text_x, fire_text_y, "FIRE", JOY_FIRE_TEXT_COLOR);
 
     // Arrow keys checkbox
     draw_checkbox(frame, JOY_CHECKBOX_X, JOY_CHECKBOX_Y, state.use_arrow_keys);
@@ -901,8 +946,8 @@ fn draw_str(pixels: &mut [u8], x: i32, y: i32, text: &str, color: [u8; 4]) {
 }
 
 fn draw_char(pixels: &mut [u8], x: i32, y: i32, ch: char, color: [u8; 4]) {
-    let c = ch.to_ascii_uppercase();
-    if let Some(glyph) = BASIC_FONTS.get(c) {
+    let lookup = if ch.is_ascii() { ch.to_ascii_uppercase() } else { ch };
+    if let Some(glyph) = BASIC_FONTS.get(lookup) {
         for (row, bits) in glyph.iter().enumerate() {
             for col in 0..8 {
                 if (bits >> col) & 1 == 1 {
