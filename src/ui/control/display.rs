@@ -15,6 +15,7 @@ use super::{
     ControlState,
     DebugMode,
     DebugTab,
+    JoystickAction,
     JoystickDirection,
     PendingRegisterWrites,
     RegisterField,
@@ -275,6 +276,9 @@ impl ControlWindow {
                 // Always clear joystick on release, regardless of where cursor ends up
                 state.joystick_direction = None;
                 state.joystick_fire = false;
+                if state.current_tab == DebugTab::Joystick {
+                    state.joystick_action_pending = Some(JoystickAction::StateChanged);
+                }
 
                 if let Some(tab) = tab_at(px as i32, py as i32) {
                     if tab != state.current_tab {
@@ -339,6 +343,7 @@ fn apply_joystick_cell(state: &mut ControlState, px: i32, py: i32) -> bool {
                         state.joystick_fire = true;
                     }
                 }
+                state.joystick_action_pending = Some(JoystickAction::StateChanged);
                 return true;
             }
         }

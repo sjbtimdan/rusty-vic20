@@ -67,6 +67,7 @@ pub struct ControlState {
     pub joystick_direction: Option<JoystickDirection>,
     pub joystick_fire: bool,
     pub use_arrow_keys: bool,
+    pub joystick_action_pending: Option<JoystickAction>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -88,6 +89,11 @@ pub enum DebugTab {
 pub enum CassetteAction {
     OpenFile,
     TogglePlay,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum JoystickAction {
+    StateChanged,
 }
 
 impl Default for ControlState {
@@ -112,6 +118,7 @@ impl ControlState {
             joystick_direction: None,
             joystick_fire: false,
             use_arrow_keys: false,
+            joystick_action_pending: None,
         }
     }
 

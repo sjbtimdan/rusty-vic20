@@ -9,6 +9,7 @@ use crate::{
         control::{
             CassetteAction,
             ControlState,
+            JoystickAction,
             PendingRegisterWrites,
             PendingWrites,
             SharedMemory,
@@ -55,6 +56,7 @@ struct SharedState {
     paste_queue: PasteQueue,
     load_queue: LoadQueue,
     cassette_sender: SyncSender<bool>,
+    joystick_sender: SyncSender<peripherals::joystick::JoystickUpdate>,
 }
 
 #[derive(Default)]
@@ -97,6 +99,7 @@ impl Vic20Controller {
         let pending_register_writes: PendingRegisterWrites = Arc::new(Mutex::new(Vec::new()));
         let perf: SharedPerfState = Arc::new(Mutex::new(SharedPerformanceMetrics::default()));
         let (cassette_sender, cassette_receiver) = peripherals::cassette_player::make_cassette_channel();
+        let (joystick_sender, joystick_receiver) = peripherals::joystick::make_joystick_channel();
         let load_queue: LoadQueue = new_load_queue();
         let load_queue_for_thread = load_queue.clone();
         let (keyboard_sender, keyboard_receiver) = crate::peripherals::keyboard::make_keyboard_channel();
@@ -124,6 +127,7 @@ impl Vic20Controller {
                         perf,
                         load_queue_for_thread,
                         cassette_receiver,
+                        joystick_receiver,
                     )
                 }
             })
@@ -142,6 +146,7 @@ impl Vic20Controller {
                 paste_queue: paste_queue_for_state,
                 load_queue,
                 cassette_sender,
+                joystick_sender,
             },
         )
     }
@@ -157,6 +162,7 @@ impl Vic20Controller {
         shared_perf: SharedPerfState,
         load_queue: LoadQueue,
         cassette_receiver: std::sync::mpsc::Receiver<bool>,
+        joystick_receiver: std::sync::mpsc::Receiver<peripherals::joystick::JoystickUpdate>,
     ) {
         let mut last_frame_publish = Instant::now();
         let mut last_memory_publish = Instant::now();
@@ -172,6 +178,10 @@ impl Vic20Controller {
 
             if let Ok(pressed) = cassette_receiver.try_recv() {
                 runner.cassette_player.set_play_button(pressed);
+            }
+
+            if let Ok(update) = joystick_receiver.try_recv() {
+                runner.joystick.set_state(update);
             }
 
             // Apply any pending writes from the debugger (non-blocking)
@@ -349,6 +359,9 @@ impl ApplicationHandler for Vic20Controller {
                     if let Some(action) = self.debug_state.cassette_action_pending.take() {
                         self.handle_cassette_action(action);
                     }
+                    if let Some(action) = self.debug_state.joystick_action_pending.take() {
+                        self.handle_joystick_action(action);
+                    }
                 }
             }
         }
@@ -420,6 +433,18 @@ impl Vic20Controller {
                 Err(e) => {
                     log::error!("{}", e);
                 }
+            }
+        }
+    }
+
+    fn handle_joystick_action(&mut self, action: JoystickAction) {
+        match action {
+            JoystickAction::StateChanged => {
+                let update = peripherals::joystick::JoystickUpdate {
+                    direction: self.debug_state.joystick_direction,
+                    fire: self.debug_state.joystick_fire,
+                };
+                let _ = self.shared_state().joystick_sender.send(update);
             }
         }
     }

@@ -25,46 +25,6 @@ fn via1_ca1_enabled_after_boot() {
 }
 
 #[test]
-#[ignore = "broken AI generated test"]
-fn restore_stop_triggers_warm_start() {
-    let mut runner = run_boot_with_keyboard();
-
-    common::assert_screen_lines(
-        &runner.bus,
-        &[
-            screen_code("**** CBM BASIC V2 ****"),
-            screen_code("                      "),
-            screen_code("3583 BYTES FREE       "),
-            screen_code("                      "),
-            screen_code("READY.                "),
-        ],
-    );
-
-    runner
-        .keyboard_sender
-        .send(HashSet::from([Key::RunStop, Key::Restore]))
-        .ok();
-
-    for _ in 0..300_000 {
-        runner.step_keyboard();
-        runner.bus.step_devices(&mut runner.cpu);
-        runner.cpu.nmi_latch.set_level(true);
-        runner
-            .cpu
-            .step(&mut runner.bus, &instruction_executor::DefaultInstructionExecutor);
-        runner.cassette_player.step(&mut runner.bus.via1);
-    }
-
-    common::assert_screen_lines(
-        &runner.bus,
-        &[
-            screen_code("                      "),
-            screen_code("READY.                "),
-        ],
-    );
-}
-
-#[test]
 fn held_key_repeats_in_kernal() {
     let mut runner = run_boot_with_keyboard();
 
