@@ -29,7 +29,7 @@ pub struct Joystick {
 
 impl Joystick {
     pub fn step(&self, via1: &mut VIA) {
-        via1.joystick_control(!self.fire);
+        via1.joystick_control(false, false, false, self.fire);
     }
 
     pub fn set_state(&mut self, update: JoystickUpdate) {

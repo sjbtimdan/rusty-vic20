@@ -19,6 +19,9 @@ https://raw.githubusercontent.com/cbmeeks/VIC-20/master/6561.txt
 https://www.mdawson.net/vic20chrome/display/mos_6560_6561_vic.pdf
 https://techtinkering.com/articles/code-and-data-in-display-memory-on-the-vic-20/
 
+# Peripherals
+http://blog.tynemouthsoftware.co.uk/2024/12/reading-joystick-port-from-vic20-basic.html
+
 # ROM Disassembly
 https://www.mdawson.net/vic20chrome/vic20/docs/kernel_disassembly.txt
 

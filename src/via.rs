@@ -111,8 +111,15 @@ impl VIA {
         self.pb
     }
 
-    pub fn joystick_control(&mut self, value: bool) {
-        set_bit(&mut self.pa, 5, value);
+    pub fn joystick_control(&mut self, up: bool, down: bool, left: bool, fire: bool) {
+        set_bit(&mut self.pa, 5, !fire);
+        set_bit(&mut self.pa, 4, !left);
+        set_bit(&mut self.pa, 3, !down);
+        set_bit(&mut self.pa, 2, !up);
+    }
+
+    pub fn port_a_serial_direction(&mut self) {
+        set_bit(&mut self.pa, 1, true);
     }
 
     pub fn set_port_a(&mut self, value: u8) {

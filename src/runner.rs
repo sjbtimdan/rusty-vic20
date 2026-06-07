@@ -5,8 +5,10 @@ use crate::{
     paste::PasteQueue,
     peripherals::{
         cassette_player::CassettePlayer,
+        direct_loader::DirectLoad,
         joystick::Joystick,
         keyboard::{Keyboard, RestoreKeyStatus, make_keyboard_channel},
+        serial_port::SerialPort,
     },
     ui::keyboard::key::Key,
 };
@@ -20,6 +22,8 @@ pub struct EmulatorRunner {
     pub cpu: CPU6502,
     pub cassette_player: CassettePlayer,
     pub joystick: Joystick,
+    serial_port: SerialPort,
+    pub direct_loader: DirectLoad,
     keyboard: Keyboard,
     pub keyboard_sender: SyncSender<HashSet<Key>>,
     pub paste_queue: PasteQueue,
@@ -44,6 +48,8 @@ impl EmulatorRunner {
             cpu,
             cassette_player: CassettePlayer::default(),
             joystick: Joystick::default(),
+            serial_port: SerialPort,
+            direct_loader: DirectLoad::default(),
             keyboard: Keyboard::new(keyboard_receiver, Some(paste_queue.clone())),
             keyboard_sender: dummy_tx,
             paste_queue,
@@ -62,6 +68,8 @@ impl Default for EmulatorRunner {
             cpu,
             cassette_player: CassettePlayer::default(),
             joystick: Joystick::default(),
+            serial_port: SerialPort,
+            direct_loader: DirectLoad::default(),
             keyboard: Keyboard::new(rx, Some(paste_queue.clone())),
             keyboard_sender: tx,
             paste_queue,
@@ -87,6 +95,8 @@ impl EmulatorRunner {
         self.cpu.step(&mut self.bus, &self.instruction_executor);
         self.cassette_player.step(&mut self.bus.via1);
         self.joystick.step(&mut self.bus.via1);
+        self.serial_port.step(&mut self.bus.via1);
+        self.direct_loader.step(&mut self.bus);
     }
 
     pub fn step_multiple(&mut self, count: usize) {

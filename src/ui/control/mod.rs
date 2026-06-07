@@ -63,7 +63,7 @@ pub struct ControlState {
     pub blink_phase: bool,
     pub cassette_playing: bool,
     pub cassette_file: Option<String>,
-    pub cassette_action_pending: Option<CassetteAction>,
+    pub io_action_pending: Option<IoAction>,
     pub joystick_direction: Option<JoystickDirection>,
     pub joystick_fire: bool,
     pub use_arrow_keys: bool,
@@ -87,9 +87,10 @@ pub enum DebugTab {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum CassetteAction {
+pub enum IoAction {
     OpenFile,
     TogglePlay,
+    DirectLoad,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -115,7 +116,7 @@ impl ControlState {
             blink_phase: false,
             cassette_playing: false,
             cassette_file: None,
-            cassette_action_pending: None,
+            io_action_pending: None,
             joystick_direction: None,
             joystick_fire: false,
             use_arrow_keys: false,

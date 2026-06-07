@@ -11,10 +11,10 @@ use winit::{
 };
 
 use super::{
-    CassetteAction,
     ControlState,
     DebugMode,
     DebugTab,
+    IoAction,
     JoystickAction,
     JoystickDirection,
     PendingRegisterWrites,
@@ -81,6 +81,8 @@ const IO_BTN_OPEN_X: i32 = MARGIN;
 const IO_BTN_OPEN_W: i32 = 16 * CHAR_W * SCALE;
 const IO_BTN_PLAY_X: i32 = IO_BTN_OPEN_X + IO_BTN_OPEN_W + 12;
 const IO_BTN_PLAY_W: i32 = 8 * CHAR_W * SCALE;
+const IO_BTN_DIRECT_LOAD_X: i32 = IO_BTN_PLAY_X + IO_BTN_PLAY_W + 12;
+const IO_BTN_DIRECT_LOAD_W: i32 = 18 * CHAR_W * SCALE;
 
 const JOY_CENTER_X: i32 = PIXEL_WIDTH as i32 / 2;
 const JOY_CENTER_Y: i32 = 110;
@@ -302,7 +304,7 @@ impl ControlWindow {
                     }
                     DebugTab::Io => {
                         if let Some(action) = io_button_at(px as i32, py as i32) {
-                            state.cassette_action_pending = Some(action);
+                            state.io_action_pending = Some(action);
                         }
                     }
                     DebugTab::Joystick => {
@@ -775,6 +777,23 @@ fn draw_io_tab(frame: &mut [u8], state: &ControlState) {
     let play_text = if state.cassette_playing { "Stop" } else { "Play" };
     draw_str(frame, IO_BTN_PLAY_X + CHAR_W, IO_BTN_Y + 2, play_text, BTN_TEXT_COLOR);
 
+    fill_rect_at(
+        frame,
+        PIXEL_WIDTH as usize,
+        IO_BTN_DIRECT_LOAD_X,
+        IO_BTN_Y,
+        IO_BTN_DIRECT_LOAD_W,
+        IO_BTN_H,
+        BTN_COLOR,
+    );
+    draw_str(
+        frame,
+        IO_BTN_DIRECT_LOAD_X + CHAR_W,
+        IO_BTN_Y + 2,
+        "Direct Load (.prg)",
+        BTN_TEXT_COLOR,
+    );
+
     let info_y = IO_BTN_Y + IO_BTN_H + ROW_H;
     if let Some(ref path) = state.cassette_file {
         let fname = std::path::Path::new(path)
@@ -1166,14 +1185,16 @@ fn tab_at(px: i32, py: i32) -> Option<DebugTab> {
     }
 }
 
-fn io_button_at(px: i32, py: i32) -> Option<CassetteAction> {
+fn io_button_at(px: i32, py: i32) -> Option<IoAction> {
     if !(IO_BTN_Y..IO_BTN_Y + IO_BTN_H).contains(&py) {
         return None;
     }
     if (IO_BTN_OPEN_X..IO_BTN_OPEN_X + IO_BTN_OPEN_W).contains(&px) {
-        Some(CassetteAction::OpenFile)
+        Some(IoAction::OpenFile)
     } else if (IO_BTN_PLAY_X..IO_BTN_PLAY_X + IO_BTN_PLAY_W).contains(&px) {
-        Some(CassetteAction::TogglePlay)
+        Some(IoAction::TogglePlay)
+    } else if (IO_BTN_DIRECT_LOAD_X..IO_BTN_DIRECT_LOAD_X + IO_BTN_DIRECT_LOAD_W).contains(&px) {
+        Some(IoAction::DirectLoad)
     } else {
         None
     }

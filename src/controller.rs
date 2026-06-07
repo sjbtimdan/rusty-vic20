@@ -7,8 +7,8 @@ use crate::{
     runner::EmulatorRunner,
     ui::{
         control::{
-            CassetteAction,
             ControlState,
+            IoAction,
             JoystickAction,
             PendingRegisterWrites,
             PendingWrites,
@@ -57,6 +57,7 @@ struct SharedState {
     load_queue: LoadQueue,
     cassette_sender: SyncSender<bool>,
     joystick_sender: SyncSender<peripherals::joystick::JoystickUpdate>,
+    direct_loader_sender: SyncSender<Vec<u8>>,
 }
 
 #[derive(Default)]
@@ -100,6 +101,7 @@ impl Vic20Controller {
         let perf: SharedPerfState = Arc::new(Mutex::new(SharedPerformanceMetrics::default()));
         let (cassette_sender, cassette_receiver) = peripherals::cassette_player::make_cassette_channel();
         let (joystick_sender, joystick_receiver) = peripherals::joystick::make_joystick_channel();
+        let (direct_loader_sender, direct_loader_receiver) = peripherals::direct_loader::make_direct_loader_channel();
         let load_queue: LoadQueue = new_load_queue();
         let load_queue_for_thread = load_queue.clone();
         let (keyboard_sender, keyboard_receiver) = crate::peripherals::keyboard::make_keyboard_channel();
@@ -128,6 +130,7 @@ impl Vic20Controller {
                         load_queue_for_thread,
                         cassette_receiver,
                         joystick_receiver,
+                        direct_loader_receiver,
                     )
                 }
             })
@@ -147,6 +150,7 @@ impl Vic20Controller {
                 load_queue,
                 cassette_sender,
                 joystick_sender,
+                direct_loader_sender,
             },
         )
     }
@@ -163,6 +167,7 @@ impl Vic20Controller {
         load_queue: LoadQueue,
         cassette_receiver: std::sync::mpsc::Receiver<bool>,
         joystick_receiver: std::sync::mpsc::Receiver<peripherals::joystick::JoystickUpdate>,
+        direct_loader_receiver: std::sync::mpsc::Receiver<Vec<u8>>,
     ) {
         let mut last_frame_publish = Instant::now();
         let mut last_memory_publish = Instant::now();
@@ -182,6 +187,10 @@ impl Vic20Controller {
 
             if let Ok(update) = joystick_receiver.try_recv() {
                 runner.joystick.set_state(update);
+            }
+
+            if let Ok(data) = direct_loader_receiver.try_recv() {
+                runner.direct_loader.set_state(data);
             }
 
             // Apply any pending writes from the debugger (non-blocking)
@@ -356,8 +365,8 @@ impl ApplicationHandler for Vic20Controller {
                         &pending_register_writes,
                         &perf,
                     );
-                    if let Some(action) = self.debug_state.cassette_action_pending.take() {
-                        self.handle_cassette_action(action);
+                    if let Some(action) = self.debug_state.io_action_pending.take() {
+                        self.handle_io_action(action);
                     }
                     if let Some(action) = self.debug_state.joystick_action_pending.take() {
                         self.handle_joystick_action(action);
@@ -403,15 +412,28 @@ impl Vic20Controller {
         }
     }
 
-    fn handle_cassette_action(&mut self, action: CassetteAction) {
+    fn handle_io_action(&mut self, action: IoAction) {
         match action {
-            CassetteAction::OpenFile => self.handle_cassette_open_file(),
-            CassetteAction::TogglePlay => {
+            IoAction::OpenFile => self.handle_cassette_open_file(),
+            IoAction::TogglePlay => {
                 self.debug_state.cassette_playing = !self.debug_state.cassette_playing;
                 let _ = self
                     .shared_state()
                     .cassette_sender
                     .send(self.debug_state.cassette_playing);
+            }
+            IoAction::DirectLoad => {
+                let path = rfd::FileDialog::new().add_filter("PRG files", &["prg"]).pick_file();
+                if let Some(path) = path {
+                    match std::fs::read(&path) {
+                        Ok(data) => {
+                            let _ = self.shared_state().direct_loader_sender.send(data);
+                        }
+                        Err(e) => {
+                            log::error!("DirectLoad: failed to read '{}': {}", path.display(), e);
+                        }
+                    }
+                }
             }
         }
     }
