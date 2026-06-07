@@ -1,3 +1,4 @@
+use crate::peripherals::joystick::JoystickDirection;
 use std::sync::{Arc, Mutex};
 
 pub mod display;
@@ -81,18 +82,6 @@ pub enum DebugTab {
     Debug,
     Io,
     Joystick,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum JoystickDirection {
-    Up,
-    UpRight,
-    Right,
-    DownRight,
-    Down,
-    DownLeft,
-    Left,
-    UpLeft,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
