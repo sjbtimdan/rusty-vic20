@@ -5,6 +5,7 @@ use crate::{
         registers::Registers,
     },
     edge_latch::{Edge, EdgeLatch},
+    peripherals::joystick::JoystickControl,
 };
 use std::cell::Cell;
 
@@ -111,13 +112,6 @@ impl VIA {
         self.pb
     }
 
-    pub fn joystick_control(&mut self, up: bool, down: bool, left: bool, fire: bool) {
-        set_bit(&mut self.pa, 5, !fire);
-        set_bit(&mut self.pa, 4, !left);
-        set_bit(&mut self.pa, 3, !down);
-        set_bit(&mut self.pa, 2, !up);
-    }
-
     pub fn port_a_serial_direction(&mut self) {
         set_bit(&mut self.pa, 1, true);
     }
@@ -177,6 +171,15 @@ impl VIA {
         if self.ca1_latch.take() {
             self.ifr.set(self.ifr.get() | IFR_CA1);
         }
+    }
+}
+
+impl JoystickControl for VIA {
+    fn joystick_control(&mut self, up: bool, down: bool, left: bool, fire: bool) {
+        set_bit(&mut self.pa, 5, !fire);
+        set_bit(&mut self.pa, 4, !left);
+        set_bit(&mut self.pa, 3, !down);
+        set_bit(&mut self.pa, 2, !up);
     }
 }
 

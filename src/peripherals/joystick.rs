@@ -1,8 +1,6 @@
 use log::info;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 
-use crate::via::VIA;
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum JoystickDirection {
     Up,
@@ -13,6 +11,26 @@ pub enum JoystickDirection {
     DownLeft,
     Left,
     UpLeft,
+}
+
+impl JoystickDirection {
+    pub fn bools(&self) -> (bool, bool, bool, bool) {
+        match self {
+            JoystickDirection::Up => (true, false, false, false),
+            JoystickDirection::Down => (false, true, false, false),
+            JoystickDirection::Left => (false, false, true, false),
+            JoystickDirection::Right => (false, false, false, true),
+            JoystickDirection::UpLeft => (true, false, true, false),
+            JoystickDirection::UpRight => (true, false, false, true),
+            JoystickDirection::DownLeft => (false, true, true, false),
+            JoystickDirection::DownRight => (false, true, false, true),
+        }
+    }
+}
+
+#[cfg_attr(test, unimock::unimock(api = JoystickControlMock))]
+pub trait JoystickControl {
+    fn joystick_control(&mut self, up: bool, down: bool, left: bool, fire: bool);
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -28,8 +46,13 @@ pub struct Joystick {
 }
 
 impl Joystick {
-    pub fn step(&self, via1: &mut VIA) {
-        via1.joystick_control(false, false, false, self.fire);
+    pub fn step(&self, via1: &mut impl JoystickControl) {
+        let (up, down, left, _) = if let Some(d) = self.direction {
+            d.bools()
+        } else {
+            (false, false, false, false)
+        };
+        via1.joystick_control(up, down, left, self.fire);
     }
 
     pub fn set_state(&mut self, update: JoystickUpdate) {
@@ -39,14 +62,6 @@ impl Joystick {
         info!("Joystick: direction: {:?}, fire: {:?}", update.direction, update.fire);
         self.direction = update.direction;
         self.fire = update.fire;
-    }
-
-    pub fn direction(&self) -> Option<JoystickDirection> {
-        self.direction
-    }
-
-    pub fn fire(&self) -> bool {
-        self.fire
     }
 }
 
@@ -58,6 +73,7 @@ pub fn make_joystick_channel() -> (SyncSender<JoystickUpdate>, Receiver<Joystick
 mod tests {
     use super::*;
     use rstest::{fixture, rstest};
+    use unimock::{MockFn, Unimock, matching};
 
     #[fixture]
     fn joystick() -> Joystick {
@@ -65,71 +81,48 @@ mod tests {
     }
 
     #[rstest]
-    fn default_has_no_direction_or_fire(joystick: Joystick) {
-        assert_eq!(joystick.direction(), None);
-        assert!(!joystick.fire());
-    }
-
-    #[rstest]
-    fn set_state_updates_direction_and_fire(mut joystick: Joystick) {
-        joystick.set_state(JoystickUpdate {
-            direction: Some(JoystickDirection::Up),
-            fire: true,
-        });
-        assert_eq!(joystick.direction(), Some(JoystickDirection::Up));
-        assert!(joystick.fire());
-    }
-
-    #[rstest]
-    fn set_state_clears_direction_and_fire(mut joystick: Joystick) {
-        joystick.set_state(JoystickUpdate {
-            direction: Some(JoystickDirection::DownRight),
-            fire: true,
-        });
+    fn calls_via_correctly_for_nothing_pressed(mut joystick: Joystick) {
         joystick.set_state(JoystickUpdate {
             direction: None,
             fire: false,
         });
-        assert_eq!(joystick.direction(), None);
-        assert!(!joystick.fire());
+        let mut mock = Unimock::new(
+            JoystickControlMock::joystick_control
+                .each_call(matching!(false, false, false, false))
+                .returns(()),
+        );
+        joystick.step(&mut mock);
+        mock.verify();
     }
 
     #[rstest]
-    fn all_eight_directions_roundtrip(mut joystick: Joystick) {
-        let dirs = [
-            JoystickDirection::Up,
-            JoystickDirection::UpRight,
-            JoystickDirection::Right,
-            JoystickDirection::DownRight,
-            JoystickDirection::Down,
-            JoystickDirection::DownLeft,
-            JoystickDirection::Left,
-            JoystickDirection::UpLeft,
-        ];
-        for &d in &dirs {
-            joystick.set_state(JoystickUpdate {
-                direction: Some(d),
-                fire: false,
-            });
-            assert_eq!(joystick.direction(), Some(d));
-        }
-    }
-
-    #[rstest]
-    fn fire_independent_of_direction(mut joystick: Joystick) {
+    fn calls_via_correctly_for_fire(mut joystick: Joystick) {
         joystick.set_state(JoystickUpdate {
             direction: None,
             fire: true,
         });
-        assert_eq!(joystick.direction(), None);
-        assert!(joystick.fire());
+        let mut via = Unimock::new(
+            JoystickControlMock::joystick_control
+                .each_call(matching!(false, false, false, true))
+                .returns(()),
+        );
+        joystick.step(&mut via);
+        via.verify();
+    }
 
+    #[rstest]
+    fn calls_via_correctly_for_up_left(mut joystick: Joystick) {
         joystick.set_state(JoystickUpdate {
-            direction: Some(JoystickDirection::Up),
-            fire: false,
+            direction: Some(JoystickDirection::UpLeft),
+            fire: true,
         });
-        assert_eq!(joystick.direction(), Some(JoystickDirection::Up));
-        assert!(!joystick.fire());
+        let mut via = Unimock::new(
+            JoystickControlMock::joystick_control
+                .each_call(matching!(true, false, true, false))
+                .returns(()),
+        );
+        joystick.step(&mut via);
+        via.verify();
     }
 
     #[test]
@@ -143,32 +136,5 @@ mod tests {
         let received = rx.try_recv().unwrap();
         assert_eq!(received.direction, Some(JoystickDirection::UpRight));
         assert!(received.fire);
-    }
-
-    #[rstest]
-    fn channel_and_model_integration(mut joystick: Joystick) {
-        let (tx, rx) = make_joystick_channel();
-
-        tx.send(JoystickUpdate {
-            direction: Some(JoystickDirection::Down),
-            fire: true,
-        })
-        .unwrap();
-        let update = rx.try_recv().unwrap();
-        joystick.set_state(update);
-
-        assert_eq!(joystick.direction(), Some(JoystickDirection::Down));
-        assert!(joystick.fire());
-
-        tx.send(JoystickUpdate {
-            direction: None,
-            fire: false,
-        })
-        .unwrap();
-        let update = rx.try_recv().unwrap();
-        joystick.set_state(update);
-
-        assert_eq!(joystick.direction(), None);
-        assert!(!joystick.fire());
     }
 }
