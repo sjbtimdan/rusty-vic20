@@ -48,6 +48,7 @@ pub struct VIA {
     ca1_pin_level: bool,
     ca1_latch: EdgeLatch,
     port_b_callback: Option<Box<dyn FnMut(u8)>>,
+    joystick_right_pressed: bool,
 }
 
 impl Default for VIA {
@@ -69,6 +70,7 @@ impl Default for VIA {
             ca1_pin_level: true,
             ca1_latch: EdgeLatch::new_falling(),
             port_b_callback: None,
+            joystick_right_pressed: false,
         }
     }
 }
@@ -181,6 +183,10 @@ impl JoystickControl for VIA {
         set_bit(&mut self.pa, 3, !down);
         set_bit(&mut self.pa, 2, !up);
     }
+
+    fn joystick_right(&mut self, right: bool) {
+        self.joystick_right_pressed = right;
+    }
 }
 
 fn set_bit(value: &mut u8, bit_index: u8, bit: bool) {
@@ -192,7 +198,17 @@ impl Addressable for VIA {
     fn read_byte(&self, address: u16) -> u8 {
         let offset = address as usize;
         match offset {
-            PORT_B_OFFSET => self.pb,
+            PORT_B_OFFSET => {
+                if self.ddrb & 0x80 == 0 {
+                    if self.joystick_right_pressed {
+                        self.pb & !0x80
+                    } else {
+                        self.pb | 0x80
+                    }
+                } else {
+                    self.pb
+                }
+            }
             PORT_A_OFFSET => self.pa,
             DATA_DIRECTION_B_OFFSET => self.ddrb,
             DATA_DIRECTION_A_OFFSET => self.ddra,
@@ -303,7 +319,6 @@ mod tests {
     }
 
     #[rstest]
-    #[case(PORT_B_OFFSET)]
     #[case(PORT_A_OFFSET)]
     #[case(DATA_DIRECTION_B_OFFSET)]
     #[case(DATA_DIRECTION_A_OFFSET)]
@@ -318,6 +333,12 @@ mod tests {
     #[case(PORTA_HANDSHAKE_OFFSET)]
     fn read_byte_returns_default_zero(via: VIA, #[case] offset: usize) {
         assert_eq!(via.read_byte(addr(offset)), 0);
+    }
+
+    #[test]
+    fn read_byte_port_b_default_returns_0x80() {
+        let via = VIA::default();
+        assert_eq!(via.read_byte(addr(PORT_B_OFFSET)), 0x80);
     }
 
     #[rstest]

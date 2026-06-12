@@ -13,8 +13,11 @@ Still a WIP.
 - [X] Keyboard interaction.
 - [X] Load basic programs (maybe cut and paste)
 - [X] NMI handling + RESTORE key
-- [ ] Joystick support
-- [ ] Load programs from cassette or binary data.
+- [X] Joystick support
+- [X] Load .prg files
+- [ ] Memory expansion
+- [ ] Fix graphics issues - no multicolour, broken hires.
+- [ ] Load tape files
 - [ ] Sound.
 - [ ] Speed control.
 - [ ] Accurate emulation down to the cycle and raster level.

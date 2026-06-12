@@ -94,7 +94,7 @@ impl EmulatorRunner {
         self.bus.step_devices(&mut self.cpu);
         self.cpu.step(&mut self.bus, &self.instruction_executor);
         self.cassette_player.step(&mut self.bus.via1);
-        self.joystick.step(&mut self.bus.via1);
+        self.joystick.step(&mut self.bus.via1, &mut self.bus.via2);
         self.serial_port.step(&mut self.bus.via1);
         self.direct_loader.step(&mut self.bus);
     }

@@ -31,6 +31,7 @@ impl JoystickDirection {
 #[cfg_attr(test, unimock::unimock(api = JoystickControlMock))]
 pub trait JoystickControl {
     fn joystick_control(&mut self, up: bool, down: bool, left: bool, fire: bool);
+    fn joystick_right(&mut self, _right: bool);
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -46,13 +47,14 @@ pub struct Joystick {
 }
 
 impl Joystick {
-    pub fn step(&self, via1: &mut impl JoystickControl) {
-        let (up, down, left, _) = if let Some(d) = self.direction {
+    pub fn step(&self, via1: &mut impl JoystickControl, via2: &mut impl JoystickControl) {
+        let (up, down, left, right) = if let Some(d) = self.direction {
             d.bools()
         } else {
             (false, false, false, false)
         };
         via1.joystick_control(up, down, left, self.fire);
+        via2.joystick_right(right);
     }
 
     pub fn set_state(&mut self, update: JoystickUpdate) {
@@ -80,19 +82,29 @@ mod tests {
         Joystick::default()
     }
 
+    fn noop_right_mock() -> Unimock {
+        Unimock::new(
+            JoystickControlMock::joystick_right
+                .each_call(matching!(false))
+                .returns(()),
+        )
+    }
+
     #[rstest]
     fn calls_via_correctly_for_nothing_pressed(mut joystick: Joystick) {
         joystick.set_state(JoystickUpdate {
             direction: None,
             fire: false,
         });
-        let mut mock = Unimock::new(
+        let mut via1 = Unimock::new(
             JoystickControlMock::joystick_control
                 .each_call(matching!(false, false, false, false))
                 .returns(()),
         );
-        joystick.step(&mut mock);
-        mock.verify();
+        let mut via2 = noop_right_mock();
+        joystick.step(&mut via1, &mut via2);
+        via1.verify();
+        via2.verify();
     }
 
     #[rstest]
@@ -101,13 +113,15 @@ mod tests {
             direction: None,
             fire: true,
         });
-        let mut via = Unimock::new(
+        let mut via1 = Unimock::new(
             JoystickControlMock::joystick_control
                 .each_call(matching!(false, false, false, true))
                 .returns(()),
         );
-        joystick.step(&mut via);
-        via.verify();
+        let mut via2 = noop_right_mock();
+        joystick.step(&mut via1, &mut via2);
+        via1.verify();
+        via2.verify();
     }
 
     #[rstest]
@@ -116,13 +130,78 @@ mod tests {
             direction: Some(JoystickDirection::UpLeft),
             fire: true,
         });
-        let mut via = Unimock::new(
+        let mut via1 = Unimock::new(
             JoystickControlMock::joystick_control
-                .each_call(matching!(true, false, true, false))
+                .each_call(matching!(true, false, true, true))
                 .returns(()),
         );
-        joystick.step(&mut via);
-        via.verify();
+        let mut via2 = noop_right_mock();
+        joystick.step(&mut via1, &mut via2);
+        via1.verify();
+        via2.verify();
+    }
+
+    #[rstest]
+    fn calls_via_correctly_for_right(mut joystick: Joystick) {
+        joystick.set_state(JoystickUpdate {
+            direction: Some(JoystickDirection::Right),
+            fire: false,
+        });
+        let mut via1 = Unimock::new(
+            JoystickControlMock::joystick_control
+                .each_call(matching!(false, false, false, false))
+                .returns(()),
+        );
+        let mut via2 = Unimock::new(
+            JoystickControlMock::joystick_right
+                .each_call(matching!(true))
+                .returns(()),
+        );
+        joystick.step(&mut via1, &mut via2);
+        via1.verify();
+        via2.verify();
+    }
+
+    #[rstest]
+    fn calls_via_correctly_for_up_right(mut joystick: Joystick) {
+        joystick.set_state(JoystickUpdate {
+            direction: Some(JoystickDirection::UpRight),
+            fire: false,
+        });
+        let mut via1 = Unimock::new(
+            JoystickControlMock::joystick_control
+                .each_call(matching!(true, false, false, false))
+                .returns(()),
+        );
+        let mut via2 = Unimock::new(
+            JoystickControlMock::joystick_right
+                .each_call(matching!(true))
+                .returns(()),
+        );
+        joystick.step(&mut via1, &mut via2);
+        via1.verify();
+        via2.verify();
+    }
+
+    #[rstest]
+    fn calls_via_correctly_for_down_right(mut joystick: Joystick) {
+        joystick.set_state(JoystickUpdate {
+            direction: Some(JoystickDirection::DownRight),
+            fire: true,
+        });
+        let mut via1 = Unimock::new(
+            JoystickControlMock::joystick_control
+                .each_call(matching!(false, true, false, true))
+                .returns(()),
+        );
+        let mut via2 = Unimock::new(
+            JoystickControlMock::joystick_right
+                .each_call(matching!(true))
+                .returns(()),
+        );
+        joystick.step(&mut via1, &mut via2);
+        via1.verify();
+        via2.verify();
     }
 
     #[test]
