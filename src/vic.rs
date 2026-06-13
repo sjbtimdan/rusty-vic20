@@ -153,7 +153,7 @@ impl VIC {
     fn charset_base(&self) -> u16 {
         let lower_bits = (self.screen_and_char_base & 0x0F) as u16;
         let base = if lower_bits < 8 { 0x8000 } else { 0x0000 };
-        base + 0x0400 * lower_bits
+        base + 0x0400 * (lower_bits & 0x07)
     }
 }
 
@@ -298,5 +298,27 @@ mod tests {
         let value = 50;
         vic.write_byte(address, value);
         assert_eq!(vic.read_byte(address), value);
+    }
+
+    #[rstest]
+    #[case(0x00, 0x8000)]
+    #[case(0x01, 0x8400)]
+    #[case(0x02, 0x8800)]
+    #[case(0x03, 0x8C00)]
+    #[case(0x04, 0x9000)]
+    #[case(0x05, 0x9400)]
+    #[case(0x06, 0x9800)]
+    #[case(0x07, 0x9C00)]
+    #[case(0x08, 0x0000)]
+    #[case(0x09, 0x0400)]
+    #[case(0x0A, 0x0800)]
+    #[case(0x0B, 0x0C00)]
+    #[case(0x0C, 0x1000)]
+    #[case(0x0D, 0x1400)]
+    #[case(0x0E, 0x1800)]
+    #[case(0x0F, 0x1C00)]
+    fn charset_base(mut vic: VIC, #[case] lower_nibble: u8, #[case] expected: u16) {
+        vic.write_byte(SCREEN_AND_CHAR_BASE_OFFSET as u16, lower_nibble);
+        assert_eq!(vic.charset_base(), expected);
     }
 }
