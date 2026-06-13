@@ -9,6 +9,7 @@ use crate::{
             ControlState,
             IoAction,
             JoystickAction,
+            MemoryAction,
             SharedPerfState,
             SharedPerformanceMetrics,
             display::ControlWindow,
@@ -277,6 +278,9 @@ impl ApplicationHandler for Vic20Controller {
                     if let Some(action) = self.debug_state.joystick_action_pending.take() {
                         self.handle_joystick_action(action);
                     }
+                    if let Some(action) = self.debug_state.memory_action_pending.take() {
+                        self.handle_memory_action(action);
+                    }
                 }
             }
         }
@@ -373,6 +377,18 @@ impl Vic20Controller {
                     fire: self.debug_state.joystick_fire,
                 };
                 let _ = self.shared_state().joystick_sender.send(update);
+            }
+        }
+    }
+
+    fn handle_memory_action(&mut self, action: MemoryAction) {
+        match action {
+            MemoryAction::SetExpansion(expansion) => {
+                log::info!("Memory expansion set to {:?}", expansion);
+                self.debug_state.memory_expansion = expansion;
+            }
+            MemoryAction::Reboot => {
+                log::info!("Reboot requested — emulator logic not yet implemented");
             }
         }
     }

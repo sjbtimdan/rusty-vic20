@@ -24,6 +24,7 @@ impl Default for SharedPerformanceMetrics {
 
 pub type SharedPerfState = Arc<Mutex<SharedPerformanceMetrics>>;
 
+#[derive(Default)]
 pub struct ControlState {
     pub current_tab: ControlTab,
     pub cassette_playing: bool,
@@ -34,13 +35,17 @@ pub struct ControlState {
     pub use_arrow_keys: bool,
     pub joystick_action_pending: Option<JoystickAction>,
     pub arrow_keys_mask: u8,
+    pub memory_expansion: MemoryExpansion,
+    pub memory_action_pending: Option<MemoryAction>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum ControlTab {
+    #[default]
     Perf,
     Io,
     Joystick,
+    Memory,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -55,24 +60,18 @@ pub enum JoystickAction {
     StateChanged,
 }
 
-impl Default for ControlState {
-    fn default() -> Self {
-        Self::new()
-    }
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MemoryExpansion {
+    #[default]
+    None,
+    ThreeK,
+    EightK,
+    SixteenK,
+    ThirtyTwoK,
 }
 
-impl ControlState {
-    pub fn new() -> Self {
-        Self {
-            current_tab: ControlTab::Perf,
-            cassette_playing: false,
-            cassette_file: None,
-            io_action_pending: None,
-            joystick_direction: None,
-            joystick_fire: false,
-            use_arrow_keys: false,
-            joystick_action_pending: None,
-            arrow_keys_mask: 0,
-        }
-    }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MemoryAction {
+    SetExpansion(MemoryExpansion),
+    Reboot,
 }

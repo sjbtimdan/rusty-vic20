@@ -10,7 +10,16 @@ use winit::{
     window::Window,
 };
 
-use super::{ControlState, ControlTab, IoAction, JoystickAction, JoystickDirection, SharedPerfState};
+use super::{
+    ControlState,
+    ControlTab,
+    IoAction,
+    JoystickAction,
+    JoystickDirection,
+    MemoryAction,
+    MemoryExpansion,
+    SharedPerfState,
+};
 
 const WINDOW_TITLE: &str = "VIC-20 Performance";
 
@@ -32,6 +41,7 @@ const PERF_VALUE_COLOR: [u8; 4] = [140, 200, 140, 255];
 const TAB_PERF_X: i32 = MARGIN;
 const TAB_IO_X: i32 = TAB_PERF_X + TAB_W + 12;
 const TAB_JOYSTICK_X: i32 = TAB_IO_X + TAB_W + 12;
+const TAB_MEMORY_X: i32 = TAB_JOYSTICK_X + TAB_W + 12;
 const TAB_W: i32 = 10 * CHAR_W * SCALE;
 const TAB_H: i32 = 12;
 const TAB_LABEL_Y: i32 = 2;
@@ -98,6 +108,28 @@ const JOY_CHECKBOX_SIZE: i32 = 12;
 
 const BTN_COLOR: [u8; 4] = [55, 55, 80, 255];
 const BTN_TEXT_COLOR: [u8; 4] = [220, 220, 220, 255];
+
+const RADIO_SIZE: i32 = 10;
+const RADIO_INNER: i32 = 4;
+const RADIO_SPACING: i32 = 14;
+const RADIO_COLOR: [u8; 4] = [180, 180, 180, 255];
+const RADIO_FILL_COLOR: [u8; 4] = [140, 200, 140, 255];
+
+const MEM_HEADER_Y: i32 = CONTENT_START_Y + ROW_H;
+const MEM_RADIO_X: i32 = MARGIN;
+const MEM_RADIO_START_Y: i32 = MEM_HEADER_Y + ROW_H + 4;
+const MEM_RADIO_LABEL_X: i32 = MEM_RADIO_X + RADIO_SIZE + 8;
+const MEM_BTN_Y: i32 = MEM_RADIO_START_Y + 5 * RADIO_SPACING + ROW_H;
+const MEM_BTN_W: i32 = 12 * CHAR_W * SCALE;
+const MEM_BTN_H: i32 = ROW_H + 4;
+
+const MEM_RADIO_OPTIONS: [(MemoryExpansion, &str); 5] = [
+    (MemoryExpansion::None, "None"),
+    (MemoryExpansion::ThreeK, "3K"),
+    (MemoryExpansion::EightK, "8K"),
+    (MemoryExpansion::SixteenK, "16K"),
+    (MemoryExpansion::ThirtyTwoK, "32K"),
+];
 
 const BG_COLOR: [u8; 4] = [30, 30, 30, 255];
 const HEADER_COLOR: [u8; 4] = [100, 100, 100, 255];
@@ -250,6 +282,11 @@ impl ControlWindow {
                             state.use_arrow_keys = !state.use_arrow_keys;
                         }
                     }
+                    ControlTab::Memory => {
+                        if let Some(action) = memory_action_at(px as i32, py as i32) {
+                            state.memory_action_pending = Some(action);
+                        }
+                    }
                 }
             }
         }
@@ -375,6 +412,7 @@ impl ControlWindow {
             ControlTab::Perf => draw_perf_tab(frame, perf),
             ControlTab::Io => draw_io_tab(frame, state),
             ControlTab::Joystick => draw_joystick_tab(frame, state),
+            ControlTab::Memory => draw_memory_tab(frame, state),
         }
 
         if let Err(err) = pixels.render() {
@@ -418,6 +456,7 @@ fn draw_tab_bar(frame: &mut [u8], active_tab: ControlTab) {
         (ControlTab::Perf, "Perf", TAB_PERF_X),
         (ControlTab::Io, "I/O", TAB_IO_X),
         (ControlTab::Joystick, "JOYSTICK", TAB_JOYSTICK_X),
+        (ControlTab::Memory, "MEMORY", TAB_MEMORY_X),
     ];
     for &(tab, label, tx) in &tabs {
         let bg = if active_tab == tab {
@@ -674,6 +713,8 @@ fn tab_at(px: i32, py: i32) -> Option<ControlTab> {
         Some(ControlTab::Io)
     } else if (TAB_JOYSTICK_X..TAB_JOYSTICK_X + TAB_W).contains(&px) {
         Some(ControlTab::Joystick)
+    } else if (TAB_MEMORY_X..TAB_MEMORY_X + TAB_W).contains(&px) {
+        Some(ControlTab::Memory)
     } else {
         None
     }
@@ -692,6 +733,62 @@ fn io_button_at(px: i32, py: i32) -> Option<IoAction> {
     } else {
         None
     }
+}
+
+fn draw_memory_tab(frame: &mut [u8], state: &ControlState) {
+    draw_str(frame, MARGIN, MEM_HEADER_Y, "Memory Expansion", HEADER_COLOR);
+
+    for (i, &(exp, label)) in MEM_RADIO_OPTIONS.iter().enumerate() {
+        let y = MEM_RADIO_START_Y + i as i32 * RADIO_SPACING;
+        let selected = state.memory_expansion == exp;
+        draw_radio(frame, MEM_RADIO_X, y, RADIO_SIZE, selected);
+        draw_str(frame, MEM_RADIO_LABEL_X, y + 1, label, RADIO_COLOR);
+    }
+
+    fill_rect_at(
+        frame,
+        PIXEL_WIDTH as usize,
+        MARGIN,
+        MEM_BTN_Y,
+        MEM_BTN_W,
+        MEM_BTN_H,
+        BTN_COLOR,
+    );
+    draw_str(frame, MARGIN + CHAR_W, MEM_BTN_Y + 2, "Reboot", BTN_TEXT_COLOR);
+}
+
+fn draw_radio(frame: &mut [u8], x: i32, y: i32, size: i32, selected: bool) {
+    let color = RADIO_COLOR;
+    for dx in 0..size {
+        set_pixel(frame, x + dx, y, color);
+        set_pixel(frame, x + dx, y + size - 1, color);
+    }
+    for dy in 0..size {
+        set_pixel(frame, x, y + dy, color);
+        set_pixel(frame, x + size - 1, y + dy, color);
+    }
+    if selected {
+        let inner = RADIO_INNER;
+        let offset = (size - inner) / 2;
+        for dy in 0..inner {
+            for dx in 0..inner {
+                set_pixel(frame, x + offset + dx, y + offset + dy, RADIO_FILL_COLOR);
+            }
+        }
+    }
+}
+
+fn memory_action_at(px: i32, py: i32) -> Option<MemoryAction> {
+    for (i, &(exp, _)) in MEM_RADIO_OPTIONS.iter().enumerate() {
+        let y = MEM_RADIO_START_Y + i as i32 * RADIO_SPACING;
+        if (y..y + RADIO_SIZE).contains(&py) && (MEM_RADIO_X..MEM_RADIO_X + RADIO_SIZE + 96).contains(&px) {
+            return Some(MemoryAction::SetExpansion(exp));
+        }
+    }
+    if (MEM_BTN_Y..MEM_BTN_Y + MEM_BTN_H).contains(&py) && (MARGIN..MARGIN + MEM_BTN_W).contains(&px) {
+        return Some(MemoryAction::Reboot);
+    }
+    None
 }
 
 fn format_total(n: u64) -> String {
