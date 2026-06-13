@@ -148,6 +148,13 @@ impl KeyboardWindow {
                             .unwrap_or_else(|| keycode_to_vickeys_shifted(keycode, &state.physical_keys))
                     };
                     for vic_key in vic_keys {
+                        if !pressed && (vic_key == Key::LeftShift || vic_key == Key::RightShift) {
+                            let real_shift_held = self.active_mappings.contains_key(&KeyCode::ShiftLeft)
+                                || self.active_mappings.contains_key(&KeyCode::ShiftRight);
+                            if real_shift_held {
+                                continue;
+                            }
+                        }
                         self.handle_physical_key_event(pressed, vic_key, state);
                     }
                 }
@@ -394,8 +401,8 @@ fn keycode_to_vickeys(key: KeyCode) -> Vec<Key> {
         KeyCode::KeyI => vec![Key::Single('I')],
         KeyCode::KeyO => vec![Key::Single('O')],
         KeyCode::KeyP => vec![Key::Single('P')],
-        KeyCode::BracketLeft => vec![Key::Single('@')],
-        KeyCode::BracketRight => vec![Key::Single('*')],
+        KeyCode::BracketLeft => vec![Key::Single('['), Key::LeftShift],
+        KeyCode::BracketRight => vec![Key::Single(']'), Key::LeftShift],
         KeyCode::CapsLock => vec![Key::ShiftLock],
         KeyCode::KeyA => vec![Key::Single('A')],
         KeyCode::KeyS => vec![Key::Single('S')],
@@ -406,8 +413,8 @@ fn keycode_to_vickeys(key: KeyCode) -> Vec<Key> {
         KeyCode::KeyJ => vec![Key::Single('J')],
         KeyCode::KeyK => vec![Key::Single('K')],
         KeyCode::KeyL => vec![Key::Single('L')],
-        KeyCode::Semicolon => vec![Key::Single('[')],
-        KeyCode::Quote => vec![Key::Single(']')],
+        KeyCode::Semicolon => vec![Key::Single(';')],
+        KeyCode::Quote => vec![Key::Single(';')],
         KeyCode::Enter => vec![Key::Return],
         KeyCode::ShiftLeft => vec![Key::LeftShift],
         KeyCode::KeyZ => vec![Key::Single('Z')],
@@ -447,6 +454,7 @@ fn keycode_to_vickeys_shifted(key: KeyCode, physical_keys: &HashSet<Key>) -> Vec
             KeyCode::Digit9 => return vec![Key::Single('8')],
             KeyCode::Digit0 => return vec![Key::Single('9')],
             KeyCode::Equal => return vec![Key::Single('+')],
+            KeyCode::Semicolon => return vec![Key::Single(':')],
             _ => {}
         }
     }

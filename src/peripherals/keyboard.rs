@@ -13,7 +13,7 @@ const PASTE_COOLDOWN_CYCLES: u32 = 100;
 
 /// Keys that should never be combined with shift in the matrix output.
 /// When any of these keys appears alongside a shift key, the shift contribution is suppressed.
-const SHIFT_SUPPRESS_KEYS: &[Key] = &[Key::Single('*'), Key::Single('+')];
+const SHIFT_SUPPRESS_KEYS: &[Key] = &[Key::Single('*'), Key::Single('+'), Key::Single(':')];
 
 pub fn make_keyboard_channel() -> (SyncSender<HashSet<Key>>, Receiver<HashSet<Key>>) {
     mpsc::sync_channel(2)
