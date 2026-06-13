@@ -24,7 +24,11 @@ use crate::{
 use arboard::Clipboard;
 use std::{
     collections::{HashSet, VecDeque},
-    sync::{Arc, Mutex, mpsc::SyncSender},
+    sync::{
+        Arc,
+        Mutex,
+        mpsc::{Receiver, SyncSender, TryRecvError},
+    },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
@@ -48,6 +52,8 @@ struct SharedState {
     cassette_sender: SyncSender<bool>,
     joystick_sender: SyncSender<peripherals::joystick::JoystickUpdate>,
     direct_loader_sender: SyncSender<Vec<u8>>,
+    #[allow(dead_code)]
+    shutdown_sender: SyncSender<()>,
 }
 
 #[derive(Default)]
@@ -86,6 +92,7 @@ impl Vic20Controller {
         let (keyboard_sender, keyboard_receiver) = crate::peripherals::keyboard::make_keyboard_channel();
         let paste_queue: PasteQueue = paste::new_paste_queue();
         let paste_queue_for_state = paste_queue.clone();
+        let (shutdown_sender, shutdown_receiver) = std::sync::mpsc::sync_channel::<()>(0);
 
         let handle = thread::Builder::new()
             .name("vic20-core-loop".to_string())
@@ -102,6 +109,7 @@ impl Vic20Controller {
                         cassette_receiver,
                         joystick_receiver,
                         direct_loader_receiver,
+                        shutdown_receiver,
                     )
                 }
             })
@@ -118,6 +126,7 @@ impl Vic20Controller {
                 cassette_sender,
                 joystick_sender,
                 direct_loader_sender,
+                shutdown_sender,
             },
         )
     }
@@ -131,6 +140,7 @@ impl Vic20Controller {
         cassette_receiver: std::sync::mpsc::Receiver<bool>,
         joystick_receiver: std::sync::mpsc::Receiver<peripherals::joystick::JoystickUpdate>,
         direct_loader_receiver: std::sync::mpsc::Receiver<Vec<u8>>,
+        shutdown_receiver: Receiver<()>,
     ) {
         let mut last_frame_publish = Instant::now();
         let mut last_perf_publish = Instant::now();
@@ -141,6 +151,10 @@ impl Vic20Controller {
         runner.bus.via1.set_port_b_callback(Box::new(cassette_motor_control));
 
         loop {
+            if shutdown_receiver.try_recv() == Err(TryRecvError::Disconnected) {
+                break;
+            }
+
             runner.step_keyboard();
 
             if let Ok(pressed) = cassette_receiver.try_recv() {
@@ -388,7 +402,15 @@ impl Vic20Controller {
                 self.debug_state.memory_expansion = expansion;
             }
             MemoryAction::Reboot => {
-                log::info!("Reboot requested — emulator logic not yet implemented");
+                log::info!("Rebooting emulator");
+                // Detach old thread and drop old state (closes channels).
+                drop(self.shared_state.take());
+                drop(self.vic_thread.take());
+                // Spawn a fresh emulator.
+                let (handle, state) = Self::spawn_emulator();
+                self.vic_thread = Some(handle);
+                self.shared_state = Some(state);
+                log::info!("Emulator rebooted");
             }
         }
     }
