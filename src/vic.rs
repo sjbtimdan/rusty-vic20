@@ -38,6 +38,7 @@ pub struct VIC {
     noise_and_control: u8,
     auxiliary_colour_and_volume: u8,
     screen_control: u8,
+    screen_dirty: bool,
 }
 
 impl Default for VIC {
@@ -59,16 +60,37 @@ impl Default for VIC {
             noise_and_control: 0,
             auxiliary_colour_and_volume: 0,
             screen_control: 0x0E,
+            screen_dirty: true,
         }
     }
 }
 
 impl VIC {
+    pub fn mark_screen_dirty(&mut self) {
+        self.screen_dirty = true;
+    }
+
+    pub fn is_address_in_screen_memory(&self, address: u16) -> bool {
+        let start = self.screen_ram_start() as usize;
+        let addr = address as usize;
+        addr >= start && addr < start + SCREEN_RAM_SIZE
+    }
+
+    pub fn is_address_in_colour_memory(&self, address: u16) -> bool {
+        let start = self.colour_ram_start() as usize;
+        let addr = address as usize;
+        addr >= start && addr < start + SCREEN_RAM_SIZE
+    }
+
     pub fn render_active_screen(
-        &self,
+        &mut self,
         memory: &[u8; 65536],
         frame_buffer: &mut [u8; ACTIVE_HEIGHT * ACTIVE_WIDTH * 4],
     ) {
+        if !self.screen_dirty {
+            return;
+        }
+        self.screen_dirty = false;
         let screen_ram_start = self.screen_ram_start() as usize;
         let screen_ram = &memory[screen_ram_start..screen_ram_start + SCREEN_RAM_SIZE];
         let colour_ram_start = self.colour_ram_start() as usize;
@@ -160,6 +182,7 @@ impl Addressable for VIC {
     }
 
     fn write_byte(&mut self, address: u16, value: u8) {
+        self.screen_dirty = true;
         let offset = address as usize;
         match offset {
             HORIZONTAL_ORIGIN_OFFSET => self.horizontal_origin = value,
@@ -222,7 +245,7 @@ mod tests {
     }
 
     #[rstest]
-    fn reverse_mode_off_char_without_bit7_uses_fg(vic: VIC) {
+    fn reverse_mode_off_char_without_bit7_uses_fg(mut vic: VIC) {
         let mem = build_memory(0x01, SCREEN_COLOR);
         let mut fb = [0_u8; ACTIVE_HEIGHT * ACTIVE_WIDTH * 4];
         vic.render_active_screen(&mem, &mut fb);

@@ -65,7 +65,12 @@ impl Addressable for Bus {
             VIC_REGISTERS_START..VIC_REGISTERS_END => self.vic.write_byte(address - VIC_REGISTERS_START, value),
             VIA1_REGISTERS_START..VIA1_REGISTERS_END => self.via1.write_byte(address - VIA1_REGISTERS_START, value),
             VIA2_REGISTERS_START..VIA2_REGISTERS_END => self.via2.write_byte(address - VIA2_REGISTERS_START, value),
-            _ => self.memory.write_byte(address, value),
+            _ => {
+                self.memory.write_byte(address, value);
+                if self.vic.is_address_in_screen_memory(address) || self.vic.is_address_in_colour_memory(address) {
+                    self.vic.mark_screen_dirty();
+                }
+            }
         }
     }
 }
@@ -97,6 +102,7 @@ impl Bus {
     pub fn load_data(&mut self, start_address: usize, data: &[u8]) {
         let len = data.len().min(65536 - start_address);
         self.memory[start_address..start_address + len].copy_from_slice(&data[..len]);
+        self.vic.mark_screen_dirty();
     }
 
     pub fn load_standard_roms_from_data_dir(&mut self) {
