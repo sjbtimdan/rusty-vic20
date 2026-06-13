@@ -1,6 +1,7 @@
 use crate::{
     bus::Bus,
     cpu::cpu6502::CPU6502,
+    memory::MemoryExpansion,
     paste::{self, PasteQueue},
     peripherals,
     runner::EmulatorRunner,
@@ -78,7 +79,7 @@ impl Vic20Controller {
         event_loop.run_app(self).expect("event loop run failed");
     }
 
-    fn spawn_emulator() -> (JoinHandle<()>, SharedState) {
+    fn spawn_emulator(memory_expansion: MemoryExpansion) -> (JoinHandle<()>, SharedState) {
         let video = Arc::new(Mutex::new(SharedVideoState {
             screen_rgba: vec![0_u8; ACTIVE_WIDTH * ACTIVE_HEIGHT * 4],
             border_rgba: [0x00, 0x44, 0xAA, 0xFF],
@@ -100,7 +101,7 @@ impl Vic20Controller {
                 let video = Arc::clone(&video);
                 let perf = Arc::clone(&perf);
                 move || {
-                    let runner = EmulatorRunner::from_receiver(keyboard_receiver, paste_queue);
+                    let runner = EmulatorRunner::from_receiver(keyboard_receiver, paste_queue, memory_expansion);
                     Self::run_emulator(
                         runner,
                         video,
@@ -213,7 +214,7 @@ impl ApplicationHandler for Vic20Controller {
         self.keyboard.create(event_loop);
         self.debug.create(event_loop);
 
-        let (handle, state) = Self::spawn_emulator();
+        let (handle, state) = Self::spawn_emulator(self.debug_state.memory_expansion);
         self.vic_thread = Some(handle);
         self.shared_state = Some(state);
     }
@@ -407,7 +408,7 @@ impl Vic20Controller {
                 drop(self.shared_state.take());
                 drop(self.vic_thread.take());
                 // Spawn a fresh emulator.
-                let (handle, state) = Self::spawn_emulator();
+                let (handle, state) = Self::spawn_emulator(self.debug_state.memory_expansion);
                 self.vic_thread = Some(handle);
                 self.shared_state = Some(state);
                 log::info!("Emulator rebooted");

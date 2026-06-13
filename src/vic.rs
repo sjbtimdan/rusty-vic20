@@ -135,7 +135,7 @@ impl VIC {
         palette(border_color)
     }
 
-    fn screen_ram_start(&self) -> u16 {
+    pub fn screen_ram_start(&self) -> u16 {
         let m_36866 = self.columns_and_screen_select as u16;
         let m_36869 = self.screen_and_char_base as u16;
         4 * (m_36866 & 0x80) + 64 * (m_36869 & 0x70)

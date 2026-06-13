@@ -11,7 +11,7 @@ use log::info;
 use std::fs;
 
 pub struct Bus {
-    memory: Memory,
+    pub memory: Memory,
     vic: VIC,
     pub via1: VIA,
     pub via2: VIA,
@@ -37,7 +37,7 @@ pub const VIA2_REGISTERS_END: u16 = 0x9130;
 impl Default for Bus {
     fn default() -> Self {
         Self {
-            memory: [0; 65536],
+            memory: Memory::default(),
             vic: VIC::default(),
             via1: VIA::default(),
             via2: VIA::default(),
@@ -88,11 +88,16 @@ impl Bus {
     }
 
     pub fn render_active_screen(&mut self) {
-        self.vic.render_active_screen(&self.memory, &mut self.frame_buffer)
+        self.vic
+            .render_active_screen(self.memory.as_bytes(), &mut self.frame_buffer)
     }
 
     pub fn frame_buffer(&self) -> &[u8; ACTIVE_HEIGHT * ACTIVE_WIDTH * 4] {
         &self.frame_buffer
+    }
+
+    pub fn screen_ram_start(&self) -> u16 {
+        self.vic.screen_ram_start()
     }
 
     pub fn border_rgba(&self) -> [u8; 4] {
@@ -101,7 +106,8 @@ impl Bus {
 
     pub fn load_data(&mut self, start_address: usize, data: &[u8]) {
         let len = data.len().min(65536 - start_address);
-        self.memory[start_address..start_address + len].copy_from_slice(&data[..len]);
+        self.memory
+            .copy_from_slice(start_address, start_address + len, &data[..len]);
         self.vic.mark_screen_dirty();
     }
 
@@ -126,7 +132,7 @@ impl Bus {
             expected_len,
             data.len()
         );
-        self.memory[start_address..=end_address].copy_from_slice(data);
+        self.memory.copy_from_slice(start_address, end_address + 1, data);
     }
 }
 

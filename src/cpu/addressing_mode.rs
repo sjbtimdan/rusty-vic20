@@ -149,7 +149,7 @@ mod tests {
 
     #[fixture]
     fn memory() -> Memory {
-        crate::memory::default()
+        crate::memory::Memory::default()
     }
 
     // resolve_load_operand

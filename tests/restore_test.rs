@@ -1,6 +1,6 @@
 mod common;
 
-use common::screen_code;
+use common::{UNEXPANDED_SCREEN_RAM_START, screen_code};
 use rusty_vic20::{addressable::Addressable, ui::keyboard::key::Key};
 use std::collections::HashSet;
 
@@ -30,6 +30,7 @@ fn held_key_repeats_in_kernal() {
 
     common::assert_screen_lines(
         &runner.bus,
+        UNEXPANDED_SCREEN_RAM_START,
         &[
             screen_code("**** CBM BASIC V2 ****"),
             screen_code("                      "),

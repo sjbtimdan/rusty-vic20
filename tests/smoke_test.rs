@@ -1,7 +1,7 @@
 mod common;
 
 use common::splash_screen_lines;
-use rusty_vic20::addressable::Addressable;
+use rusty_vic20::{addressable::Addressable, memory::MemoryExpansion};
 
 const JIFFY_MSB: u16 = 0x00A0;
 const JIFFY_MID: u16 = 0x00A1;
@@ -54,7 +54,49 @@ fn jiffy_clock_rate_is_correct() {
 }
 
 #[test]
-fn splash_screen_shows_on_startup() {
+fn splash_screen_shows_3583_bytes_on_startup() {
     let runner = common::run_boot();
-    common::assert_screen_lines(&runner.bus, &splash_screen_lines());
+    common::assert_screen_lines(&runner.bus, 0x1E00, &splash_screen_lines());
+}
+
+#[test]
+fn splash_screen_shows_6655_bytes_with_3k_expansion() {
+    let runner = common::run_boot_with_expansion(MemoryExpansion::ThreeK);
+    let expected = common::splash_screen_lines_with(6655);
+    common::assert_screen_lines(&runner.bus, 0x1E00, &expected);
+}
+
+#[test]
+#[ignore]
+fn debug_8k_expansion() {
+    let mut runner8k = common::run_boot_with_expansion(MemoryExpansion::EightK);
+    runner8k.step_multiple(800_000);
+    let runner_none = common::run_boot();
+    let runner3k = common::run_boot_with_expansion(MemoryExpansion::ThreeK);
+
+    for (label, runner) in [("None", &runner_none), ("ThreeK", &runner3k), ("EightK", &runner8k)] {
+        eprintln!(
+            "{}: PC=${:04X} SP={:02X} VIC9002={:02X} VIC9005={:02X} topmem=${:04X} basic=${:04X} screen_start=${:04X}",
+            label,
+            runner.cpu.registers.pc,
+            runner.cpu.registers.sp,
+            runner.bus.read_byte(0x9002),
+            runner.bus.read_byte(0x9005),
+            runner.bus.read_word(0x0283),
+            runner.bus.read_word(0x002B),
+            runner.bus.screen_ram_start(),
+        );
+    }
+}
+
+#[test]
+fn splash_screen_shows_11775_bytes_with_8k_expansion() {
+    let runner = common::run_boot_with_expansion(MemoryExpansion::EightK);
+    let screen_start = runner.bus.screen_ram_start();
+    assert_ne!(
+        screen_start, 0x1E00,
+        "8K expansion should relocate screen away from 0x1E00"
+    );
+    let expected = common::splash_screen_lines_with(11775);
+    common::assert_screen_lines(&runner.bus, screen_start, &expected);
 }

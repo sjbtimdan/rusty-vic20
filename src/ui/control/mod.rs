@@ -1,3 +1,4 @@
+pub use crate::memory::MemoryExpansion;
 use crate::peripherals::joystick::JoystickDirection;
 use std::sync::{Arc, Mutex};
 
@@ -58,16 +59,6 @@ pub enum IoAction {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum JoystickAction {
     StateChanged,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum MemoryExpansion {
-    #[default]
-    None,
-    ThreeK,
-    EightK,
-    SixteenK,
-    ThirtyTwoK,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -230,8 +230,8 @@ mod tests {
     use rstest::{fixture, rstest};
 
     #[fixture]
-    fn memory() -> [u8; 65536] {
-        [0; 65536]
+    fn memory() -> crate::memory::Memory {
+        crate::memory::Memory::default()
     }
 
     #[fixture]
@@ -240,11 +240,11 @@ mod tests {
     }
 
     #[rstest]
-    fn test_inx_executes_after_two_steps(mut memory: [u8; 65536], mut cpu: CPU6502) {
+    fn test_inx_executes_after_two_steps(mut memory: crate::memory::Memory, mut cpu: CPU6502) {
         let instruction_executor: instruction_executor::DefaultInstructionExecutor =
             instruction_executor::DefaultInstructionExecutor;
         cpu.registers.pc = 0x8000;
-        memory[0x8000] = INX_IMPLIED.opcode;
+        memory.data[0x8000] = INX_IMPLIED.opcode;
 
         cpu.step(&mut memory, &instruction_executor);
         assert_eq!(cpu.registers.x, 0x00, "INX should not execute on first cycle");
@@ -256,11 +256,11 @@ mod tests {
     }
 
     #[rstest]
-    fn test_lda_immediate_executes_after_two_cycles(mut memory: [u8; 65536], mut cpu: CPU6502) {
+    fn test_lda_immediate_executes_after_two_cycles(mut memory: crate::memory::Memory, mut cpu: CPU6502) {
         let instruction_executor = instruction_executor::DefaultInstructionExecutor;
         cpu.registers.pc = 0x8000;
-        memory[0x8000] = LDA_IMMEDIATE.opcode;
-        memory[0x8001] = 0x20; // LDA immediate operand
+        memory.data[0x8000] = LDA_IMMEDIATE.opcode;
+        memory.data[0x8001] = 0x20; // LDA immediate operand
 
         cpu.step(&mut memory, &instruction_executor);
         assert_eq!(cpu.registers.a, 0x00, "LDA should not execute on first cycle");
@@ -272,15 +272,18 @@ mod tests {
     }
 
     #[rstest]
-    fn test_lda_absolute_x_executes_after_four_cycles_without_page_crossing(mut memory: [u8; 65536], mut cpu: CPU6502) {
+    fn test_lda_absolute_x_executes_after_four_cycles_without_page_crossing(
+        mut memory: crate::memory::Memory,
+        mut cpu: CPU6502,
+    ) {
         let instruction_executor: instruction_executor::DefaultInstructionExecutor =
             instruction_executor::DefaultInstructionExecutor;
         cpu.registers.pc = 0x8000;
         cpu.registers.x = 0x01;
-        memory[0x8000] = LDA_ABSOLUTE_X.opcode;
-        memory[0x8001] = 0x10; // low byte
-        memory[0x8002] = 0x20; // high byte
-        memory[0x2011] = 0x42; // target value
+        memory.data[0x8000] = LDA_ABSOLUTE_X.opcode;
+        memory.data[0x8001] = 0x10; // low byte
+        memory.data[0x8002] = 0x20; // high byte
+        memory.data[0x2011] = 0x42; // target value
 
         for cycle in 1..4 {
             cpu.step(&mut memory, &instruction_executor);
@@ -298,15 +301,15 @@ mod tests {
 
     #[rstest]
     fn test_lda_absolute_x_executes_after_five_cycles_when_crossing_page_boundary(
-        mut memory: [u8; 65536],
+        mut memory: crate::memory::Memory,
         mut cpu: CPU6502,
     ) {
         cpu.registers.pc = 0x8000;
         cpu.registers.x = 0x01;
-        memory[0x8000] = LDA_ABSOLUTE_X.opcode;
-        memory[0x8001] = 0xFF; // low byte
-        memory[0x8002] = 0x20; // high byte
-        memory[0x2100] = 0x99; // target value after page crossing
+        memory.data[0x8000] = LDA_ABSOLUTE_X.opcode;
+        memory.data[0x8001] = 0xFF; // low byte
+        memory.data[0x8002] = 0x20; // high byte
+        memory.data[0x2100] = 0x99; // target value after page crossing
 
         let instruction_executor: instruction_executor::DefaultInstructionExecutor =
             instruction_executor::DefaultInstructionExecutor;
@@ -329,12 +332,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_nmi_fires_on_falling_edge(mut memory: [u8; 65536], mut cpu: CPU6502) {
+    fn test_nmi_fires_on_falling_edge(mut memory: crate::memory::Memory, mut cpu: CPU6502) {
         cpu.registers.pc = 0x8000;
         cpu.registers.sp = 0xFF;
-        memory[0x8000] = NOP_IMPLIED.opcode;
-        memory[0xFFFA] = 0x34;
-        memory[0xFFFB] = 0x12;
+        memory.data[0x8000] = NOP_IMPLIED.opcode;
+        memory.data[0xFFFA] = 0x34;
+        memory.data[0xFFFB] = 0x12;
         let instruction_executor = instruction_executor::DefaultInstructionExecutor;
 
         cpu.nmi_latch.set_level(true);
@@ -347,13 +350,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_nmi_does_not_refire_when_line_stays_low(mut memory: [u8; 65536], mut cpu: CPU6502) {
+    fn test_nmi_does_not_refire_when_line_stays_low(mut memory: crate::memory::Memory, mut cpu: CPU6502) {
         cpu.registers.pc = 0x8000;
         cpu.registers.sp = 0xFF;
-        memory[0x8000] = NOP_IMPLIED.opcode;
-        memory[0xFFFA] = 0x34;
-        memory[0xFFFB] = 0x12;
-        memory[0x1234] = NOP_IMPLIED.opcode;
+        memory.data[0x8000] = NOP_IMPLIED.opcode;
+        memory.data[0xFFFA] = 0x34;
+        memory.data[0xFFFB] = 0x12;
+        memory.data[0x1234] = NOP_IMPLIED.opcode;
         let instruction_executor = instruction_executor::DefaultInstructionExecutor;
 
         cpu.nmi_latch.set_level(true);
@@ -368,13 +371,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_nmi_fires_again_on_new_edge(mut memory: [u8; 65536], mut cpu: CPU6502) {
+    fn test_nmi_fires_again_on_new_edge(mut memory: crate::memory::Memory, mut cpu: CPU6502) {
         cpu.registers.pc = 0x8000;
         cpu.registers.sp = 0xFF;
-        memory[0x8000] = NOP_IMPLIED.opcode;
-        memory[0xFFFA] = 0x34;
-        memory[0xFFFB] = 0x12;
-        memory[0x1234] = NOP_IMPLIED.opcode;
+        memory.data[0x8000] = NOP_IMPLIED.opcode;
+        memory.data[0xFFFA] = 0x34;
+        memory.data[0xFFFB] = 0x12;
+        memory.data[0x1234] = NOP_IMPLIED.opcode;
         let instruction_executor = instruction_executor::DefaultInstructionExecutor;
 
         cpu.nmi_latch.set_level(true);
@@ -391,13 +394,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_nmi_latches_mid_instruction_and_fires_after(mut memory: [u8; 65536], mut cpu: CPU6502) {
+    fn test_nmi_latches_mid_instruction_and_fires_after(mut memory: crate::memory::Memory, mut cpu: CPU6502) {
         cpu.registers.pc = 0x8000;
         cpu.registers.sp = 0xFF;
-        memory[0x8000] = LDA_IMMEDIATE.opcode;
-        memory[0x8001] = 0x42;
-        memory[0xFFFA] = 0x34;
-        memory[0xFFFB] = 0x12;
+        memory.data[0x8000] = LDA_IMMEDIATE.opcode;
+        memory.data[0x8001] = 0x42;
+        memory.data[0xFFFA] = 0x34;
+        memory.data[0xFFFB] = 0x12;
         let instruction_executor = instruction_executor::DefaultInstructionExecutor;
 
         cpu.nmi_latch.set_level(true);
@@ -419,12 +422,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_nmi_fires_when_only_restore_asserts(mut memory: [u8; 65536], mut cpu: CPU6502) {
+    fn test_nmi_fires_when_only_restore_asserts(mut memory: crate::memory::Memory, mut cpu: CPU6502) {
         cpu.registers.pc = 0x8000;
         cpu.registers.sp = 0xFF;
-        memory[0x8000] = NOP_IMPLIED.opcode;
-        memory[0xFFFA] = 0x34;
-        memory[0xFFFB] = 0x12;
+        memory.data[0x8000] = NOP_IMPLIED.opcode;
+        memory.data[0xFFFA] = 0x34;
+        memory.data[0xFFFB] = 0x12;
         let instruction_executor = instruction_executor::DefaultInstructionExecutor;
 
         cpu.nmi_latch.set_level(true);

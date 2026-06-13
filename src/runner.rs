@@ -2,6 +2,7 @@ use crate::{
     addressable::Addressable,
     bus::Bus,
     cpu::{cpu6502::CPU6502, instruction_executor},
+    memory::MemoryExpansion,
     paste::PasteQueue,
     peripherals::{
         cassette_player::CassettePlayer,
@@ -31,8 +32,9 @@ pub struct EmulatorRunner {
 }
 
 impl EmulatorRunner {
-    fn create_bus_and_cpu() -> (Bus, CPU6502) {
+    fn create_bus_and_cpu(memory_expansion: MemoryExpansion) -> (Bus, CPU6502) {
         let mut bus = Bus::default();
+        bus.memory.set_expansion(memory_expansion);
         bus.load_standard_roms_from_data_dir();
         let reset_vector = bus.read_word(0xFFFC);
         let mut cpu = CPU6502::default();
@@ -40,8 +42,12 @@ impl EmulatorRunner {
         (bus, cpu)
     }
 
-    pub fn from_receiver(keyboard_receiver: Receiver<HashSet<Key>>, paste_queue: PasteQueue) -> Self {
-        let (bus, cpu) = Self::create_bus_and_cpu();
+    pub fn from_receiver(
+        keyboard_receiver: Receiver<HashSet<Key>>,
+        paste_queue: PasteQueue,
+        memory_expansion: MemoryExpansion,
+    ) -> Self {
+        let (bus, cpu) = Self::create_bus_and_cpu(memory_expansion);
         let (dummy_tx, _) = make_keyboard_channel();
         Self {
             bus,
@@ -60,7 +66,7 @@ impl EmulatorRunner {
 
 impl Default for EmulatorRunner {
     fn default() -> Self {
-        let (bus, cpu) = Self::create_bus_and_cpu();
+        let (bus, cpu) = Self::create_bus_and_cpu(MemoryExpansion::None);
         let paste_queue = crate::paste::new_paste_queue();
         let (tx, rx) = make_keyboard_channel();
         Self {

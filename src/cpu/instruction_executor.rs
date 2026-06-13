@@ -380,7 +380,7 @@ mod tests {
 
     #[fixture]
     fn memory() -> Memory {
-        crate::memory::default()
+        crate::memory::Memory::default()
     }
 
     // adc_binary: (a, operand, carry_in, expected, carry, overflow, zero, negative)

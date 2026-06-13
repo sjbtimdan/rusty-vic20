@@ -15,10 +15,10 @@ Still a WIP.
 - [X] NMI handling + RESTORE key
 - [X] Joystick support
 - [X] Load .prg files
-- [ ] Memory expansion
+- [X] Memory expansion
 - [ ] Fix graphics issues - no multicolour, broken hires.
-- [ ] Load tape files
 - [ ] Sound.
+- [ ] Load tape files
 - [ ] Speed control.
 - [ ] Accurate emulation down to the cycle and raster level.
 - [ ] Lightpen
