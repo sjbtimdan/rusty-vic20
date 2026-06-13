@@ -94,10 +94,6 @@ impl Bus {
         self.vic.border_rgba()
     }
 
-    pub fn copy_memory_to(&self, dest: &mut [u8; 65536]) {
-        dest.copy_from_slice(&self.memory);
-    }
-
     pub fn load_data(&mut self, start_address: usize, data: &[u8]) {
         let len = data.len().min(65536 - start_address);
         self.memory[start_address..start_address + len].copy_from_slice(&data[..len]);

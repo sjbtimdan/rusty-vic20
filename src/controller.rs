@@ -1,5 +1,4 @@
 use crate::{
-    addressable::Addressable,
     bus::Bus,
     cpu::cpu6502::CPU6502,
     paste::{self, PasteQueue},
@@ -10,13 +9,8 @@ use crate::{
             ControlState,
             IoAction,
             JoystickAction,
-            PendingRegisterWrites,
-            PendingWrites,
-            SharedMemory,
             SharedPerfState,
             SharedPerformanceMetrics,
-            SharedRegisters,
-            SharedRegistersState,
             display::ControlWindow,
         },
         keyboard::{KeyboardState, display::KeyboardWindow},
@@ -42,15 +36,10 @@ use winit::{
 
 const FRAME_TIME: Duration = Duration::from_nanos(1_000_000_000 / 50);
 const FRAME_PUBLISH_INTERVAL: Duration = Duration::from_millis(50);
-const MEMORY_PUBLISH_INTERVAL: Duration = Duration::from_millis(500);
 const PERF_PUBLISH_INTERVAL: Duration = Duration::from_secs(1);
 
 struct SharedState {
     video: Arc<Mutex<SharedVideoState>>,
-    memory: SharedMemory,
-    pending_writes: PendingWrites,
-    registers: SharedRegistersState,
-    pending_register_writes: PendingRegisterWrites,
     perf: SharedPerfState,
     keyboard_sender: SyncSender<HashSet<crate::ui::keyboard::key::Key>>,
     paste_queue: PasteQueue,
@@ -87,17 +76,6 @@ impl Vic20Controller {
             screen_rgba: vec![0_u8; ACTIVE_WIDTH * ACTIVE_HEIGHT * 4],
             border_rgba: [0x00, 0x44, 0xAA, 0xFF],
         }));
-        let memory: SharedMemory = Arc::new(Mutex::new([0u8; 65536]));
-        let pending_writes: PendingWrites = Arc::new(Mutex::new(Vec::new()));
-        let registers: SharedRegistersState = Arc::new(Mutex::new(SharedRegisters {
-            a: 0,
-            x: 0,
-            y: 0,
-            sp: 0xFD,
-            pc: 0,
-            status: 0,
-        }));
-        let pending_register_writes: PendingRegisterWrites = Arc::new(Mutex::new(Vec::new()));
         let perf: SharedPerfState = Arc::new(Mutex::new(SharedPerformanceMetrics::default()));
         let (cassette_sender, cassette_receiver) = peripherals::cassette_player::make_cassette_channel();
         let (joystick_sender, joystick_receiver) = peripherals::joystick::make_joystick_channel();
@@ -112,20 +90,12 @@ impl Vic20Controller {
             .name("vic20-core-loop".to_string())
             .spawn({
                 let video = Arc::clone(&video);
-                let memory = Arc::clone(&memory);
-                let pending_writes = Arc::clone(&pending_writes);
-                let registers = Arc::clone(&registers);
-                let pending_register_writes = Arc::clone(&pending_register_writes);
                 let perf = Arc::clone(&perf);
                 move || {
                     let runner = EmulatorRunner::from_receiver(keyboard_receiver, paste_queue);
                     Self::run_emulator(
                         runner,
                         video,
-                        memory,
-                        pending_writes,
-                        registers,
-                        pending_register_writes,
                         perf,
                         load_queue_for_thread,
                         cassette_receiver,
@@ -140,10 +110,6 @@ impl Vic20Controller {
             handle,
             SharedState {
                 video,
-                memory,
-                pending_writes,
-                registers,
-                pending_register_writes,
                 perf,
                 keyboard_sender,
                 paste_queue: paste_queue_for_state,
@@ -159,10 +125,6 @@ impl Vic20Controller {
     fn run_emulator(
         mut runner: EmulatorRunner,
         shared_video_state: Arc<Mutex<SharedVideoState>>,
-        shared_memory: SharedMemory,
-        pending_writes: PendingWrites,
-        shared_registers: SharedRegistersState,
-        pending_register_writes: PendingRegisterWrites,
         shared_perf: SharedPerfState,
         load_queue: LoadQueue,
         cassette_receiver: std::sync::mpsc::Receiver<bool>,
@@ -170,7 +132,6 @@ impl Vic20Controller {
         direct_loader_receiver: std::sync::mpsc::Receiver<Vec<u8>>,
     ) {
         let mut last_frame_publish = Instant::now();
-        let mut last_memory_publish = Instant::now();
         let mut last_perf_publish = Instant::now();
         let mut frame_count: u64 = 0;
         let mut last_perf_total_cycles: u64 = 0;
@@ -193,29 +154,8 @@ impl Vic20Controller {
                 runner.direct_loader.set_state(data);
             }
 
-            // Apply any pending writes from the debugger (non-blocking)
-            if let Ok(mut writes) = pending_writes.try_lock() {
-                for (addr, value) in writes.drain(..) {
-                    runner.bus.write_byte(addr, value);
-                }
-            }
-
             // Process any pending .prg load requests
             process_load_queue(&mut runner.bus, &mut runner.cpu, &load_queue);
-
-            // Apply any pending register writes from the debugger (non-blocking)
-            if let Ok(mut reg_writes) = pending_register_writes.try_lock() {
-                for (field, value) in reg_writes.drain(..) {
-                    match field {
-                        crate::ui::control::RegisterField::A => runner.cpu.registers.a = value as u8,
-                        crate::ui::control::RegisterField::X => runner.cpu.registers.x = value as u8,
-                        crate::ui::control::RegisterField::Y => runner.cpu.registers.y = value as u8,
-                        crate::ui::control::RegisterField::SP => runner.cpu.registers.sp = value as u8,
-                        crate::ui::control::RegisterField::PC => runner.cpu.registers.pc = value,
-                        crate::ui::control::RegisterField::Status => runner.cpu.registers.status = value as u8,
-                    }
-                }
-            }
 
             runner.step();
 
@@ -230,27 +170,6 @@ impl Vic20Controller {
                 shared.border_rgba = latest_border_rgba;
                 last_frame_publish = Instant::now();
                 frame_count += 1;
-
-                // Publish registers alongside the frame
-                let mut regs = match shared_registers.lock() {
-                    Ok(guard) => guard,
-                    Err(poisoned) => poisoned.into_inner(),
-                };
-                regs.a = runner.cpu.registers.a;
-                regs.x = runner.cpu.registers.x;
-                regs.y = runner.cpu.registers.y;
-                regs.sp = runner.cpu.registers.sp;
-                regs.pc = runner.cpu.registers.pc;
-                regs.status = runner.cpu.registers.status;
-            }
-
-            if last_memory_publish.elapsed() >= MEMORY_PUBLISH_INTERVAL {
-                let mut mem = match shared_memory.lock() {
-                    Ok(guard) => guard,
-                    Err(poisoned) => poisoned.into_inner(),
-                };
-                runner.bus.copy_memory_to(&mut mem);
-                last_memory_publish = Instant::now();
             }
 
             if last_perf_publish.elapsed() >= PERF_PUBLISH_INTERVAL {
@@ -345,26 +264,13 @@ impl ApplicationHandler for Vic20Controller {
                 }
             }
         } else if Some(window_id) == self.debug.window_id() {
-            let memory = Arc::clone(&self.shared_state().memory);
-            let registers = Arc::clone(&self.shared_state().registers);
-            let pending_writes = Arc::clone(&self.shared_state().pending_writes);
-            let pending_register_writes = Arc::clone(&self.shared_state().pending_register_writes);
             let perf = Arc::clone(&self.shared_state().perf);
             match event {
                 WindowEvent::RedrawRequested => {
-                    self.debug.draw(&self.debug_state, &memory, &registers, &perf);
+                    self.debug.draw(&self.debug_state, &perf);
                 }
                 _ => {
-                    self.debug.handle_event(
-                        event_loop,
-                        event,
-                        &mut self.debug_state,
-                        &memory,
-                        &pending_writes,
-                        &registers,
-                        &pending_register_writes,
-                        &perf,
-                    );
+                    self.debug.handle_event(event_loop, event, &mut self.debug_state, &perf);
                     if let Some(action) = self.debug_state.io_action_pending.take() {
                         self.handle_io_action(action);
                     }
