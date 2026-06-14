@@ -43,6 +43,8 @@ use winit::{
 const FRAME_TIME: Duration = Duration::from_nanos(1_000_000_000 / 50);
 const FRAME_PUBLISH_INTERVAL: Duration = Duration::from_millis(50);
 const PERF_PUBLISH_INTERVAL: Duration = Duration::from_secs(1);
+const TARGET_CPU_FREQ_HZ: u64 = 1_108_404;
+const CYCLES_PER_TIMING_SYNC: u64 = 10_000;
 
 struct SharedState {
     video: Arc<Mutex<SharedVideoState>>,
@@ -67,6 +69,37 @@ pub struct Vic20Controller {
     debug_state: ControlState,
     vic_thread: Option<JoinHandle<()>>,
     modifiers: ModifiersState,
+}
+
+struct Brake {
+    cycle_duration: Duration,
+    last_timing_sync: Instant,
+    cycles_since_sync: u64,
+    cycles_per_timing_sync: u64,
+}
+
+impl Brake {
+    fn new(target_cpu_frequency_hz: u64, cycles_per_timing_sync: u64) -> Brake {
+        Brake {
+            cycle_duration: Duration::from_nanos(1_000_000_000 / target_cpu_frequency_hz),
+            last_timing_sync: Instant::now(),
+            cycles_since_sync: 0,
+            cycles_per_timing_sync,
+        }
+    }
+
+    fn brake(&mut self) {
+        self.cycles_since_sync += 1;
+        if self.cycles_since_sync > self.cycles_per_timing_sync {
+            let expected = self.cycle_duration.saturating_mul(self.cycles_since_sync as u32);
+            let elapsed = self.last_timing_sync.elapsed();
+            if let Some(delay) = expected.checked_sub(elapsed) {
+                std::thread::sleep(delay);
+            }
+            self.last_timing_sync = Instant::now();
+            self.cycles_since_sync = 0;
+        }
+    }
 }
 
 impl Vic20Controller {
@@ -96,6 +129,7 @@ impl Vic20Controller {
         let paste_queue: PasteQueue = paste::new_paste_queue();
         let paste_queue_for_state = paste_queue.clone();
         let (shutdown_sender, shutdown_receiver) = std::sync::mpsc::sync_channel::<()>(0);
+        let brake = Brake::new(TARGET_CPU_FREQ_HZ, CYCLES_PER_TIMING_SYNC);
 
         let handle = thread::Builder::new()
             .name("vic20-core-loop".to_string())
@@ -106,6 +140,7 @@ impl Vic20Controller {
                     let runner = EmulatorRunner::from_receiver(keyboard_receiver, paste_queue, memory_expansion);
                     Self::run_emulator(
                         runner,
+                        brake,
                         video,
                         perf,
                         load_queue_for_thread,
@@ -137,6 +172,7 @@ impl Vic20Controller {
     #[allow(clippy::too_many_arguments)]
     fn run_emulator(
         mut runner: EmulatorRunner,
+        mut brake: Brake,
         shared_video_state: Arc<Mutex<SharedVideoState>>,
         shared_perf: SharedPerfState,
         load_queue: LoadQueue,
@@ -176,6 +212,7 @@ impl Vic20Controller {
             process_load_queue(&mut runner.bus, &mut runner.cpu, &load_queue);
 
             runner.step();
+            brake.brake();
 
             if last_frame_publish.elapsed() >= FRAME_PUBLISH_INTERVAL {
                 runner.bus.render_active_screen();
