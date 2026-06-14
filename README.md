@@ -16,10 +16,11 @@ Still a WIP.
 - [X] Joystick support
 - [X] Load .prg files
 - [X] Memory expansion
-- [ ] Fix graphics issues - no multicolour, broken hires.
-- [ ] Sound.
-- [ ] Load tape files
+- [X] Fix graphics issues - no multicolour, broken hires.
 - [ ] Speed control.
+- [ ] Sound.
+- [ ] Double height characters.
+- [ ] Load tape files
 - [ ] Accurate emulation down to the cycle and raster level.
 - [ ] Lightpen
 

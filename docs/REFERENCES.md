@@ -18,6 +18,7 @@ https://reversing.pl/literatura/tekst_h/Synertek%20SY6522%20Programming%20Refere
 https://raw.githubusercontent.com/cbmeeks/VIC-20/master/6561.txt
 https://www.mdawson.net/vic20chrome/display/mos_6560_6561_vic.pdf
 https://techtinkering.com/articles/code-and-data-in-display-memory-on-the-vic-20/
+https://www.atarimagazines.com/compute/issue36/037_Programming_Multicolor_Characters_On_The_VIC.php
 
 # Peripherals
 http://blog.tynemouthsoftware.co.uk/2024/12/reading-joystick-port-from-vic20-basic.html

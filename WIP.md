@@ -5,11 +5,11 @@ When bit 3 of register `0x900F` is set, characters with bit 7 of their char code
 - `vic.rs:46`: never checks bit 3 of register `[0x0F]` or bit 7 of `char_code`.
 - Fix: if `(registers[0x0F] & 0x08) != 0 && (char_code & 0x80) != 0`, swap fg/bg.
 
-### 2. Multi-Color Mode (`0x900F` bit 3 = 0 + character bit 7 set)
+### 2. Multi-Color Mode (`0x900F` bit 3 = 0 + character bit 7 set) ✅ DONE
 When reverse mode is off but a character has bit 7 set, render in multi-color: 4 colors per character using pixel pairs from the character bitmap.
-- Colors: background (`0x900F` bits 7-4), border (`0x900F` bits 2-0), auxiliary (`0x900E` bits 7-4), color RAM.
-- `vic.rs:49`: currently treats every pixel as 1-bit monochrome.
-- Fix: decode 2-bit pixel pairs, select from the 4-color set.
+- Also activated via colour RAM bit 3 (standard method used by most VIC-20 software).
+- Colors: background (`0x900F` bits 7-4), border (`0x900F` bits 2-0), auxiliary (`0x900E` bits 7-4), colour RAM (`& 0x07`).
+- `vic.rs:150-169`: `colour_index` detects multicolor via both activation paths, decodes 2-bit pixel pairs, selects from the 4-color set.
 
 ### 3. Double-Height Characters (`0x9003` bit 0)
 When set, characters are **16×8** instead of 8×8. Each character row's pixels repeat vertically over two text rows.

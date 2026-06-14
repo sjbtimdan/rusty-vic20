@@ -26,7 +26,14 @@ struct RenderContext<'a> {
     colour_ram: &'a [u8],
     char_rom: &'a [u8],
     background_colour: u8,
+    border_colour: u8,
+    auxiliary_colour: u8,
+    reverse_mode: bool,
     columns: usize,
+}
+
+fn is_multicolor(ctx: &RenderContext, idx: usize, char_code: u8) -> bool {
+    ctx.colour_ram[idx] & 0x08 != 0 || (char_code & 0x80 != 0 && !ctx.reverse_mode)
 }
 
 pub struct VIC {
@@ -111,11 +118,17 @@ impl VIC {
         let charset_base = self.charset_base() as usize;
         let char_rom = &memory[charset_base..charset_base + CHARSET_SIZE];
         let background_colour = self.background_colour();
+        let border_colour = self.border_colour_index();
+        let auxiliary_colour = self.auxiliary_colour();
+        let reverse_mode = (self.screen_control & 0x08) != 0;
         let ctx = RenderContext {
             screen_ram,
             colour_ram,
             char_rom,
             background_colour,
+            border_colour,
+            auxiliary_colour,
+            reverse_mode,
             columns,
         };
         let mut frame_buffer_index = 0;
@@ -137,8 +150,22 @@ impl VIC {
         let fg_color = ctx.colour_ram[idx] & 0x0F;
         let bitmap_row = &ctx.char_rom[char_code as usize * CHAR_HEIGHT..(char_code as usize + 1) * CHAR_HEIGHT]
             [active_y % CHAR_HEIGHT];
-        let bit = (bitmap_row >> (7 - (active_x % CHAR_WIDTH))) & 1;
-        if bit == 1 { fg_color } else { ctx.background_colour }
+
+        if is_multicolor(ctx, idx, char_code) {
+            let pair_index = (active_x % CHAR_WIDTH) / 2;
+            let shift = 6 - pair_index * 2;
+            let pair = (bitmap_row >> shift) & 0b11;
+            match pair {
+                0 => ctx.background_colour,
+                1 => ctx.border_colour,
+                2 => fg_color & 0x07,
+                3 => ctx.auxiliary_colour,
+                _ => unreachable!(),
+            }
+        } else {
+            let bit = (bitmap_row >> (7 - (active_x % CHAR_WIDTH))) & 1;
+            if bit == 1 { fg_color } else { ctx.background_colour }
+        }
     }
 
     pub fn border_rgba(&self) -> [u8; 4] {
@@ -159,6 +186,14 @@ impl VIC {
 
     fn background_colour(&self) -> u8 {
         (self.screen_control & 0xF0) >> 4
+    }
+
+    fn auxiliary_colour(&self) -> u8 {
+        self.auxiliary_colour_and_volume >> 4
+    }
+
+    fn border_colour_index(&self) -> u8 {
+        self.screen_control & 0x07
     }
 
     fn charset_base(&self) -> u16 {
@@ -334,5 +369,124 @@ mod tests {
     fn charset_base(mut vic: VIC, #[case] lower_nibble: u8, #[case] expected: u16) {
         vic.write_byte(SCREEN_AND_CHAR_BASE_OFFSET as u16, lower_nibble);
         assert_eq!(vic.charset_base(), expected);
+    }
+
+    // --- multi-color tests ---
+
+    const BG_COLOR_INDEX: u8 = 0;
+    const BORDER_COLOR_INDEX: u8 = 1;
+    const FG_COLOR_INDEX: u8 = 5;
+    const AUX_COLOR_INDEX: u8 = 3;
+
+    #[fixture]
+    fn multicolor_vic() -> VIC {
+        let mut vic = VIC::default();
+        vic.columns_and_screen_select = 22;
+        vic.screen_control = (BG_COLOR_INDEX << 4) | BORDER_COLOR_INDEX;
+        vic.auxiliary_colour_and_volume = AUX_COLOR_INDEX << 4;
+        vic
+    }
+
+    fn build_bitmap_memory(char_code: u8, colour_ram_byte: u8, bitmap_row0: u8) -> [u8; 65536] {
+        let mut mem = [0u8; 65536];
+        let screen_start = 0;
+        let colour_start = 0x9400;
+        mem[screen_start] = char_code;
+        mem[colour_start] = colour_ram_byte;
+        let char_offset = CHARACTER_ROM_START + char_code as usize * CHAR_HEIGHT;
+        for row in 0..CHAR_HEIGHT {
+            mem[char_offset + row] = bitmap_row0;
+        }
+        mem
+    }
+
+    #[rstest]
+    fn multicolor_via_colour_ram_bit3_aux_pixels(mut multicolor_vic: VIC) {
+        let col_byte = 0x08 | FG_COLOR_INDEX;
+        let mem = build_bitmap_memory(0x01, col_byte, 0xFF);
+        let columns = 22;
+        let mut fb = vec![0_u8; ACTIVE_HEIGHT * columns * CHAR_WIDTH * 4];
+        multicolor_vic.render_active_screen(&mem, &mut fb);
+
+        assert_eq!(pixel_at(&fb, 0, 0), palette(AUX_COLOR_INDEX));
+        assert_eq!(pixel_at(&fb, 1, 0), palette(AUX_COLOR_INDEX));
+    }
+
+    #[rstest]
+    fn multicolor_via_colour_ram_bit3_bg_pixels(mut multicolor_vic: VIC) {
+        let col_byte = 0x08 | FG_COLOR_INDEX;
+        let mem = build_bitmap_memory(0x01, col_byte, 0x00);
+        let columns = 22;
+        let mut fb = vec![0_u8; ACTIVE_HEIGHT * columns * CHAR_WIDTH * 4];
+        multicolor_vic.render_active_screen(&mem, &mut fb);
+
+        assert_eq!(pixel_at(&fb, 0, 0), palette(BG_COLOR_INDEX));
+        assert_eq!(pixel_at(&fb, 1, 0), palette(BG_COLOR_INDEX));
+    }
+
+    #[rstest]
+    fn multicolor_via_colour_ram_bit3_border_pixels(mut multicolor_vic: VIC) {
+        let col_byte = 0x08 | FG_COLOR_INDEX;
+        let mem = build_bitmap_memory(0x01, col_byte, 0x55);
+        let columns = 22;
+        let mut fb = vec![0_u8; ACTIVE_HEIGHT * columns * CHAR_WIDTH * 4];
+        multicolor_vic.render_active_screen(&mem, &mut fb);
+
+        assert_eq!(pixel_at(&fb, 0, 0), palette(BORDER_COLOR_INDEX));
+        assert_eq!(pixel_at(&fb, 1, 0), palette(BORDER_COLOR_INDEX));
+    }
+
+    #[rstest]
+    fn multicolor_via_colour_ram_bit3_fg_pixels(mut multicolor_vic: VIC) {
+        let col_byte = 0x08 | FG_COLOR_INDEX;
+        let mem = build_bitmap_memory(0x01, col_byte, 0xAA);
+        let columns = 22;
+        let mut fb = vec![0_u8; ACTIVE_HEIGHT * columns * CHAR_WIDTH * 4];
+        multicolor_vic.render_active_screen(&mem, &mut fb);
+
+        assert_eq!(pixel_at(&fb, 0, 0), palette(FG_COLOR_INDEX));
+        assert_eq!(pixel_at(&fb, 1, 0), palette(FG_COLOR_INDEX));
+    }
+
+    #[rstest]
+    fn multicolor_char_bit7_reverse_off_uses_aux(mut multicolor_vic: VIC) {
+        let mem = build_bitmap_memory(0x81, FG_COLOR_INDEX, 0xFF);
+        let columns = 22;
+        let mut fb = vec![0_u8; ACTIVE_HEIGHT * columns * CHAR_WIDTH * 4];
+        multicolor_vic.render_active_screen(&mem, &mut fb);
+
+        assert_eq!(pixel_at(&fb, 0, 0), palette(AUX_COLOR_INDEX));
+    }
+
+    #[rstest]
+    fn char_bit7_with_reverse_on_not_multicolor(mut multicolor_vic: VIC) {
+        multicolor_vic.screen_control |= 0x08;
+        let mem = build_bitmap_memory(0x81, FG_COLOR_INDEX, 0xFF);
+        let columns = 22;
+        let mut fb = vec![0_u8; ACTIVE_HEIGHT * columns * CHAR_WIDTH * 4];
+        multicolor_vic.render_active_screen(&mem, &mut fb);
+
+        assert_eq!(pixel_at(&fb, 0, 0), palette(FG_COLOR_INDEX));
+    }
+
+    #[rstest]
+    fn multicolor_fg_masked_to_3_bits(mut multicolor_vic: VIC) {
+        let col_byte = 0x08 | 0x0D;
+        let mem = build_bitmap_memory(0x01, col_byte, 0xAA);
+        let columns = 22;
+        let mut fb = vec![0_u8; ACTIVE_HEIGHT * columns * CHAR_WIDTH * 4];
+        multicolor_vic.render_active_screen(&mem, &mut fb);
+
+        assert_eq!(pixel_at(&fb, 0, 0), palette(0x05));
+    }
+
+    #[rstest]
+    fn non_multicolor_rendering_unchanged(mut vic: VIC) {
+        let mem = build_memory(0x01, SCREEN_COLOR);
+        let columns = 22;
+        let mut fb = vec![0_u8; ACTIVE_HEIGHT * columns * CHAR_WIDTH * 4];
+        vic.render_active_screen(&mem, &mut fb);
+
+        assert_eq!(pixel_at(&fb, 0, 0), palette(SCREEN_COLOR));
     }
 }
