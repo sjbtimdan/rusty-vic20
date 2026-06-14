@@ -1,7 +1,7 @@
 use crate::{
     addressable::Addressable,
     bus::{CHARSET_SIZE, SCREEN_RAM_SIZE},
-    ui::screen::renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH, CHAR_HEIGHT, CHAR_WIDTH, TEXT_COLUMNS, palette},
+    ui::screen::renderer::{ACTIVE_HEIGHT, CHAR_HEIGHT, CHAR_WIDTH, palette},
 };
 
 const HORIZONTAL_ORIGIN_OFFSET: usize = 0x00;
@@ -20,6 +20,14 @@ const FREQUENCY_3_OFFSET: usize = 0x0C;
 const NOISE_AND_CONTROL_OFFSET: usize = 0x0D;
 const AUXILLIARY_COLOUR_AND_VOLUME_OFFSET: usize = 0x0E;
 const SCREEN_CONTROL_OFFSET: usize = 0x0F;
+
+struct RenderContext<'a> {
+    screen_ram: &'a [u8],
+    colour_ram: &'a [u8],
+    char_rom: &'a [u8],
+    background_colour: u8,
+    columns: usize,
+}
 
 pub struct VIC {
     horizontal_origin: u8,
@@ -82,27 +90,38 @@ impl VIC {
         addr >= start && addr < start + SCREEN_RAM_SIZE
     }
 
-    pub fn render_active_screen(
-        &mut self,
-        memory: &[u8; 65536],
-        frame_buffer: &mut [u8; ACTIVE_HEIGHT * ACTIVE_WIDTH * 4],
-    ) {
+    pub fn columns(&self) -> usize {
+        (self.columns_and_screen_select & 0x7F) as usize
+    }
+
+    pub fn render_active_screen(&mut self, memory: &[u8; 65536], frame_buffer: &mut [u8]) {
         if !self.screen_dirty {
             return;
         }
         self.screen_dirty = false;
+        let columns = self.columns();
+        if columns == 0 {
+            return;
+        }
+        let active_width = columns * CHAR_WIDTH;
         let screen_ram_start = self.screen_ram_start() as usize;
         let screen_ram = &memory[screen_ram_start..screen_ram_start + SCREEN_RAM_SIZE];
         let colour_ram_start = self.colour_ram_start() as usize;
-        let colour_ram = &memory[colour_ram_start..=colour_ram_start + SCREEN_RAM_SIZE];
+        let colour_ram = &memory[colour_ram_start..colour_ram_start + SCREEN_RAM_SIZE];
         let charset_base = self.charset_base() as usize;
         let char_rom = &memory[charset_base..charset_base + CHARSET_SIZE];
         let background_colour = self.background_colour();
+        let ctx = RenderContext {
+            screen_ram,
+            colour_ram,
+            char_rom,
+            background_colour,
+            columns,
+        };
         let mut frame_buffer_index = 0;
         for active_y in 0..ACTIVE_HEIGHT {
-            for active_x in 0..ACTIVE_WIDTH {
-                let colour_index =
-                    self.colour_index(screen_ram, colour_ram, char_rom, background_colour, active_y, active_x);
+            for active_x in 0..active_width {
+                let colour_index = self.colour_index(&ctx, active_y, active_x);
                 let colour = palette(colour_index);
                 frame_buffer[frame_buffer_index..frame_buffer_index + 4].copy_from_slice(&colour);
                 frame_buffer_index += 4;
@@ -110,24 +129,16 @@ impl VIC {
         }
     }
 
-    fn colour_index(
-        &self,
-        screen_ram: &[u8],
-        colour_ram: &[u8],
-        char_rom: &[u8],
-        background_colour: u8,
-        active_y: usize,
-        active_x: usize,
-    ) -> u8 {
+    fn colour_index(&self, ctx: &RenderContext, active_y: usize, active_x: usize) -> u8 {
         let row = active_y / CHAR_HEIGHT;
         let col = active_x / CHAR_WIDTH;
-        let idx = row * TEXT_COLUMNS + col;
-        let char_code = screen_ram[idx];
-        let fg_color = colour_ram[idx] & 0x0F;
-        let bitmap_row =
-            &char_rom[char_code as usize * CHAR_HEIGHT..(char_code as usize + 1) * CHAR_HEIGHT][active_y % CHAR_HEIGHT];
+        let idx = (row * ctx.columns + col).min(SCREEN_RAM_SIZE - 1);
+        let char_code = ctx.screen_ram[idx];
+        let fg_color = ctx.colour_ram[idx] & 0x0F;
+        let bitmap_row = &ctx.char_rom[char_code as usize * CHAR_HEIGHT..(char_code as usize + 1) * CHAR_HEIGHT]
+            [active_y % CHAR_HEIGHT];
         let bit = (bitmap_row >> (7 - (active_x % CHAR_WIDTH))) & 1;
-        if bit == 1 { fg_color } else { background_colour }
+        if bit == 1 { fg_color } else { ctx.background_colour }
     }
 
     pub fn border_rgba(&self) -> [u8; 4] {
@@ -219,6 +230,7 @@ mod tests {
     fn vic() -> VIC {
         let mut vic = VIC::default();
         vic.screen_control = (BACKGROUND_COLOR << 4) | SCREEN_COLOR;
+        vic.columns_and_screen_select = 22;
         vic
     }
 
@@ -240,14 +252,16 @@ mod tests {
     }
 
     fn pixel_at(framebuffer: &[u8], x: usize, y: usize) -> [u8; 4] {
-        let idx = (y * ACTIVE_WIDTH + x) * 4;
+        let active_width = 22 * CHAR_WIDTH;
+        let idx = (y * active_width + x) * 4;
         framebuffer[idx..idx + 4].try_into().unwrap()
     }
 
     #[rstest]
     fn reverse_mode_off_char_without_bit7_uses_fg(mut vic: VIC) {
         let mem = build_memory(0x01, SCREEN_COLOR);
-        let mut fb = [0_u8; ACTIVE_HEIGHT * ACTIVE_WIDTH * 4];
+        let columns = 22;
+        let mut fb = vec![0_u8; ACTIVE_HEIGHT * columns * CHAR_WIDTH * 4];
         vic.render_active_screen(&mem, &mut fb);
 
         assert_eq!(pixel_at(&fb, 0, 0), palette(SCREEN_COLOR));

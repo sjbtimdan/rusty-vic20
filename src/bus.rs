@@ -3,20 +3,21 @@ use crate::{
     cpu::cpu6502::CPU6502,
     memory::Memory,
     tools::debug::MemoryWriteWatchpoint,
-    ui::screen::renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH},
+    ui::screen::renderer::{ACTIVE_HEIGHT, CHAR_WIDTH},
     via::VIA,
     vic::VIC,
 };
 use log::info;
 use std::fs;
 
+#[derive(Default)]
 pub struct Bus {
     pub memory: Memory,
     vic: VIC,
     pub via1: VIA,
     pub via2: VIA,
     watchpoints: Vec<MemoryWriteWatchpoint>,
-    frame_buffer: [u8; ACTIVE_HEIGHT * ACTIVE_WIDTH * 4],
+    frame_buffer: Vec<u8>,
 }
 
 pub const SCREEN_RAM_SIZE: usize = 512;
@@ -33,19 +34,6 @@ pub const VIA1_REGISTERS_START: u16 = 0x9110;
 pub const VIA1_REGISTERS_END: u16 = 0x9120;
 pub const VIA2_REGISTERS_START: u16 = 0x9120;
 pub const VIA2_REGISTERS_END: u16 = 0x9130;
-
-impl Default for Bus {
-    fn default() -> Self {
-        Self {
-            memory: Memory::default(),
-            vic: VIC::default(),
-            via1: VIA::default(),
-            via2: VIA::default(),
-            watchpoints: vec![],
-            frame_buffer: [0; ACTIVE_HEIGHT * ACTIVE_WIDTH * 4],
-        }
-    }
-}
 
 impl Addressable for Bus {
     fn read_byte(&self, address: u16) -> u8 {
@@ -88,11 +76,20 @@ impl Bus {
     }
 
     pub fn render_active_screen(&mut self) {
+        let columns = self.vic.columns();
+        if columns == 0 {
+            return;
+        }
+        let active_width = columns * CHAR_WIDTH;
+        let required_len = ACTIVE_HEIGHT * active_width * 4;
+        if self.frame_buffer.len() != required_len {
+            self.frame_buffer.resize(required_len, 0);
+        }
         self.vic
             .render_active_screen(self.memory.as_bytes(), &mut self.frame_buffer)
     }
 
-    pub fn frame_buffer(&self) -> &[u8; ACTIVE_HEIGHT * ACTIVE_WIDTH * 4] {
+    pub fn frame_buffer(&self) -> &[u8] {
         &self.frame_buffer
     }
 
@@ -102,6 +99,10 @@ impl Bus {
 
     pub fn border_rgba(&self) -> [u8; 4] {
         self.vic.border_rgba()
+    }
+
+    pub fn columns(&self) -> usize {
+        self.vic.columns()
     }
 
     pub fn load_data(&mut self, start_address: usize, data: &[u8]) {

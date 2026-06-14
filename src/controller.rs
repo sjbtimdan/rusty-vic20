@@ -18,7 +18,7 @@ use crate::{
         keyboard::{KeyboardState, display::KeyboardWindow},
         screen::{
             display::{ScreenWindow, SharedVideoState},
-            renderer::{ACTIVE_HEIGHT, ACTIVE_WIDTH},
+            renderer::{ACTIVE_HEIGHT, CHAR_WIDTH, TEXT_COLUMNS},
         },
     },
 };
@@ -80,9 +80,11 @@ impl Vic20Controller {
     }
 
     fn spawn_emulator(memory_expansion: MemoryExpansion) -> (JoinHandle<()>, SharedState) {
+        let default_active_width = TEXT_COLUMNS * CHAR_WIDTH;
         let video = Arc::new(Mutex::new(SharedVideoState {
-            screen_rgba: vec![0_u8; ACTIVE_WIDTH * ACTIVE_HEIGHT * 4],
+            screen_rgba: vec![0_u8; default_active_width * ACTIVE_HEIGHT * 4],
             border_rgba: [0x00, 0x44, 0xAA, 0xFF],
+            active_width: default_active_width,
         }));
         let perf: SharedPerfState = Arc::new(Mutex::new(SharedPerformanceMetrics::default()));
         let (cassette_sender, cassette_receiver) = peripherals::cassette_player::make_cassette_channel();
@@ -178,12 +180,18 @@ impl Vic20Controller {
             if last_frame_publish.elapsed() >= FRAME_PUBLISH_INTERVAL {
                 runner.bus.render_active_screen();
                 let latest_border_rgba = runner.bus.border_rgba();
+                let active_width = runner.bus.columns() * CHAR_WIDTH;
                 let mut shared = match shared_video_state.lock() {
                     Ok(guard) => guard,
                     Err(poisoned) => poisoned.into_inner(),
                 };
-                shared.screen_rgba.copy_from_slice(runner.bus.frame_buffer());
+                let fb = runner.bus.frame_buffer();
+                if shared.screen_rgba.len() != fb.len() {
+                    shared.screen_rgba.resize(fb.len(), 0);
+                }
+                shared.screen_rgba.copy_from_slice(fb);
                 shared.border_rgba = latest_border_rgba;
+                shared.active_width = active_width;
                 last_frame_publish = Instant::now();
                 frame_count += 1;
             }
