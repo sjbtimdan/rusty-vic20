@@ -35,3 +35,14 @@ https://6502.org/tutorials/interrupts.html
 https://www.vic-20.it/computes_second_book_of_VIC.pdf
 http://cini.classiccmp.org/pdf/Commodore/VIC-20%20User%27s%20Manual.pdf
 https://www.vic-20.it/wp-content/uploads/More_Than_32_BASIC_Programs_for_the_VIC-20.pdf
+
+# Sound
+http://www.zimmers.net/anonftp/pub/cbm/documents/chipdata/VIC-I.txt
+https://sourceforge.net/p/vice-emu/code/HEAD/tree/trunk/vice/src/vic20/vic20sound.c
+http://www.zimmers.net/anonftp/pub/cbm/documents/chipdata/6522-VIA.txt
+https://en.wikipedia.org/wiki/MOS_Technology_VIC
+
+# Audio (cpal)
+https://docs.rs/cpal/0.17.0/cpal/
+https://github.com/RustAudio/cpal/tree/master/examples
+https://docs.rs/ringbuf/0.4.0/ringbuf/

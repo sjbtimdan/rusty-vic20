@@ -54,6 +54,9 @@ pub struct VIC {
     auxiliary_colour_and_volume: u8,
     screen_control: u8,
     screen_dirty: bool,
+    noise_lfsr: u32,
+    noise_last_step: u64,
+    noise_output: bool,
 }
 
 impl Default for VIC {
@@ -76,6 +79,9 @@ impl Default for VIC {
             auxiliary_colour_and_volume: 0,
             screen_control: 0x0E,
             screen_dirty: true,
+            noise_lfsr: 0x1FFFF,
+            noise_last_step: 0,
+            noise_output: false,
         }
     }
 }
@@ -200,6 +206,66 @@ impl VIC {
         let lower_bits = (self.screen_and_char_base & 0x0F) as u16;
         let base = if lower_bits < 8 { 0x8000 } else { 0x0000 };
         base + 0x0400 * (lower_bits & 0x07)
+    }
+
+    pub fn generate_sample(&mut self, cycle_count: u64) -> f32 {
+        let volume = (self.auxiliary_colour_and_volume & 0x0F) as f32 / 15.0;
+        if volume == 0.0 {
+            return 0.0;
+        }
+        let mut output = 0.0;
+        output += self.square_sample(cycle_count, self.frequency_1, 256);
+        output += self.square_sample(cycle_count, self.frequency_2, 128);
+        output += self.square_sample(cycle_count, self.frequency_3, 64);
+        output += self.noise_sample(cycle_count, self.noise_and_control, 32);
+        (output * volume).clamp(-1.0, 1.0)
+    }
+
+    fn square_sample(&self, cycle_count: u64, reg: u8, divisor: u32) -> f32 {
+        if reg & 0x80 == 0 {
+            return 0.0;
+        }
+        let freq = reg & 0x7F;
+        let period = (!freq & 0x7F) as u32;
+        let period = if period == 0 { 128 } else { period };
+        let total_cycles = divisor * period;
+        let phase = (cycle_count % total_cycles as u64) as f32 / total_cycles as f32;
+        if phase < 0.5 { 0.25 } else { -0.25 }
+    }
+
+    fn noise_sample(&mut self, cycle_count: u64, reg: u8, divisor: u32) -> f32 {
+        if reg & 0x80 == 0 {
+            return 0.0;
+        }
+        let freq = reg & 0x7F;
+        let period = (!freq & 0x7F) as u32;
+        let period = if period == 0 { 128 } else { period };
+        let step_interval = (divisor * period) as u64;
+        if step_interval == 0 {
+            return 0.0;
+        }
+        let steps = cycle_count / step_interval;
+        let steps_since = steps.wrapping_sub(self.noise_last_step);
+        if steps_since > 0 {
+            self.noise_last_step = steps;
+            for _ in 0..steps_since.min(256) {
+                self.advance_noise_lfsr();
+            }
+        }
+        if self.noise_output { 0.25 } else { -0.25 }
+    }
+
+    fn advance_noise_lfsr(&mut self) {
+        let bit3 = (self.noise_lfsr >> 3) & 1;
+        let bit12 = (self.noise_lfsr >> 12) & 1;
+        let bit14 = (self.noise_lfsr >> 14) & 1;
+        let bit15 = (self.noise_lfsr >> 15) & 1;
+        let gate = (bit3 ^ bit12 ^ bit14 ^ bit15) ^ 1;
+        let prev_lsb = self.noise_lfsr & 1;
+        self.noise_lfsr = ((self.noise_lfsr << 1) | gate) & 0x1FFFF;
+        if prev_lsb == 0 && (self.noise_lfsr & 1) == 1 {
+            self.noise_output = !self.noise_output;
+        }
     }
 }
 

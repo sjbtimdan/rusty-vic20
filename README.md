@@ -1,41 +1,36 @@
 # rusty-vic20
 
-Still a WIP.
+A Vic 20 emulator written in Rust.
 
-## Plan
+## Requirements
+- Apple Silicon Mac
+- Rust 1.95+ (but may work on earlier versions)
 
-- [x] 6502 CPU core.
-- [x] VIC chip, rendering VIC-20 text from screen memory.
-- [x] On screen VIC-20 keyboard
-- [X] VIA 2 chip (driving interrupts, etc)
-- [X] Integration testing.
-- [X] VIA 1 chip
-- [X] Keyboard interaction.
-- [X] Load basic programs (maybe cut and paste)
-- [X] NMI handling + RESTORE key
-- [X] Joystick support
-- [X] Load .prg files
-- [X] Memory expansion
-- [X] Fix graphics issues - no multicolour, broken hires.
-- [X] Speed control.
-- [ ] Sound.
-- [ ] Double height characters.
-- [ ] Load tape files
-- [ ] Accurate emulation down to the cycle and raster level.
-- [ ] Lightpen
+## Features
+- Vic 20 emulator
+  - Not cycle accurate but good to play games.
+- Well tested code base on single threaded core in understandable Rust
+- Control panel
+  - Loading .prg files
+  - Joystick
+  - Speed control
+  - Memory expansion: 3K, 8K, 16K, 32K
+- Virtual keyboard
+- Cut and paste directly onto the Vic screen.
 
-## Vic 20
+## Usage
 ```
-cargo run --bin vic20
+cargo run --release --bin vic20
 ```
 
+## Screenshots
 ![Start screen](docs/start-screen.png)
 ![Kaleido](docs/kaleido.png)
+!![Chess](docs/sargon-ii-chess.png)
 
 ## Disassembler
 
 Run the disassembler on a binary file:
-
 
 ```
 cargo run --bin disassembler -- data/somefile.bin

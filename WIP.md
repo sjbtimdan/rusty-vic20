@@ -1,24 +1,21 @@
-## Missing Screen Rendering Features
+# Features
 
-### 1. Reverse Mode (`0x900F` bit 3)
-When bit 3 of register `0x900F` is set, characters with bit 7 of their char code set should display in **reverse video** — foreground and background colors are swapped.
-- `vic.rs:46`: never checks bit 3 of register `[0x0F]` or bit 7 of `char_code`.
-- Fix: if `(registers[0x0F] & 0x08) != 0 && (char_code & 0x80) != 0`, swap fg/bg.
-
-### 2. Multi-Color Mode (`0x900F` bit 3 = 0 + character bit 7 set) ✅ DONE
-When reverse mode is off but a character has bit 7 set, render in multi-color: 4 colors per character using pixel pairs from the character bitmap.
-- Also activated via colour RAM bit 3 (standard method used by most VIC-20 software).
-- Colors: background (`0x900F` bits 7-4), border (`0x900F` bits 2-0), auxiliary (`0x900E` bits 7-4), colour RAM (`& 0x07`).
-- `vic.rs:150-169`: `colour_index` detects multicolor via both activation paths, decodes 2-bit pixel pairs, selects from the 4-color set.
-
-### 3. Double-Height Characters (`0x9003` bit 0)
-When set, characters are **16×8** instead of 8×8. Each character row's pixels repeat vertically over two text rows.
-- `screen/renderer.rs:4`: `CHAR_HEIGHT` hardcoded to 8; `TEXT_ROWS` should be halved when active.
-- `vic.rs:42`: register `[0x03]` bit 0 never read during rendering.
-- Fix: when active, divide `active_y` by 2 for bitmap row lookup.
-
-### Future / Not Yet Implemented
-- Sound registers (`0x900A`–`0x900D`, volume `0x900E` bits 3-0)
-- Raster line register (`0x9004`)
-- Light pen registers (`0x9006`–`0x9007`)
-- Paddle registers (`0x9008`–`0x9009`)
+- [x] 6502 CPU core.
+- [x] VIC chip, rendering VIC-20 text from screen memory.
+- [x] On screen VIC-20 keyboard
+- [X] VIA 2 chip (driving interrupts, etc)
+- [X] Integration testing.
+- [X] VIA 1 chip
+- [X] Keyboard interaction.
+- [X] Load basic programs (maybe cut and paste)
+- [X] NMI handling + RESTORE key
+- [X] Joystick support
+- [X] Load .prg files
+- [X] Memory expansion
+- [X] Fix graphics issues - no multicolour, broken hires.
+- [X] Speed control.
+- [X] Sound.
+- [ ] Double height characters.
+- [ ] Load tape files
+- [ ] Accurate emulation down to the cycle and raster level.
+- [ ] Lightpen

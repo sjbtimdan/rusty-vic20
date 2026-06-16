@@ -174,6 +174,25 @@ impl VIA {
             self.ifr.set(self.ifr.get() | IFR_CA1);
         }
     }
+
+    pub fn generate_cb2_sample(&self, cycle_count: u64) -> f32 {
+        let sr_mode = (self.auxiliary_control >> 2) & 0x07;
+        if sr_mode != 4 {
+            return 0.0;
+        }
+        let t2_period = self.timer2_counter_lo as u64 | ((self.timer2_counter_hi as u64) << 8);
+        if t2_period == 0 {
+            return 0.0;
+        }
+        let bits_per_shift = t2_period + 2;
+        let byte_period = bits_per_shift * 8;
+        let bit_index = ((cycle_count % byte_period) / bits_per_shift) as usize;
+        if (self.shift_register >> bit_index) & 1 == 1 {
+            0.5
+        } else {
+            -0.5
+        }
+    }
 }
 
 impl JoystickControl for VIA {

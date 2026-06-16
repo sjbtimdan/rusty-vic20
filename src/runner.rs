@@ -1,5 +1,6 @@
 use crate::{
     addressable::Addressable,
+    audio::AudioProducer,
     bus::Bus,
     cpu::{cpu6502::CPU6502, instruction_executor},
     memory::MemoryExpansion,
@@ -31,6 +32,9 @@ pub struct EmulatorRunner {
     pub paste_queue: PasteQueue,
     instruction_executor: instruction_executor::DefaultInstructionExecutor,
     pub brake: Brake,
+    audio_producer: Option<AudioProducer>,
+    audio_cycle: u64,
+    audio_frac: f64,
 }
 
 impl EmulatorRunner {
@@ -64,6 +68,9 @@ impl EmulatorRunner {
             paste_queue,
             instruction_executor: instruction_executor::DefaultInstructionExecutor,
             brake: Brake::new_default(brake_receiver),
+            audio_producer: None,
+            audio_cycle: 0,
+            audio_frac: 0.0,
         }
     }
 }
@@ -86,6 +93,9 @@ impl Default for EmulatorRunner {
             paste_queue,
             instruction_executor: instruction_executor::DefaultInstructionExecutor,
             brake: Brake::new_default(brake_rx),
+            audio_producer: None,
+            audio_cycle: 0,
+            audio_frac: 0.0,
         }
     }
 }
@@ -110,6 +120,27 @@ impl EmulatorRunner {
         self.serial_port.step(&mut self.bus.via1);
         self.direct_loader.step(&mut self.bus);
         self.brake.step();
+    }
+
+    pub fn generate_audio(&mut self, elapsed_secs: f64) {
+        let producer = match &mut self.audio_producer {
+            Some(p) => p,
+            None => return,
+        };
+        const PHI2_HZ: f64 = 1_108_404.0;
+        const AUDIO_HZ: f64 = 44_100.0;
+        self.audio_frac += elapsed_secs * AUDIO_HZ;
+        while self.audio_frac >= 1.0 {
+            self.audio_frac -= 1.0;
+            let vic = self.bus.vic.generate_sample(self.audio_cycle);
+            let cb2 = self.bus.via2.generate_cb2_sample(self.audio_cycle);
+            producer.push((vic + cb2).clamp(-1.0, 1.0));
+            self.audio_cycle += (PHI2_HZ / AUDIO_HZ) as u64;
+        }
+    }
+
+    pub fn set_audio_producer(&mut self, producer: AudioProducer) {
+        self.audio_producer = Some(producer);
     }
 
     pub fn step_multiple(&mut self, count: usize) {

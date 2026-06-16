@@ -1,4 +1,5 @@
 use crate::{
+    audio,
     bus::Bus,
     cpu::cpu6502::CPU6502,
     memory::MemoryExpansion,
@@ -25,6 +26,7 @@ use crate::{
     },
 };
 use arboard::Clipboard;
+use cpal::Stream;
 use std::{
     collections::{HashSet, VecDeque},
     sync::{
@@ -70,6 +72,7 @@ pub struct Vic20Controller {
     debug_state: ControlState,
     vic_thread: Option<JoinHandle<()>>,
     modifiers: ModifiersState,
+    _audio_stream: Option<Stream>,
 }
 
 impl Vic20Controller {
@@ -82,7 +85,7 @@ impl Vic20Controller {
         event_loop.run_app(self).expect("event loop run failed");
     }
 
-    fn spawn_emulator(memory_expansion: MemoryExpansion) -> (JoinHandle<()>, SharedState) {
+    fn spawn_emulator(memory_expansion: MemoryExpansion) -> (JoinHandle<()>, SharedState, Stream) {
         let default_active_width = TEXT_COLUMNS * CHAR_WIDTH;
         let video = Arc::new(Mutex::new(SharedVideoState {
             screen_rgba: vec![0_u8; default_active_width * ACTIVE_HEIGHT * 4],
@@ -101,14 +104,17 @@ impl Vic20Controller {
         let (shutdown_sender, shutdown_receiver) = std::sync::mpsc::sync_channel::<()>(0);
         let (brake_sender, brake_receiver) = peripherals::brake::make_brake_channel();
 
+        let (audio_producer, audio_stream) = audio::create_audio_channel();
+
         let handle = thread::Builder::new()
             .name("vic20-core-loop".to_string())
             .spawn({
                 let video = Arc::clone(&video);
                 let perf = Arc::clone(&perf);
                 move || {
-                    let runner =
+                    let mut runner =
                         EmulatorRunner::from_receiver(keyboard_receiver, paste_queue, memory_expansion, brake_receiver);
+                    runner.set_audio_producer(audio_producer);
                     Self::run_emulator(
                         runner,
                         video,
@@ -137,6 +143,7 @@ impl Vic20Controller {
                 brake_sender,
                 shutdown_sender,
             },
+            audio_stream,
         )
     }
 
@@ -153,6 +160,7 @@ impl Vic20Controller {
     ) {
         let mut last_frame_publish = Instant::now();
         let mut last_perf_publish = Instant::now();
+        let mut last_audio_batch = Instant::now();
         let mut frame_count: u64 = 0;
         let mut last_perf_total_cycles: u64 = 0;
         let mut last_perf_frame_count: u64 = 0;
@@ -184,6 +192,12 @@ impl Vic20Controller {
             runner.step();
 
             if last_frame_publish.elapsed() >= FRAME_PUBLISH_INTERVAL {
+                let elapsed = last_audio_batch.elapsed().as_secs_f64();
+                if elapsed > 0.0 {
+                    runner.generate_audio(elapsed);
+                }
+                last_audio_batch = Instant::now();
+
                 runner.bus.render_active_screen();
                 let latest_border_rgba = runner.bus.border_rgba();
                 let active_width = runner.bus.columns() * CHAR_WIDTH;
@@ -228,9 +242,10 @@ impl ApplicationHandler for Vic20Controller {
         self.keyboard.create(event_loop);
         self.debug.create(event_loop);
 
-        let (handle, state) = Self::spawn_emulator(self.debug_state.memory_expansion);
+        let (handle, state, audio_stream) = Self::spawn_emulator(self.debug_state.memory_expansion);
         self.vic_thread = Some(handle);
         self.shared_state = Some(state);
+        self._audio_stream = Some(audio_stream);
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: winit::window::WindowId, event: WindowEvent) {
@@ -421,13 +436,13 @@ impl Vic20Controller {
             }
             MemoryAction::Reboot => {
                 log::info!("Rebooting emulator");
-                // Detach old thread and drop old state (closes channels).
                 drop(self.shared_state.take());
                 drop(self.vic_thread.take());
-                // Spawn a fresh emulator.
-                let (handle, state) = Self::spawn_emulator(self.debug_state.memory_expansion);
+                drop(self._audio_stream.take());
+                let (handle, state, audio_stream) = Self::spawn_emulator(self.debug_state.memory_expansion);
                 self.vic_thread = Some(handle);
                 self.shared_state = Some(state);
+                self._audio_stream = Some(audio_stream);
                 log::info!("Emulator rebooted");
             }
         }

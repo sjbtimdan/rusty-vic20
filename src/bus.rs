@@ -13,7 +13,7 @@ use std::fs;
 #[derive(Default)]
 pub struct Bus {
     pub memory: Memory,
-    vic: VIC,
+    pub vic: VIC,
     pub via1: VIA,
     pub via2: VIA,
     watchpoints: Vec<MemoryWriteWatchpoint>,
