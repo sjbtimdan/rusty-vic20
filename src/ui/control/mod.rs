@@ -2,6 +2,7 @@ pub use crate::memory::MemoryExpansion;
 use crate::peripherals::joystick::JoystickDirection;
 use std::sync::{Arc, Mutex};
 
+pub mod brake;
 pub mod display;
 
 #[derive(Clone, Debug)]
@@ -25,6 +26,8 @@ impl Default for SharedPerformanceMetrics {
 
 pub type SharedPerfState = Arc<Mutex<SharedPerformanceMetrics>>;
 
+pub use crate::peripherals::brake::BrakeSpeed;
+
 #[derive(Default)]
 pub struct ControlState {
     pub current_tab: ControlTab,
@@ -38,6 +41,8 @@ pub struct ControlState {
     pub arrow_keys_mask: u8,
     pub memory_expansion: MemoryExpansion,
     pub memory_action_pending: Option<MemoryAction>,
+    pub brake_speed: BrakeSpeed,
+    pub brake_action_pending: Option<BrakeAction>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -65,4 +70,9 @@ pub enum JoystickAction {
 pub enum MemoryAction {
     SetExpansion(MemoryExpansion),
     Reboot,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum BrakeAction {
+    SetSpeed(BrakeSpeed),
 }

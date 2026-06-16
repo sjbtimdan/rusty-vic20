@@ -1,3 +1,4 @@
+pub mod brake;
 pub mod cassette_player;
 pub mod direct_loader;
 pub mod joystick;

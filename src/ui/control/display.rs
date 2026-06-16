@@ -11,6 +11,7 @@ use winit::{
 };
 
 use super::{
+    BrakeAction,
     ControlState,
     ControlTab,
     IoAction,
@@ -19,21 +20,22 @@ use super::{
     MemoryAction,
     MemoryExpansion,
     SharedPerfState,
+    brake,
 };
 
 const WINDOW_TITLE: &str = "VIC-20 Performance";
 
-const CHAR_W: i32 = 8;
+pub(crate) const CHAR_W: i32 = 8;
 const CHAR_H: i32 = 8;
-const SCALE: i32 = 1;
+pub(crate) const SCALE: i32 = 1;
 
-const MARGIN: i32 = 8;
-const ROW_H: i32 = 10;
+pub(crate) const MARGIN: i32 = 8;
+pub(crate) const ROW_H: i32 = 10;
 
 const TAB_BAR_H: i32 = 16;
 const CONTENT_START_Y: i32 = TAB_BAR_H + 4;
 
-const PIXEL_WIDTH: u32 = (IO_BTN_DIRECT_LOAD_X + IO_BTN_DIRECT_LOAD_W + MARGIN) as u32;
+pub(crate) const PIXEL_WIDTH: u32 = (IO_BTN_DIRECT_LOAD_X + IO_BTN_DIRECT_LOAD_W + MARGIN) as u32;
 const PIXEL_HEIGHT: u32 = 220;
 
 const PERF_VALUE_COLOR: [u8; 4] = [140, 200, 140, 255];
@@ -106,8 +108,8 @@ const JOY_CHECKBOX_X: i32 = MARGIN;
 const JOY_CHECKBOX_Y: i32 = 185;
 const JOY_CHECKBOX_SIZE: i32 = 12;
 
-const BTN_COLOR: [u8; 4] = [55, 55, 80, 255];
-const BTN_TEXT_COLOR: [u8; 4] = [220, 220, 220, 255];
+pub(crate) const BTN_COLOR: [u8; 4] = [55, 55, 80, 255];
+pub(crate) const BTN_TEXT_COLOR: [u8; 4] = [220, 220, 220, 255];
 
 const RADIO_SIZE: i32 = 10;
 const RADIO_INNER: i32 = 4;
@@ -132,7 +134,7 @@ const MEM_RADIO_OPTIONS: [(MemoryExpansion, &str); 5] = [
 ];
 
 const BG_COLOR: [u8; 4] = [30, 30, 30, 255];
-const HEADER_COLOR: [u8; 4] = [100, 100, 100, 255];
+pub(crate) const HEADER_COLOR: [u8; 4] = [100, 100, 100, 255];
 
 #[derive(Default)]
 pub struct ControlWindow {
@@ -267,7 +269,11 @@ impl ControlWindow {
                 }
 
                 match state.current_tab {
-                    ControlTab::Perf => {}
+                    ControlTab::Perf => {
+                        if let Some(speed) = brake::brake_button_at(px as i32, py as i32) {
+                            state.brake_action_pending = Some(BrakeAction::SetSpeed(speed));
+                        }
+                    }
                     ControlTab::Io => {
                         if let Some(action) = io_button_at(px as i32, py as i32) {
                             state.io_action_pending = Some(action);
@@ -409,7 +415,7 @@ impl ControlWindow {
         draw_tab_bar(frame, state.current_tab);
 
         match state.current_tab {
-            ControlTab::Perf => draw_perf_tab(frame, perf),
+            ControlTab::Perf => draw_perf_tab(frame, state, perf),
             ControlTab::Io => draw_io_tab(frame, state),
             ControlTab::Joystick => draw_joystick_tab(frame, state),
             ControlTab::Memory => draw_memory_tab(frame, state),
@@ -475,7 +481,7 @@ fn draw_tab_bar(frame: &mut [u8], active_tab: ControlTab) {
     }
 }
 
-fn draw_perf_tab(frame: &mut [u8], perf: &SharedPerfState) {
+fn draw_perf_tab(frame: &mut [u8], state: &ControlState, perf: &SharedPerfState) {
     let metrics = match perf.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
@@ -503,6 +509,8 @@ fn draw_perf_tab(frame: &mut [u8], perf: &SharedPerfState) {
     draw_str(frame, MARGIN, y + ROW_H + 4, &line1, PERF_VALUE_COLOR);
     draw_str(frame, MARGIN, y + 2 * (ROW_H + 4), &line2, PERF_VALUE_COLOR);
     draw_str(frame, MARGIN, y + 3 * (ROW_H + 4), &line3, PERF_VALUE_COLOR);
+
+    brake::draw_brake_controls(frame, state.brake_speed);
 }
 
 fn draw_io_tab(frame: &mut [u8], state: &ControlState) {
@@ -650,7 +658,7 @@ fn fill_rect(pixels: &mut [u8], width: usize, height: usize, color: [u8; 4]) {
     }
 }
 
-fn fill_rect_at(pixels: &mut [u8], frame_width: usize, x: i32, y: i32, w: i32, h: i32, color: [u8; 4]) {
+pub(crate) fn fill_rect_at(pixels: &mut [u8], frame_width: usize, x: i32, y: i32, w: i32, h: i32, color: [u8; 4]) {
     for dy in 0..h {
         for dx in 0..w {
             let px = x + dx;
@@ -668,7 +676,7 @@ fn fill_rect_at(pixels: &mut [u8], frame_width: usize, x: i32, y: i32, w: i32, h
     }
 }
 
-fn draw_str(pixels: &mut [u8], x: i32, y: i32, text: &str, color: [u8; 4]) {
+pub(crate) fn draw_str(pixels: &mut [u8], x: i32, y: i32, text: &str, color: [u8; 4]) {
     let mut cx = x;
     for ch in text.chars() {
         draw_char(pixels, cx, y, ch, color);

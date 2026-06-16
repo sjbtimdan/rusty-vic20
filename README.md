@@ -17,7 +17,7 @@ Still a WIP.
 - [X] Load .prg files
 - [X] Memory expansion
 - [X] Fix graphics issues - no multicolour, broken hires.
-- [ ] Speed control.
+- [X] Speed control.
 - [ ] Sound.
 - [ ] Double height characters.
 - [ ] Load tape files

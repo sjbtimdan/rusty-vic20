@@ -5,6 +5,7 @@ use crate::{
     memory::MemoryExpansion,
     paste::PasteQueue,
     peripherals::{
+        brake::{Brake, BrakeSpeed, make_brake_channel},
         cassette_player::CassettePlayer,
         direct_loader::DirectLoad,
         joystick::Joystick,
@@ -29,6 +30,7 @@ pub struct EmulatorRunner {
     pub keyboard_sender: SyncSender<HashSet<Key>>,
     pub paste_queue: PasteQueue,
     instruction_executor: instruction_executor::DefaultInstructionExecutor,
+    pub brake: Brake,
 }
 
 impl EmulatorRunner {
@@ -46,6 +48,7 @@ impl EmulatorRunner {
         keyboard_receiver: Receiver<HashSet<Key>>,
         paste_queue: PasteQueue,
         memory_expansion: MemoryExpansion,
+        brake_receiver: Receiver<BrakeSpeed>,
     ) -> Self {
         let (bus, cpu) = Self::create_bus_and_cpu(memory_expansion);
         let (dummy_tx, _) = make_keyboard_channel();
@@ -60,6 +63,7 @@ impl EmulatorRunner {
             keyboard_sender: dummy_tx,
             paste_queue,
             instruction_executor: instruction_executor::DefaultInstructionExecutor,
+            brake: Brake::new_default(brake_receiver),
         }
     }
 }
@@ -69,6 +73,7 @@ impl Default for EmulatorRunner {
         let (bus, cpu) = Self::create_bus_and_cpu(MemoryExpansion::None);
         let paste_queue = crate::paste::new_paste_queue();
         let (tx, rx) = make_keyboard_channel();
+        let (_, brake_rx) = make_brake_channel();
         Self {
             bus,
             cpu,
@@ -80,6 +85,7 @@ impl Default for EmulatorRunner {
             keyboard_sender: tx,
             paste_queue,
             instruction_executor: instruction_executor::DefaultInstructionExecutor,
+            brake: Brake::new_default(brake_rx),
         }
     }
 }
@@ -103,6 +109,7 @@ impl EmulatorRunner {
         self.joystick.step(&mut self.bus.via1, &mut self.bus.via2);
         self.serial_port.step(&mut self.bus.via1);
         self.direct_loader.step(&mut self.bus);
+        self.brake.step();
     }
 
     pub fn step_multiple(&mut self, count: usize) {

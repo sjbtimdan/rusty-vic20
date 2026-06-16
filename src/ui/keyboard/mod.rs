@@ -287,6 +287,8 @@ mod tests {
         fn now(&self) -> Instant {
             self.time.get()
         }
+
+        fn sleep(&self, _duration: Duration) {}
     }
 
     fn mock_state() -> KeyboardState<MockClock> {
