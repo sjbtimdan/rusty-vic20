@@ -126,7 +126,7 @@ impl VIA {
         let counter = self.t1_counter.get();
         if counter == 0 {
             self.t1_counter.set(self.t1_latch.get());
-            self.ifr.set(self.ifr.get() | IFR_TIMER1);
+            self.ifr.update(|v| v | IFR_TIMER1);
         } else {
             self.t1_counter.set(counter - 1);
         }
@@ -171,7 +171,7 @@ impl VIA {
 
     fn check_ca1_edge(&mut self) {
         if self.ca1_latch.take() {
-            self.ifr.set(self.ifr.get() | IFR_CA1);
+            self.ifr.update(|v| v | IFR_CA1);
         }
     }
 
@@ -232,8 +232,7 @@ impl Addressable for VIA {
             DATA_DIRECTION_B_OFFSET => self.ddrb,
             DATA_DIRECTION_A_OFFSET => self.ddra,
             TIMER1_LATCH_LO_OFFSET => {
-                let ifr = self.ifr.get();
-                self.ifr.set(ifr & !IFR_TIMER1);
+                self.ifr.update(|v| v & !IFR_TIMER1);
                 self.update_ifr_irq();
                 (self.t1_counter.get() & 0xFF) as u8
             }
@@ -270,8 +269,7 @@ impl Addressable for VIA {
                 self.t1_latch
                     .set((self.t1_latch.get() & 0x00FF) | ((value as u16) << 8));
                 self.t1_counter.set(self.t1_latch.get());
-                let ifr = self.ifr.get();
-                self.ifr.set(ifr & !IFR_TIMER1);
+                self.ifr.update(|v| v & !IFR_TIMER1);
                 self.update_ifr_irq();
             }
             TIMER1_COUNTER_HI_OFFSET => {
@@ -293,11 +291,10 @@ impl Addressable for VIA {
                 self.ca1_latch.reset();
             }
             IFR_OFFSET => {
-                let ifr = self.ifr.get();
                 if value & IFR_IRQ != 0 {
-                    self.ifr.set(ifr | (value & 0x7F));
+                    self.ifr.update(|v| v | (value & 0x7F));
                 } else {
-                    self.ifr.set(ifr & !(value & 0x7F));
+                    self.ifr.update(|v| v & !(value & 0x7F));
                 }
                 self.update_ifr_irq();
             }

@@ -42,6 +42,7 @@ impl EdgeLatch {
         }
     }
 
+    #[must_use = "latch state is lost if not checked"]
     pub fn take(&mut self) -> bool {
         if self.latched {
             self.latched = false;
@@ -55,6 +56,7 @@ impl EdgeLatch {
         self.edge = edge;
     }
 
+    #[must_use]
     pub fn is_latched(&self) -> bool {
         self.latched
     }
@@ -97,7 +99,7 @@ mod tests {
         latch.set_level(true);
         assert!(latch.is_latched());
 
-        latch.take();
+        let _ = latch.take();
         latch.set_level(true);
         assert!(!latch.is_latched());
     }
@@ -110,7 +112,7 @@ mod tests {
         latch.set_level(true);
         assert!(latch.is_latched());
 
-        latch.take();
+        let _ = latch.take();
         latch.set_level(false);
         assert!(!latch.is_latched());
     }
@@ -138,9 +140,9 @@ mod tests {
     fn falling_edge_ignores_false_to_false() {
         let mut latch = EdgeLatch::new_falling();
         latch.set_level(true);
-        latch.take();
+        let _ = latch.take();
         latch.set_level(false);
-        latch.take();
+        let _ = latch.take();
 
         latch.set_level(false);
         assert!(!latch.is_latched());
