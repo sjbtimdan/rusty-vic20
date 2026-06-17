@@ -242,6 +242,7 @@ fn execute_instruction(
     true
 }
 
+#[inline]
 fn adc(registers: &mut Registers, value: u8) {
     let carry_in = registers.is_flag_set(CARRY_FLAG_BITMASK) as u8;
     if registers.is_flag_set(DECIMAL_FLAG_BITMASK) {
@@ -272,6 +273,7 @@ fn adc(registers: &mut Registers, value: u8) {
     }
 }
 
+#[inline]
 fn sbc(registers: &mut Registers, value: u8) {
     let carry_in = registers.is_flag_set(CARRY_FLAG_BITMASK) as u8;
     if registers.is_flag_set(DECIMAL_FLAG_BITMASK) {
@@ -306,6 +308,7 @@ fn sbc(registers: &mut Registers, value: u8) {
     }
 }
 
+#[inline]
 fn branch_if(registers: &mut Registers, operands: &[u8], condition: bool) {
     if condition {
         let offset = operands[0] as i8;
@@ -313,27 +316,32 @@ fn branch_if(registers: &mut Registers, operands: &[u8], condition: bool) {
     }
 }
 
+#[inline]
 fn compare(registers: &mut Registers, reg: u8, value: u8) {
     let result = reg.wrapping_sub(value);
     registers.update_carry_flag(reg >= value);
     registers.update_zero_and_negative(result);
 }
 
+#[inline]
 pub fn stack_push(registers: &mut Registers, memory: &mut dyn Addressable, value: u8) {
     memory.write_byte(0x0100 + registers.sp as u16, value);
     registers.sp = registers.sp.wrapping_sub(1);
 }
 
+#[inline]
 fn stack_push_u16(registers: &mut Registers, memory: &mut dyn Addressable, value: u16) {
     stack_push(registers, memory, (value >> 8) as u8);
     stack_push(registers, memory, value as u8);
 }
 
+#[inline]
 fn stack_pull(registers: &mut Registers, memory: &mut dyn Addressable) -> u8 {
     registers.sp = registers.sp.wrapping_add(1);
     memory.read_byte(0x0100 + registers.sp as u16)
 }
 
+#[inline]
 fn apply_shift(
     registers: &mut Registers,
     memory: &mut dyn Addressable,
