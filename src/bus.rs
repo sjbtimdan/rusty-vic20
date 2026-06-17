@@ -37,6 +37,9 @@ pub const VIA2_REGISTERS_END: u16 = 0x9130;
 
 impl Addressable for Bus {
     fn read_byte(&self, address: u16) -> u8 {
+        if !(VIC_REGISTERS_START..VIA2_REGISTERS_END).contains(&address) {
+            return self.memory.read_byte(address);
+        }
         match address {
             VIC_REGISTERS_START..VIC_REGISTERS_END => self.vic.read_byte(address - VIC_REGISTERS_START),
             VIA1_REGISTERS_START..VIA1_REGISTERS_END => self.via1.read_byte(address - VIA1_REGISTERS_START),
@@ -49,6 +52,13 @@ impl Addressable for Bus {
         self.watchpoints
             .iter()
             .for_each(|watchpoint| watchpoint.on_write(address, value));
+        if !(VIC_REGISTERS_START..VIA2_REGISTERS_END).contains(&address) {
+            self.memory.write_byte(address, value);
+            if self.vic.is_address_in_screen_memory(address) || self.vic.is_address_in_colour_memory(address) {
+                self.vic.mark_screen_dirty();
+            }
+            return;
+        }
         match address {
             VIC_REGISTERS_START..VIC_REGISTERS_END => self.vic.write_byte(address - VIC_REGISTERS_START, value),
             VIA1_REGISTERS_START..VIA1_REGISTERS_END => self.via1.write_byte(address - VIA1_REGISTERS_START, value),
