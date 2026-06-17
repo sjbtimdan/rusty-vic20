@@ -45,4 +45,10 @@ impl AudioProducer {
     pub fn push(&mut self, sample: f32) {
         let _ = self.inner.try_push(sample);
     }
+
+    pub fn noop() -> Self {
+        let rb = HeapRb::<f32>::new(1);
+        let (prod, _cons) = rb.split();
+        AudioProducer { inner: prod }
+    }
 }

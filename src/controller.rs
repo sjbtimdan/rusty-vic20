@@ -112,9 +112,13 @@ impl Vic20Controller {
                 let video = Arc::clone(&video);
                 let perf = Arc::clone(&perf);
                 move || {
-                    let mut runner =
-                        EmulatorRunner::from_receiver(keyboard_receiver, paste_queue, memory_expansion, brake_receiver);
-                    runner.set_audio_producer(audio_producer);
+                    let runner = EmulatorRunner::from_receiver(
+                        keyboard_receiver,
+                        paste_queue,
+                        memory_expansion,
+                        brake_receiver,
+                        audio_producer,
+                    );
                     Self::run_emulator(
                         runner,
                         video,
