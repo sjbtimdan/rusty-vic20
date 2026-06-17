@@ -2,7 +2,7 @@ use crate::{
     addressable::Addressable,
     audio::AudioProducer,
     bus::Bus,
-    cpu::{cpu6502::CPU6502, instruction_executor},
+    cpu::cpu6502::CPU6502,
     memory::MemoryExpansion,
     paste::PasteQueue,
     peripherals::{
@@ -30,7 +30,6 @@ pub struct EmulatorRunner {
     keyboard: Keyboard,
     pub keyboard_sender: SyncSender<HashSet<Key>>,
     pub paste_queue: PasteQueue,
-    instruction_executor: instruction_executor::DefaultInstructionExecutor,
     pub brake: Brake,
     audio_producer: AudioProducer,
     audio_cycle: u64,
@@ -67,7 +66,6 @@ impl EmulatorRunner {
             keyboard: Keyboard::new(keyboard_receiver, Some(paste_queue.clone())),
             keyboard_sender: dummy_tx,
             paste_queue,
-            instruction_executor: instruction_executor::DefaultInstructionExecutor,
             brake: Brake::new_default(brake_receiver),
             audio_producer,
             audio_cycle: 0,
@@ -92,7 +90,6 @@ impl Default for EmulatorRunner {
             keyboard: Keyboard::new(rx, Some(paste_queue.clone())),
             keyboard_sender: tx,
             paste_queue,
-            instruction_executor: instruction_executor::DefaultInstructionExecutor,
             brake: Brake::new_default(brake_rx),
             audio_producer: AudioProducer::noop(),
             audio_cycle: 0,
@@ -115,7 +112,7 @@ impl EmulatorRunner {
 
     pub fn step(&mut self) {
         self.bus.step_devices(&mut self.cpu);
-        self.cpu.step(&mut self.bus, &self.instruction_executor);
+        self.cpu.step(&mut self.bus);
         self.cassette_player.step(&mut self.bus.via1);
         self.joystick.step(&mut self.bus.via1, &mut self.bus.via2);
         self.serial_port.step(&mut self.bus.via1);

@@ -17,42 +17,7 @@ use crate::{
     },
 };
 
-pub trait InstructionExecutor {
-    fn execute_instruction(
-        &self,
-        registers: &mut Registers,
-        memory: &mut dyn Addressable,
-        instruction: Instruction,
-        operand_resolution: &dyn OperandResolution,
-        operands: &[u8],
-        interrupt_handler: &mut dyn InterruptHandler,
-    ) -> bool;
-}
-
-pub struct DefaultInstructionExecutor;
-
-impl InstructionExecutor for DefaultInstructionExecutor {
-    fn execute_instruction(
-        &self,
-        registers: &mut Registers,
-        memory: &mut dyn Addressable,
-        instruction: Instruction,
-        operand_resolution: &dyn OperandResolution,
-        operands: &[u8],
-        interrupt_handler: &mut dyn InterruptHandler,
-    ) -> bool {
-        execute_instruction(
-            registers,
-            memory,
-            instruction,
-            operand_resolution,
-            operands,
-            interrupt_handler,
-        )
-    }
-}
-
-fn execute_instruction(
+pub(crate) fn execute_instruction(
     registers: &mut Registers,
     memory: &mut dyn Addressable,
     instruction: Instruction,
