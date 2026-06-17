@@ -15,7 +15,10 @@ use crate::{
     },
 };
 use log::{debug, log_enabled};
-use std::time::Instant;
+use std::{
+    hint::{likely, unlikely},
+    time::Instant,
+};
 
 const PERFORMANCE_LOG_INTERVAL_CYCLES: u64 = 1_000_000;
 
@@ -84,17 +87,18 @@ impl CPU6502 {
 
     pub fn step(&mut self, memory: &mut impl Addressable, instruction_executor: &impl InstructionExecutor) {
         if self.instruction_tracking.current_instruction_info.is_none() {
-            if self.nmi_latch.take() {
+            if unlikely(self.nmi_latch.take()) {
                 self.instruction_tracking
                     .do_interrupt(&mut self.registers, memory, Interrupt::NMI);
                 return;
             }
-            if let Some(interrupt) = self.instruction_tracking.interrupt_requested.take() {
+            let deferred = self.instruction_tracking.interrupt_requested.take();
+            if unlikely(deferred.is_some()) {
                 self.instruction_tracking
-                    .do_interrupt(&mut self.registers, memory, interrupt);
+                    .do_interrupt(&mut self.registers, memory, deferred.unwrap());
                 return;
             }
-            if self.irq_line_low && !self.registers.is_flag_set(INTERRUPT_FLAG_BITMASK) {
+            if unlikely(self.irq_line_low && !self.registers.is_flag_set(INTERRUPT_FLAG_BITMASK)) {
                 self.instruction_tracking
                     .do_interrupt(&mut self.registers, memory, Interrupt::IRQ);
                 return;
@@ -124,18 +128,19 @@ impl CPU6502 {
             let Some(instruction_info) = self.instruction_tracking.current_instruction_info else {
                 panic!("Expected current_instruction_info to be Some");
             };
-            if self.operands_index < instruction_info.mode.operand_count() {
+            if likely(self.operands_index < instruction_info.mode.operand_count()) {
                 self.operands_buffer[self.operands_index] =
                     memory.read_byte(self.registers.pc + 1 + self.operands_index as u16);
                 self.operands_index += 1;
-                if self.operands_index == instruction_info.mode.operand_count()
-                    && instruction_info
-                        .instruction
-                        .has_page_cross_cycle_penalty(&instruction_info.mode)
-                    && instruction_info
-                        .mode
-                        .crosses_page_boundary(&self.registers, memory, &self.operands_buffer)
-                {
+                if unlikely(
+                    self.operands_index == instruction_info.mode.operand_count()
+                        && instruction_info
+                            .instruction
+                            .has_page_cross_cycle_penalty(&instruction_info.mode)
+                        && instruction_info
+                            .mode
+                            .crosses_page_boundary(&self.registers, memory, &self.operands_buffer),
+                ) {
                     self.cycle_count_at_end_of_this_instruction += 1;
                 }
             }
@@ -175,17 +180,18 @@ impl CPU6502 {
                 self.instruction_tracking.current_instruction_info = None;
                 self.cycle_count = 0;
 
-                if self.nmi_latch.take() {
+                if unlikely(self.nmi_latch.take()) {
                     self.instruction_tracking
                         .do_interrupt(&mut self.registers, memory, Interrupt::NMI);
                     return;
                 }
-                if let Some(interrupt) = self.instruction_tracking.interrupt_requested.take() {
+                let deferred = self.instruction_tracking.interrupt_requested.take();
+                if unlikely(deferred.is_some()) {
                     self.instruction_tracking
-                        .do_interrupt(&mut self.registers, memory, interrupt);
+                        .do_interrupt(&mut self.registers, memory, deferred.unwrap());
                     return;
                 }
-                if self.irq_line_low && !self.registers.is_flag_set(INTERRUPT_FLAG_BITMASK) {
+                if unlikely(self.irq_line_low && !self.registers.is_flag_set(INTERRUPT_FLAG_BITMASK)) {
                     self.instruction_tracking
                         .do_interrupt(&mut self.registers, memory, Interrupt::IRQ);
                 }
