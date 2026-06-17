@@ -7,7 +7,7 @@ use crate::{
     edge_latch::{Edge, EdgeLatch},
     peripherals::joystick::JoystickControl,
 };
-use std::cell::Cell;
+use std::{cell::Cell, hint::assert_unchecked};
 
 const IFR_CA1: u8 = 0x02;
 const IFR_TIMER1: u8 = 0x40;
@@ -216,6 +216,9 @@ fn set_bit(value: &mut u8, bit_index: u8, bit: bool) {
 impl Addressable for VIA {
     fn read_byte(&self, address: u16) -> u8 {
         let offset = address as usize;
+        unsafe {
+            assert_unchecked(offset < 16);
+        }
         match offset {
             PORT_B_OFFSET => {
                 if self.ddrb & 0x80 == 0 {
@@ -257,6 +260,9 @@ impl Addressable for VIA {
 
     fn write_byte(&mut self, address: u16, value: u8) {
         let offset = address as usize;
+        unsafe {
+            assert_unchecked(offset < 16);
+        }
         match offset {
             PORT_A_OFFSET => self.pa = value,
             PORT_B_OFFSET => self.set_port_b_internal(value),

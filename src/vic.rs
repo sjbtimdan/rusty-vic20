@@ -3,6 +3,7 @@ use crate::{
     bus::{CHARSET_SIZE, SCREEN_RAM_SIZE},
     ui::screen::renderer::{ACTIVE_HEIGHT, CHAR_HEIGHT, CHAR_WIDTH, palette},
 };
+use std::hint::assert_unchecked;
 
 const HORIZONTAL_ORIGIN_OFFSET: usize = 0x00;
 const VERTICAL_ORIGIN_OFFSET: usize = 0x01;
@@ -272,6 +273,9 @@ impl VIC {
 impl Addressable for VIC {
     fn read_byte(&self, address: u16) -> u8 {
         let offset = address as usize;
+        unsafe {
+            assert_unchecked(offset < 16);
+        }
         match offset {
             HORIZONTAL_ORIGIN_OFFSET => self.horizontal_origin,
             VERTICAL_ORIGIN_OFFSET => self.vertical_origin,
@@ -296,6 +300,9 @@ impl Addressable for VIC {
     fn write_byte(&mut self, address: u16, value: u8) {
         self.screen_dirty = true;
         let offset = address as usize;
+        unsafe {
+            assert_unchecked(offset < 16);
+        }
         match offset {
             HORIZONTAL_ORIGIN_OFFSET => self.horizontal_origin = value,
             VERTICAL_ORIGIN_OFFSET => self.vertical_origin = value,
