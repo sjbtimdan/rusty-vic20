@@ -1,10 +1,18 @@
 mod common;
 
-use common::{UNEXPANDED_SCREEN_RAM_START, screen_code};
+use common::{UNEXPANDED_SCREEN_RAM_START, run_extra_steps, screen_code};
 use rusty_vic20::{
+    cpu::cpu6502::CPU6502,
     emulator::{ThreadReceivers, paste::new_paste_queue},
-    hardware::{addressable::Addressable, memory::MemoryExpansion},
-    peripherals::{brake::make_brake_channel, keyboard::make_keyboard_channel},
+    hardware::{addressable::Addressable, bus::Bus, memory::MemoryExpansion},
+    peripherals::{
+        brake::{Brake, make_brake_channel},
+        cassette_player::CassettePlayer,
+        direct_loader::DirectLoad,
+        joystick::Joystick,
+        keyboard::{Keyboard, make_keyboard_channel},
+        serial_port::SerialPort,
+    },
     ui::{
         audio::AudioProducer,
         control::SharedPerformanceMetrics,
@@ -19,21 +27,37 @@ use std::{
 
 fn run_boot_with_keyboard() -> (rusty_vic20::emulator::EmulatorRunner, SyncSender<HashSet<Key>>) {
     let (keyboard_sender, keyboard_receiver) = make_keyboard_channel();
+    let keyboard = Keyboard::new(keyboard_receiver);
+    let brake = Brake::new_default(make_brake_channel().1);
     let receivers = ThreadReceivers {
         video: Arc::new(Mutex::new(SharedVideoState::default())),
         perf: Arc::new(Mutex::new(SharedPerformanceMetrics::default())),
         load_queue: Arc::new(Mutex::new(VecDeque::new())),
         paste_queue: new_paste_queue(),
-        keyboard_receiver,
         cassette_receiver: std::sync::mpsc::channel().1,
         joystick_receiver: std::sync::mpsc::channel().1,
         direct_loader_receiver: std::sync::mpsc::channel().1,
-        brake_receiver: make_brake_channel().1,
         shutdown_receiver: std::sync::mpsc::channel().1,
     };
-    let mut runner =
-        rusty_vic20::emulator::EmulatorRunner::new(receivers, MemoryExpansion::None, AudioProducer::noop());
-    runner.step_multiple(600_000);
+    let mut bus = Bus::default();
+    bus.memory.set_expansion(MemoryExpansion::None);
+    bus.load_standard_roms_from_data_dir();
+    let reset_vector = bus.read_word(0xFFFC);
+    let mut cpu = CPU6502::default();
+    cpu.reset(reset_vector);
+    let mut runner = rusty_vic20::emulator::EmulatorRunner::new(
+        receivers,
+        bus,
+        cpu,
+        keyboard,
+        brake,
+        CassettePlayer::default(),
+        Joystick::default(),
+        SerialPort,
+        DirectLoad::default(),
+        AudioProducer::noop(),
+    );
+    run_extra_steps(&mut runner, 600_000);
     for _ in 0..100_000 {
         runner.step();
     }

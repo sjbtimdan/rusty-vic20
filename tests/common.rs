@@ -1,9 +1,17 @@
 #![allow(dead_code)]
 
 use rusty_vic20::{
+    cpu::cpu6502::CPU6502,
     emulator::{EmulatorRunner, ThreadReceivers, paste::new_paste_queue},
     hardware::{addressable::Addressable, bus::Bus, memory::MemoryExpansion},
-    peripherals::{brake::make_brake_channel, keyboard::make_keyboard_channel},
+    peripherals::{
+        brake::{Brake, make_brake_channel},
+        cassette_player::CassettePlayer,
+        direct_loader::DirectLoad,
+        joystick::Joystick,
+        keyboard::{Keyboard, make_keyboard_channel},
+        serial_port::SerialPort,
+    },
     ui::{audio::AudioProducer, control::SharedPerformanceMetrics, screen::display::SharedVideoState},
 };
 use std::{
@@ -81,38 +89,56 @@ pub fn count_screen_chars(bus: &Bus, screen_code: u8) -> usize {
 }
 
 pub fn run_boot() -> EmulatorRunner {
-    let mut runner = EmulatorRunner::new(test_receivers(), MemoryExpansion::None, AudioProducer::noop());
-    runner.step_multiple(600_000);
-    runner
+    run_boot_with_expansion(MemoryExpansion::None)
 }
 
 pub fn run_boot_with_expansion(expansion: MemoryExpansion) -> EmulatorRunner {
-    let mut runner = EmulatorRunner::new(test_receivers(), expansion, AudioProducer::noop());
+    let mut runner = build_runner(expansion);
     let steps = match expansion {
         MemoryExpansion::EightK | MemoryExpansion::SixteenK | MemoryExpansion::ThirtyTwoK => 2_000_000,
         _ => 600_000,
     };
-    runner.step_multiple(steps);
+    run_extra_steps(&mut runner, steps);
     runner
 }
 
-fn test_receivers() -> ThreadReceivers {
-    ThreadReceivers {
+fn build_runner(expansion: MemoryExpansion) -> EmulatorRunner {
+    let receivers = ThreadReceivers {
         video: Arc::new(Mutex::new(SharedVideoState::default())),
         perf: Arc::new(Mutex::new(SharedPerformanceMetrics::default())),
         load_queue: Arc::new(Mutex::new(VecDeque::new())),
         paste_queue: new_paste_queue(),
-        keyboard_receiver: make_keyboard_channel().1,
         cassette_receiver: std::sync::mpsc::channel().1,
         joystick_receiver: std::sync::mpsc::channel().1,
         direct_loader_receiver: std::sync::mpsc::channel().1,
-        brake_receiver: make_brake_channel().1,
         shutdown_receiver: std::sync::mpsc::channel().1,
-    }
+    };
+    let keyboard = Keyboard::new(make_keyboard_channel().1);
+    let brake = Brake::new_default(make_brake_channel().1);
+    let mut bus = Bus::default();
+    bus.memory.set_expansion(expansion);
+    bus.load_standard_roms_from_data_dir();
+    let reset_vector = bus.read_word(0xFFFC);
+    let mut cpu = CPU6502::default();
+    cpu.reset(reset_vector);
+    EmulatorRunner::new(
+        receivers,
+        bus,
+        cpu,
+        keyboard,
+        brake,
+        CassettePlayer::default(),
+        Joystick::default(),
+        SerialPort,
+        DirectLoad::default(),
+        AudioProducer::noop(),
+    )
 }
 
 pub fn run_extra_steps(runner: &mut EmulatorRunner, steps: usize) {
-    runner.step_multiple(steps);
+    for _ in 0..steps {
+        runner.step();
+    }
 }
 
 pub fn splash_screen_lines() -> Vec<[u8; 22]> {

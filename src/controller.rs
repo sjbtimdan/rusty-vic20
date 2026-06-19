@@ -12,7 +12,7 @@ use crate::{
             SharedPerformanceMetrics,
             display::ControlWindow,
         },
-        keyboard::{KeyboardState, display::KeyboardWindow},
+        keyboard::{KeyboardState, display::KeyboardWindow, key::Key},
         screen::{
             display::{ScreenWindow, SharedVideoState},
             renderer::{ACTIVE_HEIGHT, CHAR_WIDTH, TEXT_COLUMNS},
@@ -22,8 +22,8 @@ use crate::{
 use arboard::Clipboard;
 use cpal::Stream;
 use std::{
-    collections::VecDeque,
-    sync::{Arc, Mutex},
+    collections::{HashSet, VecDeque},
+    sync::{Arc, Mutex, mpsc::Receiver},
     thread::JoinHandle,
     time::Instant,
 };
@@ -177,14 +177,27 @@ impl ApplicationHandler for Vic20Controller {
 impl Vic20Controller {
     fn restart_emulator(&mut self) {
         let (audio_producer, audio_stream) = audio::create_audio_channel();
-        let (state, receivers) = self.create_channels();
-        let handle = spawn_emulator(self.control_state.memory_expansion, audio_producer, receivers);
+        let (state, receivers, keyboard_receiver, brake_receiver) = self.create_channels();
+        let handle = spawn_emulator(
+            self.control_state.memory_expansion,
+            audio_producer,
+            keyboard_receiver,
+            brake_receiver,
+            receivers,
+        );
         self.senders = Some(state);
         self._emulator_thread = Some(handle);
         self._audio_stream = Some(audio_stream);
     }
 
-    fn create_channels(&self) -> (ThreadSenders, ThreadReceivers) {
+    fn create_channels(
+        &self,
+    ) -> (
+        ThreadSenders,
+        ThreadReceivers,
+        Receiver<HashSet<Key>>,
+        Receiver<crate::peripherals::brake::BrakeSpeed>,
+    ) {
         let default_active_width = TEXT_COLUMNS * CHAR_WIDTH;
         let video = Arc::new(Mutex::new(SharedVideoState {
             screen_rgba: vec![0_u8; default_active_width * ACTIVE_HEIGHT * 4],
@@ -218,14 +231,12 @@ impl Vic20Controller {
             perf,
             load_queue,
             paste_queue,
-            keyboard_receiver,
             cassette_receiver,
             joystick_receiver,
             direct_loader_receiver,
-            brake_receiver,
             shutdown_receiver,
         };
-        (state, receivers)
+        (state, receivers, keyboard_receiver, brake_receiver)
     }
 
     fn is_paste_shortcut(&self, key_event: &winit::event::KeyEvent) -> bool {

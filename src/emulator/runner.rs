@@ -1,6 +1,6 @@
 use crate::{
     cpu::cpu6502::CPU6502,
-    hardware::{addressable::Addressable, bus::Bus, memory::MemoryExpansion},
+    hardware::bus::Bus,
     peripherals::{
         brake::Brake,
         cassette_player::CassettePlayer,
@@ -12,8 +12,7 @@ use crate::{
     ui::{audio::AudioProducer, screen::renderer::CHAR_WIDTH},
 };
 use std::{
-    mem,
-    sync::mpsc::{TryRecvError, channel},
+    sync::mpsc::TryRecvError,
     time::{Duration, Instant},
 };
 
@@ -38,28 +37,28 @@ pub struct EmulatorRunner {
 }
 
 impl EmulatorRunner {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        mut receivers: ThreadReceivers,
-        memory_expansion: MemoryExpansion,
+        receivers: ThreadReceivers,
+        bus: Bus,
+        cpu: CPU6502,
+        keyboard: Keyboard,
+        brake: Brake,
+        cassette_player: CassettePlayer,
+        joystick: Joystick,
+        serial_port: SerialPort,
+        direct_loader: DirectLoad,
         audio_producer: AudioProducer,
     ) -> Self {
-        let keyboard_receiver = mem::replace(&mut receivers.keyboard_receiver, channel().1);
-        let brake_receiver = mem::replace(&mut receivers.brake_receiver, channel().1);
-        let mut bus = Bus::default();
-        bus.memory.set_expansion(memory_expansion);
-        bus.load_standard_roms_from_data_dir();
-        let reset_vector = bus.read_word(0xFFFC);
-        let mut cpu = CPU6502::default();
-        cpu.reset(reset_vector);
         Self {
             bus,
             cpu,
-            cassette_player: CassettePlayer::default(),
-            joystick: Joystick::default(),
-            serial_port: SerialPort,
-            direct_loader: DirectLoad::default(),
-            keyboard: Keyboard::new(keyboard_receiver),
-            brake: Brake::new_default(brake_receiver),
+            cassette_player,
+            joystick,
+            serial_port,
+            direct_loader,
+            keyboard,
+            brake,
             audio_producer,
             audio_cycle: 0,
             audio_frac: 0.0,
@@ -84,7 +83,7 @@ impl EmulatorRunner {
         self.brake.step();
     }
 
-    pub fn generate_audio(&mut self, elapsed_secs: f64) {
+    fn generate_audio(&mut self, elapsed_secs: f64) {
         const PHI2_HZ: f64 = 1_108_404.0;
         const AUDIO_HZ: f64 = 44_100.0;
         self.audio_frac += elapsed_secs * AUDIO_HZ;
@@ -94,12 +93,6 @@ impl EmulatorRunner {
             let cb2 = self.bus.via2.generate_cb2_sample(self.audio_cycle);
             self.audio_producer.push((vic + cb2).clamp(-1.0, 1.0));
             self.audio_cycle += (PHI2_HZ / AUDIO_HZ) as u64;
-        }
-    }
-
-    pub fn step_multiple(&mut self, count: usize) {
-        for _ in 0..count {
-            self.step();
         }
     }
 

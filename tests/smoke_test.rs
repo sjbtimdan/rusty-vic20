@@ -1,6 +1,6 @@
 mod common;
 
-use common::splash_screen_lines;
+use common::{run_extra_steps, splash_screen_lines};
 use rusty_vic20::hardware::{addressable::Addressable, memory::MemoryExpansion};
 
 const JIFFY_MSB: u16 = 0x00A0;
@@ -69,7 +69,7 @@ fn splash_screen_shows_6655_bytes_with_3k_expansion() {
 #[test]
 fn debug_8k_expansion() {
     let mut runner8k = common::run_boot_with_expansion(MemoryExpansion::EightK);
-    runner8k.step_multiple(800_000);
+    run_extra_steps(&mut runner8k, 800_000);
     let runner_none = common::run_boot();
     let runner3k = common::run_boot_with_expansion(MemoryExpansion::ThreeK);
 

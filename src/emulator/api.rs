@@ -29,11 +29,9 @@ pub struct ThreadReceivers {
     pub perf: Arc<Mutex<SharedPerformanceMetrics>>,
     pub load_queue: LoadQueue,
     pub paste_queue: Arc<Mutex<VecDeque<u8>>>,
-    pub keyboard_receiver: Receiver<HashSet<key::Key>>,
     pub cassette_receiver: Receiver<bool>,
     pub joystick_receiver: Receiver<JoystickUpdate>,
     pub direct_loader_receiver: Receiver<Vec<u8>>,
-    pub brake_receiver: Receiver<BrakeSpeed>,
     pub shutdown_receiver: Receiver<()>,
 }
 
