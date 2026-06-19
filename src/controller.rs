@@ -1,5 +1,5 @@
 use crate::{
-    emulator::{FRAME_TIME, PasteQueue, ThreadReceivers, ThreadSenders, paste, read_prg_file, spawn_emulator},
+    emulator::{FRAME_TIME, ThreadReceivers, ThreadSenders, paste, read_prg_file, spawn_emulator},
     peripherals,
     ui::{
         audio,
@@ -197,7 +197,7 @@ impl Vic20Controller {
         let (direct_loader_sender, direct_loader_receiver) = peripherals::direct_loader::make_direct_loader_channel();
         let load_queue = Arc::new(Mutex::new(VecDeque::new()));
         let (keyboard_sender, keyboard_receiver) = crate::peripherals::keyboard::make_keyboard_channel();
-        let paste_queue: PasteQueue = paste::new_paste_queue();
+        let paste_queue = paste::new_paste_queue();
         let (shutdown_sender, shutdown_receiver) = std::sync::mpsc::sync_channel::<()>(0);
         let (brake_sender, brake_receiver) = peripherals::brake::make_brake_channel();
 

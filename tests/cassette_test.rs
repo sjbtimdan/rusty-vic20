@@ -10,10 +10,9 @@ fn load_command_shows_press_play_on_tape() {
     common::assert_screen_lines(&runner.bus, UNEXPANDED_SCREEN_RAM_START, &splash_screen_lines());
 
     let petscii_bytes = text_to_petscii("LOAD\n");
-    runner.paste_queue.lock().unwrap().extend(petscii_bytes);
+    runner.receivers.paste_queue.lock().unwrap().extend(petscii_bytes);
 
     for _ in 0..2_000_000 {
-        runner.step_keyboard();
         runner.step();
     }
 
@@ -22,7 +21,6 @@ fn load_command_shows_press_play_on_tape() {
     runner.cassette_player.set_play_button(true);
 
     for _ in 0..500_000 {
-        runner.step_keyboard();
         runner.step();
     }
 
@@ -37,10 +35,9 @@ fn save_command_shows_press_record_and_play_on_tape() {
     common::assert_screen_lines(&runner.bus, UNEXPANDED_SCREEN_RAM_START, &splash_screen_lines());
 
     let petscii_bytes = text_to_petscii("SAVE\n");
-    runner.paste_queue.lock().unwrap().extend(petscii_bytes);
+    runner.receivers.paste_queue.lock().unwrap().extend(petscii_bytes);
 
     for _ in 0..2_000_000 {
-        runner.step_keyboard();
         runner.step();
     }
 
@@ -50,7 +47,6 @@ fn save_command_shows_press_record_and_play_on_tape() {
     runner.cassette_player.set_play_button(true);
 
     for _ in 0..500_000 {
-        runner.step_keyboard();
         runner.step();
     }
 

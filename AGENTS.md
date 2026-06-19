@@ -54,7 +54,7 @@ Entries: `src/bin/vic20.rs` (emulator — trivial main, env_logger init + contro
 - **`CPU6502`** — `src/cpu/cpu6502.rs`: Cycle-accurate (`cpu.step()` = exactly one clock cycle). State machine with `cycle_count`, `operands_index`, `current_instruction_info`. Uses `InstructionExecutor`/`InterruptHandler`/`OperandResolution` traits for testability.
 - **`VIC`** — `src/hardware/vic.rs`: Renders 176×184 text-mode screen. Has sound generators (`generate_sample()`). Dirty-flag optimization.
 - **`VIA`** — `src/hardware/via.rs`: 6522 chip. Uses `Cell` for interior mutability on `ifr`, `t1_counter`, `t1_latch`. `port_b_callback` for cassette motor. `joystick_right_pressed` field. CA1 edge detect via `EdgeLatch` (`src/hardware/edge_latch.rs`).
-- **`EmulatorRunner`** — `src/emulator/runner.rs`: Main emulation orchestrator. `step_keyboard()` → `step()` (bus.step_devices → cpu.step → peripherals → brake.step). `generate_audio()` mixes VIC + VIA2 CB2. `run_loop()` is the core loop entry point.
+- **`EmulatorRunner`** — `src/emulator/runner.rs`: Main emulation orchestrator. `step()` (keyboard → bus.step_devices → cpu.step → peripherals → brake.step). `generate_audio()` mixes VIC + VIA2 CB2. `run_loop()` is the core loop entry point.
 - **`spawn_emulator()`** — `src/emulator/mod.rs`: Spawns the `"vic20-core-loop"` thread with all channel receivers.
 - **`ThreadSenders` / `ThreadReceivers`** — `src/emulator/api.rs`: All channel types (keyboard, paste, load, cassette, joystick, direct_loader, brake, shutdown).
 

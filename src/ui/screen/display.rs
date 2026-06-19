@@ -10,6 +10,7 @@ use winit::{
 
 use crate::ui::screen::renderer::{BORDER_LEFT, BORDER_RIGHT, PAL_HEIGHT, render_vic20_screen};
 
+#[derive(Default)]
 pub struct SharedVideoState {
     pub screen_rgba: Vec<u8>,
     pub border_rgba: [u8; 4],

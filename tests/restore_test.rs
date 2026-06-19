@@ -1,21 +1,40 @@
 mod common;
 
 use common::{UNEXPANDED_SCREEN_RAM_START, screen_code};
-use rusty_vic20::{hardware::addressable::Addressable, ui::keyboard::key::Key};
-use std::{collections::HashSet, sync::mpsc::SyncSender};
+use rusty_vic20::{
+    emulator::{ThreadReceivers, paste::new_paste_queue},
+    hardware::{addressable::Addressable, memory::MemoryExpansion},
+    peripherals::{brake::make_brake_channel, keyboard::make_keyboard_channel},
+    ui::{
+        audio::AudioProducer,
+        control::SharedPerformanceMetrics,
+        keyboard::key::Key,
+        screen::display::SharedVideoState,
+    },
+};
+use std::{
+    collections::{HashSet, VecDeque},
+    sync::{Arc, Mutex, mpsc::SyncSender},
+};
 
 fn run_boot_with_keyboard() -> (rusty_vic20::emulator::EmulatorRunner, SyncSender<HashSet<Key>>) {
-    let (keyboard_sender, keyboard_receiver) = rusty_vic20::peripherals::keyboard::make_keyboard_channel();
-    let mut runner = rusty_vic20::emulator::EmulatorRunner::from_receiver(
+    let (keyboard_sender, keyboard_receiver) = make_keyboard_channel();
+    let receivers = ThreadReceivers {
+        video: Arc::new(Mutex::new(SharedVideoState::default())),
+        perf: Arc::new(Mutex::new(SharedPerformanceMetrics::default())),
+        load_queue: Arc::new(Mutex::new(VecDeque::new())),
+        paste_queue: new_paste_queue(),
         keyboard_receiver,
-        rusty_vic20::emulator::paste::new_paste_queue(),
-        rusty_vic20::hardware::memory::MemoryExpansion::None,
-        rusty_vic20::peripherals::brake::make_brake_channel().1,
-        rusty_vic20::ui::audio::AudioProducer::noop(),
-    );
+        cassette_receiver: std::sync::mpsc::channel().1,
+        joystick_receiver: std::sync::mpsc::channel().1,
+        direct_loader_receiver: std::sync::mpsc::channel().1,
+        brake_receiver: make_brake_channel().1,
+        shutdown_receiver: std::sync::mpsc::channel().1,
+    };
+    let mut runner =
+        rusty_vic20::emulator::EmulatorRunner::new(receivers, MemoryExpansion::None, AudioProducer::noop());
     runner.step_multiple(600_000);
     for _ in 0..100_000 {
-        runner.step_keyboard();
         runner.step();
     }
     (runner, keyboard_sender)
@@ -51,7 +70,6 @@ fn held_key_repeats_in_kernal() {
     keyboard_sender.send(HashSet::from([Key::Single('A')])).ok();
 
     for _ in 0..500_000 {
-        runner.step_keyboard();
         runner.step();
     }
 

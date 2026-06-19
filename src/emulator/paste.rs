@@ -3,9 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-pub type PasteQueue = Arc<Mutex<VecDeque<u8>>>;
-
-pub fn new_paste_queue() -> PasteQueue {
+pub fn new_paste_queue() -> Arc<Mutex<VecDeque<u8>>> {
     Arc::new(Mutex::new(VecDeque::new()))
 }
 

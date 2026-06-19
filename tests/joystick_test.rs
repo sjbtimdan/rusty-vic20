@@ -14,7 +14,6 @@ fn joystick_fire_clears_via1_port_a_bit_5() {
     let mut runner = common::run_boot();
 
     for _ in 0..100_000 {
-        runner.step_keyboard();
         runner.step();
     }
 
@@ -27,7 +26,6 @@ fn joystick_fire_clears_via1_port_a_bit_5() {
     });
 
     for _ in 0..100_000 {
-        runner.step_keyboard();
         runner.step();
     }
 
@@ -40,7 +38,6 @@ fn joystick_right_only_registers_when_ddrb_bit7_is_input() {
     let mut runner = common::run_boot();
 
     for _ in 0..100_000 {
-        runner.step_keyboard();
         runner.step();
     }
 
@@ -50,7 +47,6 @@ fn joystick_right_only_registers_when_ddrb_bit7_is_input() {
     });
 
     for _ in 0..100_000 {
-        runner.step_keyboard();
         runner.step();
     }
 

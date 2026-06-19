@@ -2,31 +2,22 @@ use crate::{
     cpu::cpu6502::CPU6502,
     hardware::{addressable::Addressable, bus::Bus, memory::MemoryExpansion},
     peripherals::{
-        brake::{Brake, BrakeSpeed},
+        brake::Brake,
         cassette_player::CassettePlayer,
         direct_loader::DirectLoad,
         joystick::Joystick,
-        keyboard::{Keyboard, RestoreKeyStatus, make_keyboard_channel},
+        keyboard::{Keyboard, RestoreKeyStatus},
         serial_port::SerialPort,
     },
-    ui::{
-        audio::AudioProducer,
-        control::SharedPerformanceMetrics,
-        keyboard::key::Key,
-        screen::{display::SharedVideoState, renderer::CHAR_WIDTH},
-    },
+    ui::{audio::AudioProducer, screen::renderer::CHAR_WIDTH},
 };
 use std::{
-    collections::HashSet,
-    sync::{
-        Arc,
-        Mutex,
-        mpsc::{Receiver, SyncSender, TryRecvError},
-    },
+    mem,
+    sync::mpsc::{TryRecvError, channel},
     time::{Duration, Instant},
 };
 
-use super::{LoadQueue, PrgLoadRequest, paste::PasteQueue};
+use super::{PrgLoadRequest, ThreadReceivers};
 
 const FRAME_PUBLISH_INTERVAL: Duration = Duration::from_millis(50);
 const PERF_PUBLISH_INTERVAL: Duration = Duration::from_secs(1);
@@ -39,34 +30,27 @@ pub struct EmulatorRunner {
     pub serial_port: SerialPort,
     pub direct_loader: DirectLoad,
     pub keyboard: Keyboard,
-    pub keyboard_sender: SyncSender<HashSet<Key>>,
-    pub paste_queue: PasteQueue,
     pub brake: Brake,
     pub audio_producer: AudioProducer,
     pub audio_cycle: u64,
     pub audio_frac: f64,
+    pub receivers: ThreadReceivers,
 }
 
 impl EmulatorRunner {
-    pub fn create_bus_and_cpu(memory_expansion: MemoryExpansion) -> (Bus, CPU6502) {
+    pub fn new(
+        mut receivers: ThreadReceivers,
+        memory_expansion: MemoryExpansion,
+        audio_producer: AudioProducer,
+    ) -> Self {
+        let keyboard_receiver = mem::replace(&mut receivers.keyboard_receiver, channel().1);
+        let brake_receiver = mem::replace(&mut receivers.brake_receiver, channel().1);
         let mut bus = Bus::default();
         bus.memory.set_expansion(memory_expansion);
         bus.load_standard_roms_from_data_dir();
         let reset_vector = bus.read_word(0xFFFC);
         let mut cpu = CPU6502::default();
         cpu.reset(reset_vector);
-        (bus, cpu)
-    }
-
-    pub fn from_receiver(
-        keyboard_receiver: Receiver<HashSet<Key>>,
-        paste_queue: PasteQueue,
-        memory_expansion: MemoryExpansion,
-        brake_receiver: Receiver<BrakeSpeed>,
-        audio_producer: AudioProducer,
-    ) -> Self {
-        let (bus, cpu) = Self::create_bus_and_cpu(memory_expansion);
-        let (dummy_tx, _) = make_keyboard_channel();
         Self {
             bus,
             cpu,
@@ -74,28 +58,23 @@ impl EmulatorRunner {
             joystick: Joystick::default(),
             serial_port: SerialPort,
             direct_loader: DirectLoad::default(),
-            keyboard: Keyboard::new(keyboard_receiver, Some(paste_queue.clone())),
-            keyboard_sender: dummy_tx,
-            paste_queue,
+            keyboard: Keyboard::new(keyboard_receiver),
             brake: Brake::new_default(brake_receiver),
             audio_producer,
             audio_cycle: 0,
             audio_frac: 0.0,
+            receivers,
         }
-    }
-
-    pub fn step_keyboard(&mut self) {
-        self.keyboard.inject_paste_into_buffer(&mut self.bus);
-        if let Some(port_a) = self.keyboard.step(self.bus.via2.port_b()) {
-            self.bus.via2.set_port_a(port_a);
-        } else {
-            self.bus.via2.set_port_a(0xFF);
-        }
-        let restore = self.keyboard.restore_key_status();
-        self.bus.via1.set_ca1_pin(restore == RestoreKeyStatus::Up);
     }
 
     pub fn step(&mut self) {
+        self.keyboard
+            .inject_paste_into_buffer(&mut self.bus, &self.receivers.paste_queue);
+        let port_a = self.keyboard.step(self.bus.via2.port_b()).unwrap_or(0xFF);
+        self.bus.via2.set_port_a(port_a);
+        let restore = self.keyboard.restore_key_status();
+        self.bus.via1.set_ca1_pin(restore == RestoreKeyStatus::Up);
+
         self.bus.step_devices(&mut self.cpu);
         self.cpu.step(&mut self.bus);
         self.cassette_player.step(&mut self.bus.via1);
@@ -124,18 +103,7 @@ impl EmulatorRunner {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn run_loop(
-        self,
-        shared_video_state: Arc<Mutex<SharedVideoState>>,
-        shared_perf: Arc<Mutex<SharedPerformanceMetrics>>,
-        load_queue: LoadQueue,
-        cassette_receiver: Receiver<bool>,
-        joystick_receiver: Receiver<crate::peripherals::joystick::JoystickUpdate>,
-        direct_loader_receiver: Receiver<Vec<u8>>,
-        shutdown_receiver: Receiver<()>,
-    ) {
-        let mut runner = self;
+    pub fn run_loop(mut self) {
         let mut last_frame_publish = Instant::now();
         let mut last_perf_publish = Instant::now();
         let mut last_audio_batch = Instant::now();
@@ -143,47 +111,45 @@ impl EmulatorRunner {
         let mut last_perf_total_cycles: u64 = 0;
         let mut last_perf_frame_count: u64 = 0;
 
-        runner.bus.via1.set_port_b_callback(Box::new(cassette_motor_control));
+        self.bus.via1.set_port_b_callback(Box::new(cassette_motor_control));
 
         loop {
-            if shutdown_receiver.try_recv() == Err(TryRecvError::Disconnected) {
+            if self.receivers.shutdown_receiver.try_recv() == Err(TryRecvError::Disconnected) {
                 break;
             }
 
-            runner.step_keyboard();
-
-            if let Ok(pressed) = cassette_receiver.try_recv() {
-                runner.cassette_player.set_play_button(pressed);
+            if let Ok(pressed) = self.receivers.cassette_receiver.try_recv() {
+                self.cassette_player.set_play_button(pressed);
             }
-            if let Ok(update) = joystick_receiver.try_recv() {
-                runner.joystick.set_state(update);
+            if let Ok(update) = self.receivers.joystick_receiver.try_recv() {
+                self.joystick.set_state(update);
             }
-            if let Ok(data) = direct_loader_receiver.try_recv() {
-                runner.direct_loader.set_state(data);
+            if let Ok(data) = self.receivers.direct_loader_receiver.try_recv() {
+                self.direct_loader.set_state(data);
             }
-            if let Ok(mut q) = load_queue.try_lock() {
+            if let Ok(mut q) = self.receivers.load_queue.try_lock() {
                 while let Some(request) = q.pop_front() {
-                    load_prg(&mut runner.bus, &mut runner.cpu, &request);
+                    load_prg(&mut self.bus, &request);
                 }
             }
 
-            runner.step();
+            self.step();
 
             if last_frame_publish.elapsed() >= FRAME_PUBLISH_INTERVAL {
                 let elapsed = last_audio_batch.elapsed().as_secs_f64();
                 if elapsed > 0.0 {
-                    runner.generate_audio(elapsed);
+                    self.generate_audio(elapsed);
                 }
                 last_audio_batch = Instant::now();
 
-                runner.bus.render_active_screen();
-                let latest_border_rgba = runner.bus.border_rgba();
-                let active_width = runner.bus.columns() * CHAR_WIDTH;
-                let mut shared = match shared_video_state.lock() {
+                self.bus.render_active_screen();
+                let latest_border_rgba = self.bus.border_rgba();
+                let active_width = self.bus.columns() * CHAR_WIDTH;
+                let mut shared = match self.receivers.video.lock() {
                     Ok(guard) => guard,
                     Err(poisoned) => poisoned.into_inner(),
                 };
-                let fb = runner.bus.frame_buffer();
+                let fb = self.bus.frame_buffer();
                 if shared.screen_rgba.len() != fb.len() {
                     shared.screen_rgba.resize(fb.len(), 0);
                 }
@@ -196,17 +162,17 @@ impl EmulatorRunner {
 
             if last_perf_publish.elapsed() >= PERF_PUBLISH_INTERVAL {
                 let elapsed = last_perf_publish.elapsed().as_secs_f64();
-                let cycles_delta = runner.cpu.total_cycles() - last_perf_total_cycles;
+                let cycles_delta = self.cpu.total_cycles() - last_perf_total_cycles;
                 let frames_delta = frame_count - last_perf_frame_count;
-                let mut perf = match shared_perf.lock() {
+                let mut perf = match self.receivers.perf.lock() {
                     Ok(guard) => guard,
                     Err(poisoned) => poisoned.into_inner(),
                 };
                 perf.cycles_per_second = cycles_delta as f64 / elapsed;
                 perf.frames_per_second = frames_delta as f64 / elapsed;
-                perf.total_cycles = runner.cpu.total_cycles();
+                perf.total_cycles = self.cpu.total_cycles();
                 perf.total_frames = frame_count;
-                last_perf_total_cycles = runner.cpu.total_cycles();
+                last_perf_total_cycles = self.cpu.total_cycles();
                 last_perf_frame_count = frame_count;
                 last_perf_publish = Instant::now();
             }
@@ -214,7 +180,7 @@ impl EmulatorRunner {
     }
 }
 
-fn load_prg(bus: &mut Bus, _cpu: &mut CPU6502, request: &PrgLoadRequest) {
+fn load_prg(bus: &mut Bus, request: &PrgLoadRequest) {
     let load_address = u16::from_le_bytes([request.data[0], request.data[1]]);
     log::info!("Loading program into memory starting at {}", load_address);
     let program = &request.data[2..];

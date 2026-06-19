@@ -1,7 +1,6 @@
 mod api;
 pub use api::*;
 pub mod paste;
-pub use paste::PasteQueue;
 mod runner;
 pub use runner::EmulatorRunner;
 
@@ -20,24 +19,7 @@ pub fn spawn_emulator(
 ) -> JoinHandle<()> {
     thread::Builder::new()
         .name("vic20-core-loop".to_string())
-        .spawn(move || {
-            let runner = EmulatorRunner::from_receiver(
-                receivers.keyboard_receiver,
-                receivers.paste_queue,
-                memory_expansion,
-                receivers.brake_receiver,
-                audio_producer,
-            );
-            runner.run_loop(
-                receivers.video,
-                receivers.perf,
-                receivers.load_queue,
-                receivers.cassette_receiver,
-                receivers.joystick_receiver,
-                receivers.direct_loader_receiver,
-                receivers.shutdown_receiver,
-            )
-        })
+        .spawn(move || EmulatorRunner::new(receivers, memory_expansion, audio_producer).run_loop())
         .expect("failed to spawn VIC-20 core thread")
 }
 

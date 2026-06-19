@@ -5,3 +5,5 @@ pub mod joystick;
 pub mod keyboard;
 pub mod serial_port;
 pub mod speaker;
+
+pub struct Peripherals {}
