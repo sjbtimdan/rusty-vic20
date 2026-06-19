@@ -1,5 +1,4 @@
 use crate::{
-    audio,
     bus::Bus,
     cpu::cpu6502::CPU6502,
     memory::MemoryExpansion,
@@ -8,6 +7,7 @@ use crate::{
     peripherals::brake::BrakeSpeed,
     runner::EmulatorRunner,
     ui::{
+        audio,
         control::{
             BrakeAction,
             ControlState,
@@ -48,44 +48,15 @@ const FRAME_TIME: Duration = Duration::from_nanos(1_000_000_000 / 50);
 const FRAME_PUBLISH_INTERVAL: Duration = Duration::from_millis(50);
 const PERF_PUBLISH_INTERVAL: Duration = Duration::from_secs(1);
 
-struct SharedState {
-    video: Arc<Mutex<SharedVideoState>>,
-    perf: SharedPerfState,
-    keyboard_sender: SyncSender<HashSet<crate::ui::keyboard::key::Key>>,
-    paste_queue: PasteQueue,
-    load_queue: LoadQueue,
-    cassette_sender: SyncSender<bool>,
-    joystick_sender: SyncSender<peripherals::joystick::JoystickUpdate>,
-    direct_loader_sender: SyncSender<Vec<u8>>,
-    brake_sender: SyncSender<BrakeSpeed>,
-    #[allow(dead_code)]
-    shutdown_sender: SyncSender<()>,
+#[allow(dead_code)]
+struct Emulator {
+    state: SharedState,
+    thread: JoinHandle<()>,
+    _audio: Stream,
 }
 
-#[derive(Default)]
-pub struct Vic20Controller {
-    screen: ScreenWindow,
-    keyboard: KeyboardWindow,
-    debug: ControlWindow,
-    shared_state: Option<SharedState>,
-    keyboard_state: KeyboardState,
-    debug_state: ControlState,
-    vic_thread: Option<JoinHandle<()>>,
-    modifiers: ModifiersState,
-    _audio_stream: Option<Stream>,
-}
-
-impl Vic20Controller {
-    fn shared_state(&self) -> &SharedState {
-        self.shared_state.as_ref().unwrap()
-    }
-
-    pub fn run(&mut self) {
-        let event_loop = EventLoop::new().expect("failed to create event loop");
-        event_loop.run_app(self).expect("event loop run failed");
-    }
-
-    fn spawn_emulator(memory_expansion: MemoryExpansion) -> (JoinHandle<()>, SharedState, Stream) {
+impl Emulator {
+    fn spawn(memory_expansion: MemoryExpansion) -> Self {
         let default_active_width = TEXT_COLUMNS * CHAR_WIDTH;
         let video = Arc::new(Mutex::new(SharedVideoState {
             screen_rgba: vec![0_u8; default_active_width * ACTIVE_HEIGHT * 4],
@@ -96,7 +67,7 @@ impl Vic20Controller {
         let (cassette_sender, cassette_receiver) = peripherals::cassette_player::make_cassette_channel();
         let (joystick_sender, joystick_receiver) = peripherals::joystick::make_joystick_channel();
         let (direct_loader_sender, direct_loader_receiver) = peripherals::direct_loader::make_direct_loader_channel();
-        let load_queue: LoadQueue = new_load_queue();
+        let load_queue = Arc::new(Mutex::new(VecDeque::new()));
         let load_queue_for_thread = load_queue.clone();
         let (keyboard_sender, keyboard_receiver) = crate::peripherals::keyboard::make_keyboard_channel();
         let paste_queue: PasteQueue = paste::new_paste_queue();
@@ -119,7 +90,7 @@ impl Vic20Controller {
                         brake_receiver,
                         audio_producer,
                     );
-                    Self::run_emulator(
+                    run_emulator(
                         runner,
                         video,
                         perf,
@@ -133,9 +104,8 @@ impl Vic20Controller {
             })
             .expect("failed to spawn VIC-20 core thread");
 
-        (
-            handle,
-            SharedState {
+        Emulator {
+            state: SharedState {
                 video,
                 perf,
                 keyboard_sender,
@@ -147,109 +117,143 @@ impl Vic20Controller {
                 brake_sender,
                 shutdown_sender,
             },
-            audio_stream,
-        )
+            thread: handle,
+            _audio: audio_stream,
+        }
     }
+}
 
-    #[allow(clippy::too_many_arguments)]
-    fn run_emulator(
-        mut runner: EmulatorRunner,
-        shared_video_state: Arc<Mutex<SharedVideoState>>,
-        shared_perf: SharedPerfState,
-        load_queue: LoadQueue,
-        cassette_receiver: std::sync::mpsc::Receiver<bool>,
-        joystick_receiver: std::sync::mpsc::Receiver<peripherals::joystick::JoystickUpdate>,
-        direct_loader_receiver: std::sync::mpsc::Receiver<Vec<u8>>,
-        shutdown_receiver: Receiver<()>,
-    ) {
-        let mut last_frame_publish = Instant::now();
-        let mut last_perf_publish = Instant::now();
-        let mut last_audio_batch = Instant::now();
-        let mut frame_count: u64 = 0;
-        let mut last_perf_total_cycles: u64 = 0;
-        let mut last_perf_frame_count: u64 = 0;
+#[allow(clippy::too_many_arguments)]
+fn run_emulator(
+    mut runner: EmulatorRunner,
+    shared_video_state: Arc<Mutex<SharedVideoState>>,
+    shared_perf: SharedPerfState,
+    load_queue: LoadQueue,
+    cassette_receiver: std::sync::mpsc::Receiver<bool>,
+    joystick_receiver: std::sync::mpsc::Receiver<peripherals::joystick::JoystickUpdate>,
+    direct_loader_receiver: std::sync::mpsc::Receiver<Vec<u8>>,
+    shutdown_receiver: Receiver<()>,
+) {
+    let mut last_frame_publish = Instant::now();
+    let mut last_perf_publish = Instant::now();
+    let mut last_audio_batch = Instant::now();
+    let mut frame_count: u64 = 0;
+    let mut last_perf_total_cycles: u64 = 0;
+    let mut last_perf_frame_count: u64 = 0;
 
-        runner.bus.via1.set_port_b_callback(Box::new(cassette_motor_control));
+    runner.bus.via1.set_port_b_callback(Box::new(cassette_motor_control));
 
-        loop {
-            if shutdown_receiver.try_recv() == Err(TryRecvError::Disconnected) {
-                break;
-            }
+    loop {
+        if shutdown_receiver.try_recv() == Err(TryRecvError::Disconnected) {
+            break;
+        }
 
-            runner.step_keyboard();
+        runner.step_keyboard();
 
-            if let Ok(pressed) = cassette_receiver.try_recv() {
-                runner.cassette_player.set_play_button(pressed);
-            }
-
-            if let Ok(update) = joystick_receiver.try_recv() {
-                runner.joystick.set_state(update);
-            }
-
-            if let Ok(data) = direct_loader_receiver.try_recv() {
-                runner.direct_loader.set_state(data);
-            }
-
-            // Process any pending .prg load requests
-            process_load_queue(&mut runner.bus, &mut runner.cpu, &load_queue);
-
-            runner.step();
-
-            if last_frame_publish.elapsed() >= FRAME_PUBLISH_INTERVAL {
-                let elapsed = last_audio_batch.elapsed().as_secs_f64();
-                if elapsed > 0.0 {
-                    runner.generate_audio(elapsed);
-                }
-                last_audio_batch = Instant::now();
-
-                runner.bus.render_active_screen();
-                let latest_border_rgba = runner.bus.border_rgba();
-                let active_width = runner.bus.columns() * CHAR_WIDTH;
-                let mut shared = match shared_video_state.lock() {
-                    Ok(guard) => guard,
-                    Err(poisoned) => poisoned.into_inner(),
-                };
-                let fb = runner.bus.frame_buffer();
-                if shared.screen_rgba.len() != fb.len() {
-                    shared.screen_rgba.resize(fb.len(), 0);
-                }
-                shared.screen_rgba.copy_from_slice(fb);
-                shared.border_rgba = latest_border_rgba;
-                shared.active_width = active_width;
-                last_frame_publish = Instant::now();
-                frame_count += 1;
-            }
-
-            if last_perf_publish.elapsed() >= PERF_PUBLISH_INTERVAL {
-                let elapsed = last_perf_publish.elapsed().as_secs_f64();
-                let cycles_delta = runner.cpu.total_cycles() - last_perf_total_cycles;
-                let frames_delta = frame_count - last_perf_frame_count;
-                let mut perf = match shared_perf.lock() {
-                    Ok(guard) => guard,
-                    Err(poisoned) => poisoned.into_inner(),
-                };
-                perf.cycles_per_second = cycles_delta as f64 / elapsed;
-                perf.frames_per_second = frames_delta as f64 / elapsed;
-                perf.total_cycles = runner.cpu.total_cycles();
-                perf.total_frames = frame_count;
-                last_perf_total_cycles = runner.cpu.total_cycles();
-                last_perf_frame_count = frame_count;
-                last_perf_publish = Instant::now();
+        if let Ok(pressed) = cassette_receiver.try_recv() {
+            runner.cassette_player.set_play_button(pressed);
+        }
+        if let Ok(update) = joystick_receiver.try_recv() {
+            runner.joystick.set_state(update);
+        }
+        if let Ok(data) = direct_loader_receiver.try_recv() {
+            runner.direct_loader.set_state(data);
+        }
+        if let Ok(mut q) = load_queue.try_lock() {
+            while let Some(request) = q.pop_front() {
+                load_prg(&mut runner.bus, &mut runner.cpu, &request);
             }
         }
+
+        runner.step();
+
+        if last_frame_publish.elapsed() >= FRAME_PUBLISH_INTERVAL {
+            let elapsed = last_audio_batch.elapsed().as_secs_f64();
+            if elapsed > 0.0 {
+                runner.generate_audio(elapsed);
+            }
+            last_audio_batch = Instant::now();
+
+            runner.bus.render_active_screen();
+            let latest_border_rgba = runner.bus.border_rgba();
+            let active_width = runner.bus.columns() * CHAR_WIDTH;
+            let mut shared = match shared_video_state.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            let fb = runner.bus.frame_buffer();
+            if shared.screen_rgba.len() != fb.len() {
+                shared.screen_rgba.resize(fb.len(), 0);
+            }
+            shared.screen_rgba.copy_from_slice(fb);
+            shared.border_rgba = latest_border_rgba;
+            shared.active_width = active_width;
+            last_frame_publish = Instant::now();
+            frame_count += 1;
+        }
+
+        if last_perf_publish.elapsed() >= PERF_PUBLISH_INTERVAL {
+            let elapsed = last_perf_publish.elapsed().as_secs_f64();
+            let cycles_delta = runner.cpu.total_cycles() - last_perf_total_cycles;
+            let frames_delta = frame_count - last_perf_frame_count;
+            let mut perf = match shared_perf.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            perf.cycles_per_second = cycles_delta as f64 / elapsed;
+            perf.frames_per_second = frames_delta as f64 / elapsed;
+            perf.total_cycles = runner.cpu.total_cycles();
+            perf.total_frames = frame_count;
+            last_perf_total_cycles = runner.cpu.total_cycles();
+            last_perf_frame_count = frame_count;
+            last_perf_publish = Instant::now();
+        }
+    }
+}
+
+struct SharedState {
+    video: Arc<Mutex<SharedVideoState>>,
+    perf: SharedPerfState,
+    keyboard_sender: SyncSender<HashSet<crate::ui::keyboard::key::Key>>,
+    paste_queue: PasteQueue,
+    load_queue: LoadQueue,
+    cassette_sender: SyncSender<bool>,
+    joystick_sender: SyncSender<peripherals::joystick::JoystickUpdate>,
+    direct_loader_sender: SyncSender<Vec<u8>>,
+    brake_sender: SyncSender<BrakeSpeed>,
+    #[allow(dead_code)]
+    shutdown_sender: SyncSender<()>,
+}
+
+#[derive(Default)]
+pub struct Vic20Controller {
+    screen: ScreenWindow,
+    keyboard_window: KeyboardWindow,
+    control_window: ControlWindow,
+    emulator: Option<Emulator>,
+    keyboard_state: KeyboardState,
+    debug_state: ControlState,
+    modifiers: ModifiersState,
+}
+
+impl Vic20Controller {
+    fn shared_state(&self) -> &SharedState {
+        &self.emulator.as_ref().unwrap().state
+    }
+
+    pub fn run(&mut self) {
+        let event_loop = EventLoop::new().expect("failed to create event loop");
+        event_loop.run_app(self).expect("event loop run failed");
     }
 }
 
 impl ApplicationHandler for Vic20Controller {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         self.screen.create(event_loop);
-        self.keyboard.create(event_loop);
-        self.debug.create(event_loop);
+        self.keyboard_window.create(event_loop);
+        self.control_window.create(event_loop);
 
-        let (handle, state, audio_stream) = Self::spawn_emulator(self.debug_state.memory_expansion);
-        self.vic_thread = Some(handle);
-        self.shared_state = Some(state);
-        self._audio_stream = Some(audio_stream);
+        self.emulator = Some(Emulator::spawn(self.debug_state.memory_expansion));
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: winit::window::WindowId, event: WindowEvent) {
@@ -273,7 +277,8 @@ impl ApplicationHandler for Vic20Controller {
                         self.handle_paste();
                         return;
                     }
-                    self.keyboard.handle_event(event_loop, event, &mut self.keyboard_state);
+                    self.keyboard_window
+                        .handle_event(event_loop, event, &mut self.keyboard_state);
                     let _ = self
                         .shared_state()
                         .keyboard_sender
@@ -283,10 +288,10 @@ impl ApplicationHandler for Vic20Controller {
                     self.screen.handle_event(event_loop, event);
                 }
             }
-        } else if Some(window_id) == self.keyboard.window_id() {
+        } else if Some(window_id) == self.keyboard_window.window_id() {
             match event {
                 WindowEvent::RedrawRequested => {
-                    self.keyboard.draw(event_loop, &mut self.keyboard_state);
+                    self.keyboard_window.draw(event_loop, &mut self.keyboard_state);
                 }
                 WindowEvent::ModifiersChanged(mods) => {
                     self.modifiers = mods.state();
@@ -298,28 +303,31 @@ impl ApplicationHandler for Vic20Controller {
                         self.handle_paste();
                         return;
                     }
-                    self.keyboard.handle_event(event_loop, event, &mut self.keyboard_state);
+                    self.keyboard_window
+                        .handle_event(event_loop, event, &mut self.keyboard_state);
                     let _ = self
                         .shared_state()
                         .keyboard_sender
                         .send(self.keyboard_state.physical_keys.clone());
                 }
                 _ => {
-                    self.keyboard.handle_event(event_loop, event, &mut self.keyboard_state);
+                    self.keyboard_window
+                        .handle_event(event_loop, event, &mut self.keyboard_state);
                     let _ = self
                         .shared_state()
                         .keyboard_sender
                         .send(self.keyboard_state.physical_keys.clone());
                 }
             }
-        } else if Some(window_id) == self.debug.window_id() {
+        } else if Some(window_id) == self.control_window.window_id() {
             let perf = Arc::clone(&self.shared_state().perf);
             match event {
                 WindowEvent::RedrawRequested => {
-                    self.debug.draw(&self.debug_state, &perf);
+                    self.control_window.draw(&self.debug_state, &perf);
                 }
                 _ => {
-                    self.debug.handle_event(event_loop, event, &mut self.debug_state, &perf);
+                    self.control_window
+                        .handle_event(event_loop, event, &mut self.debug_state, &perf);
                     if let Some(action) = self.debug_state.io_action_pending.take() {
                         self.handle_io_action(action);
                     }
@@ -340,7 +348,7 @@ impl ApplicationHandler for Vic20Controller {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let screen_deadline = Instant::now() + FRAME_TIME;
 
-        let keyboard_deadline = self.keyboard.next_deadline(&self.keyboard_state);
+        let keyboard_deadline = self.keyboard_window.next_deadline(&self.keyboard_state);
 
         let nearest = match keyboard_deadline {
             Some(kd) if kd < screen_deadline => kd,
@@ -350,8 +358,8 @@ impl ApplicationHandler for Vic20Controller {
         event_loop.set_control_flow(ControlFlow::WaitUntil(nearest));
 
         self.screen.request_redraw();
-        self.keyboard.request_redraw();
-        self.debug.request_redraw();
+        self.keyboard_window.request_redraw();
+        self.control_window.request_redraw();
     }
 }
 
@@ -440,13 +448,7 @@ impl Vic20Controller {
             }
             MemoryAction::Reboot => {
                 log::info!("Rebooting emulator");
-                drop(self.shared_state.take());
-                drop(self.vic_thread.take());
-                drop(self._audio_stream.take());
-                let (handle, state, audio_stream) = Self::spawn_emulator(self.debug_state.memory_expansion);
-                self.vic_thread = Some(handle);
-                self.shared_state = Some(state);
-                self._audio_stream = Some(audio_stream);
+                self.emulator = Some(Emulator::spawn(self.debug_state.memory_expansion));
                 log::info!("Emulator rebooted");
             }
         }
@@ -481,10 +483,6 @@ struct PrgLoadRequest {
 
 type LoadQueue = Arc<Mutex<VecDeque<PrgLoadRequest>>>;
 
-fn new_load_queue() -> LoadQueue {
-    Arc::new(Mutex::new(VecDeque::new()))
-}
-
 fn read_prg_file(path: &str) -> Result<PrgLoadRequest, String> {
     let data = std::fs::read(path).map_err(|e| format!("Failed to read '{}': {}", path, e))?;
     if data.len() < 2 {
@@ -496,35 +494,12 @@ fn read_prg_file(path: &str) -> Result<PrgLoadRequest, String> {
     })
 }
 
-fn process_load_queue(bus: &mut Bus, cpu: &mut CPU6502, queue: &LoadQueue) {
-    if let Ok(mut q) = queue.try_lock() {
-        while let Some(request) = q.pop_front() {
-            apply_prg(bus, cpu, &request);
-        }
-    }
-}
-
-fn apply_prg(bus: &mut Bus, _cpu: &mut CPU6502, request: &PrgLoadRequest) {
-    if request.data.len() < 2 {
-        log::warn!("Skipping invalid .prg (too small): {}", request.path);
-        return;
-    }
+fn load_prg(bus: &mut Bus, _cpu: &mut CPU6502, request: &PrgLoadRequest) {
     let load_address = u16::from_le_bytes([request.data[0], request.data[1]]);
     log::info!("Loading program into memory starting at {}", load_address);
     let program = &request.data[2..];
-
-    let max_len = 65536usize.saturating_sub(load_address as usize);
-    if program.len() > max_len {
-        log::warn!(
-            "Truncating .prg '{}': load ${:04X} + {} bytes exceeds 64KB",
-            request.path,
-            load_address,
-            program.len()
-        );
-    }
-    let len = program.len().min(max_len);
+    let len = program.len();
     bus.load_data(load_address as usize, program);
-
     log::info!(
         "Loaded '{}' at ${:04X} ({} bytes), resetting PC to ${:04X}",
         request.path,

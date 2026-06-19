@@ -293,7 +293,7 @@ impl Addressable for VIC {
             NOISE_AND_CONTROL_OFFSET => self.noise_and_control,
             AUXILLIARY_COLOUR_AND_VOLUME_OFFSET => self.auxiliary_colour_and_volume,
             SCREEN_CONTROL_OFFSET => self.screen_control,
-            _ => 0,
+            _ => panic!("Unhandled VIC address"),
         }
     }
 
@@ -320,7 +320,7 @@ impl Addressable for VIC {
             NOISE_AND_CONTROL_OFFSET => self.noise_and_control = value,
             AUXILLIARY_COLOUR_AND_VOLUME_OFFSET => self.auxiliary_colour_and_volume = value,
             SCREEN_CONTROL_OFFSET => self.screen_control = value,
-            _ => {}
+            _ => panic!("Unhandled VIC address"),
         }
     }
 }

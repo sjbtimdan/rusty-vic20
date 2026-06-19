@@ -1,6 +1,5 @@
 use crate::{
     addressable::Addressable,
-    audio::AudioProducer,
     bus::Bus,
     cpu::cpu6502::CPU6502,
     memory::MemoryExpansion,
@@ -13,7 +12,7 @@ use crate::{
         keyboard::{Keyboard, RestoreKeyStatus, make_keyboard_channel},
         serial_port::SerialPort,
     },
-    ui::keyboard::key::Key,
+    ui::{audio::AudioProducer, keyboard::key::Key},
 };
 use std::{
     collections::HashSet,

@@ -21,7 +21,7 @@ pub fn create_audio_channel() -> (AudioProducer, cpal::Stream) {
 
     let stream = device
         .build_output_stream(
-            &config,
+            config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 for sample in data.iter_mut() {
                     *sample = cons.try_pop().unwrap_or(0.0);
