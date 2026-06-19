@@ -4,7 +4,8 @@ A Vic 20 emulator written in Rust.
 
 ## Requirements
 - Apple Silicon Mac
-- Rust 1.95+ (but may work on earlier versions)
+- Linux (tested on Ubuntu)
+- Rust 2024 Edition Nightly
 
 ## Features
 - Vic 20 emulator
