@@ -1,12 +1,9 @@
 #![allow(dead_code)]
 
 use rusty_vic20::{
-    addressable::Addressable,
-    bus::Bus,
-    memory::MemoryExpansion,
-    paste::new_paste_queue,
+    emulator::{EmulatorRunner, paste::new_paste_queue},
+    hardware::{addressable::Addressable, bus::Bus, memory::MemoryExpansion},
     peripherals::{brake::make_brake_channel, keyboard::make_keyboard_channel},
-    runner::EmulatorRunner,
     ui::audio::AudioProducer,
 };
 

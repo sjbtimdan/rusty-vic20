@@ -1,4 +1,4 @@
-use crate::{addressable::Addressable, cpu::registers::Registers};
+use crate::{cpu::registers::Registers, hardware::addressable::Addressable};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AddressingMode {
@@ -140,7 +140,7 @@ mod tests {
     use rstest::{fixture, rstest};
 
     use super::*;
-    use crate::{cpu::registers::Registers, memory::*};
+    use crate::{cpu::registers::Registers, hardware::memory::*};
 
     #[fixture]
     fn registers() -> Registers {
@@ -149,7 +149,7 @@ mod tests {
 
     #[fixture]
     fn memory() -> Memory {
-        crate::memory::Memory::default()
+        crate::hardware::memory::Memory::default()
     }
 
     // resolve_load_operand

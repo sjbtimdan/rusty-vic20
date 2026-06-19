@@ -1,4 +1,4 @@
-use crate::addressable::Addressable;
+use crate::hardware::addressable::Addressable;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Interrupt {

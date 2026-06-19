@@ -1,11 +1,8 @@
 use crate::{
-    addressable::Addressable,
     cpu::cpu6502::CPU6502,
-    memory::Memory,
+    hardware::{addressable::Addressable, memory::Memory, via::VIA, vic::VIC},
     tools::debug::MemoryWriteWatchpoint,
     ui::screen::renderer::{ACTIVE_HEIGHT, CHAR_WIDTH},
-    via::VIA,
-    vic::VIC,
 };
 use log::info;
 use std::fs;

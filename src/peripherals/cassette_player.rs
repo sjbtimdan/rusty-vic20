@@ -1,7 +1,7 @@
 use log::info;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 
-use crate::via::VIA;
+use crate::hardware::via::VIA;
 
 #[derive(Default)]
 pub struct CassettePlayer {

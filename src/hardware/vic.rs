@@ -1,6 +1,8 @@
 use crate::{
-    addressable::Addressable,
-    bus::{CHARSET_SIZE, SCREEN_RAM_SIZE},
+    hardware::{
+        addressable::Addressable,
+        bus::{CHARSET_SIZE, SCREEN_RAM_SIZE},
+    },
     ui::screen::renderer::{ACTIVE_HEIGHT, CHAR_HEIGHT, CHAR_WIDTH, palette},
 };
 use std::hint::assert_unchecked;
@@ -328,7 +330,7 @@ impl Addressable for VIC {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bus::CHARACTER_ROM_START;
+    use crate::hardware::bus::CHARACTER_ROM_START;
     use rstest::{fixture, rstest};
 
     const SCREEN_COLOR: u8 = 2;

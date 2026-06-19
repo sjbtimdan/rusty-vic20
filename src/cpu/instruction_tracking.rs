@@ -1,11 +1,11 @@
 use crate::{
-    addressable::Addressable,
     cpu::{
         instruction_executor::stack_push,
         instructions::InstructionInfo,
         interrupt_handler::{Interrupt, InterruptHandler},
         registers::{BREAK_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK, Registers, UNUSED_FLAG_BITMASK},
     },
+    hardware::addressable::Addressable,
 };
 use log::{Level, debug, log};
 
@@ -77,12 +77,12 @@ mod tests {
     use rstest::{fixture, rstest};
 
     #[fixture]
-    fn memory() -> crate::memory::Memory {
-        crate::memory::Memory::default()
+    fn memory() -> crate::hardware::memory::Memory {
+        crate::hardware::memory::Memory::default()
     }
 
     #[rstest]
-    fn test_nmi_ignores_interrupt_flag(mut memory: crate::memory::Memory) {
+    fn test_nmi_ignores_interrupt_flag(mut memory: crate::hardware::memory::Memory) {
         let mut registers = Registers::default();
         let mut tracking = InstructionTracking::default();
         registers.set_flag(INTERRUPT_FLAG_BITMASK, true);
@@ -97,7 +97,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_nmi_uses_vector_fffa(mut memory: crate::memory::Memory) {
+    fn test_nmi_uses_vector_fffa(mut memory: crate::hardware::memory::Memory) {
         let mut registers = Registers::default();
         let mut tracking = InstructionTracking::default();
         registers.pc = 0xA000;
@@ -111,7 +111,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_nmi_pushes_return_address_equal_to_pc(mut memory: crate::memory::Memory) {
+    fn test_nmi_pushes_return_address_equal_to_pc(mut memory: crate::hardware::memory::Memory) {
         let mut registers = Registers::default();
         let mut tracking = InstructionTracking::default();
         registers.pc = 0x8000;
@@ -133,7 +133,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_nmi_does_not_set_break_flag_in_pushed_status(mut memory: crate::memory::Memory) {
+    fn test_nmi_does_not_set_break_flag_in_pushed_status(mut memory: crate::hardware::memory::Memory) {
         let mut registers = Registers::default();
         let mut tracking = InstructionTracking::default();
         registers.pc = 0x8000;
@@ -152,7 +152,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_nmi_is_deferred_mid_instruction(mut memory: crate::memory::Memory) {
+    fn test_nmi_is_deferred_mid_instruction(mut memory: crate::hardware::memory::Memory) {
         let mut registers = Registers::default();
         let mut tracking = InstructionTracking::default();
         registers.pc = 0x8000;
@@ -168,7 +168,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_nmi_sets_interrupt_flag_after_handling(mut memory: crate::memory::Memory) {
+    fn test_nmi_sets_interrupt_flag_after_handling(mut memory: crate::hardware::memory::Memory) {
         let mut registers = Registers::default();
         let mut tracking = InstructionTracking::default();
         registers.pc = 0x8000;
@@ -185,7 +185,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_brk_pushes_pc_plus_2_as_return_address(mut memory: crate::memory::Memory) {
+    fn test_brk_pushes_pc_plus_2_as_return_address(mut memory: crate::hardware::memory::Memory) {
         let mut registers = Registers::default();
         let mut tracking = InstructionTracking::default();
         registers.pc = 0x8000;
@@ -206,7 +206,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_brk_sets_break_flag_in_pushed_status(mut memory: crate::memory::Memory) {
+    fn test_brk_sets_break_flag_in_pushed_status(mut memory: crate::hardware::memory::Memory) {
         let mut registers = Registers::default();
         let mut tracking = InstructionTracking::default();
         registers.pc = 0x8000;
@@ -224,7 +224,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_brk_uses_vector_fffe(mut memory: crate::memory::Memory) {
+    fn test_brk_uses_vector_fffe(mut memory: crate::hardware::memory::Memory) {
         let mut registers = Registers::default();
         let mut tracking = InstructionTracking::default();
         registers.pc = 0x8000;
@@ -238,7 +238,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_brk_works_when_interrupt_flag_set(mut memory: crate::memory::Memory) {
+    fn test_brk_works_when_interrupt_flag_set(mut memory: crate::hardware::memory::Memory) {
         let mut registers = Registers::default();
         let mut tracking = InstructionTracking::default();
         registers.set_flag(INTERRUPT_FLAG_BITMASK, true);
@@ -253,7 +253,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_brk_sets_interrupt_flag_after_handling(mut memory: crate::memory::Memory) {
+    fn test_brk_sets_interrupt_flag_after_handling(mut memory: crate::hardware::memory::Memory) {
         let mut registers = Registers::default();
         let mut tracking = InstructionTracking::default();
         registers.pc = 0x8000;
@@ -270,7 +270,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_irq_is_masked_by_interrupt_flag(mut memory: crate::memory::Memory) {
+    fn test_irq_is_masked_by_interrupt_flag(mut memory: crate::hardware::memory::Memory) {
         let mut registers = Registers::default();
         let mut tracking = InstructionTracking::default();
         registers.set_flag(INTERRUPT_FLAG_BITMASK, true);
@@ -284,7 +284,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_irq_uses_vector_fffe(mut memory: crate::memory::Memory) {
+    fn test_irq_uses_vector_fffe(mut memory: crate::hardware::memory::Memory) {
         let mut registers = Registers::default();
         let mut tracking = InstructionTracking::default();
         registers.pc = 0x8000;
@@ -298,7 +298,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_irq_pushes_pc_as_return_address(mut memory: crate::memory::Memory) {
+    fn test_irq_pushes_pc_as_return_address(mut memory: crate::hardware::memory::Memory) {
         let mut registers = Registers::default();
         let mut tracking = InstructionTracking::default();
         registers.pc = 0x8000;
@@ -319,7 +319,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_irq_does_not_set_break_flag_in_pushed_status(mut memory: crate::memory::Memory) {
+    fn test_irq_does_not_set_break_flag_in_pushed_status(mut memory: crate::hardware::memory::Memory) {
         let mut registers = Registers::default();
         let mut tracking = InstructionTracking::default();
         registers.pc = 0x8000;
@@ -338,7 +338,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_irq_sets_interrupt_flag_after_handling(mut memory: crate::memory::Memory) {
+    fn test_irq_sets_interrupt_flag_after_handling(mut memory: crate::hardware::memory::Memory) {
         let mut registers = Registers::default();
         let mut tracking = InstructionTracking::default();
         registers.pc = 0x8000;
@@ -355,7 +355,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_irq_is_deferred_mid_instruction(mut memory: crate::memory::Memory) {
+    fn test_irq_is_deferred_mid_instruction(mut memory: crate::hardware::memory::Memory) {
         let mut registers = Registers::default();
         let mut tracking = InstructionTracking::default();
         registers.pc = 0x8000;

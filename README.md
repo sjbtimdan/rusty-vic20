@@ -31,7 +31,8 @@ cargo +nightly run --release --bin vic20
 ![Chess](docs/sargon-ii-chess.png)
 
 ## Docs
-![References](docs/REFERENCES.md)
+- ![Agents Docs](AGENTS.md)
+= ![References](docs/REFERENCES.md)
 
 ## Disassembler
 

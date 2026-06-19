@@ -1,7 +1,7 @@
 mod common;
 
 use rusty_vic20::{
-    addressable::Addressable,
+    hardware::addressable::Addressable,
     peripherals::joystick::{JoystickDirection, JoystickUpdate},
 };
 

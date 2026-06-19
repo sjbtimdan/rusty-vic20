@@ -1,4 +1,4 @@
-use crate::addressable::Addressable;
+use crate::hardware::addressable::Addressable;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum MemoryExpansion {

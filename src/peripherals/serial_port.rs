@@ -1,4 +1,4 @@
-use crate::via::VIA;
+use crate::hardware::via::VIA;
 
 pub struct SerialPort;
 

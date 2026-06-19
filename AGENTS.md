@@ -7,7 +7,7 @@ VIC-20 hardware references in [docs/REFERENCES.md](docs/REFERENCES.md).
 ## Fast Start
 
 - Build: `cargo build`
-- Test: `cargo test` (unit: `cargo test --lib`; integration: `cargo test --test '*'` — requires ROM files in `data/`)
+- Test: `cargo test` (unit-only: `cargo test --lib`; integration: `cargo test --test '*'` — requires ROM files in `data/`)
 - Format: `cargo +nightly fmt` — **must use nightly**; `cargo fmt` will error due to `unstable_features = true` in `rustfmt.toml`
 - Lint: `cargo clippy` — run after every change and fix all warnings
 - Bench: `cargo +nightly bench` (requires ROM files in `data/`, uses `#![feature(test)]`)
@@ -29,91 +29,68 @@ VIC-20 hardware references in [docs/REFERENCES.md](docs/REFERENCES.md).
 - Preserve existing public APIs unless the task explicitly requires API changes.
 - No comments unless necessary for non-obvious logic.
 
-## Architecture Overview
+## Module Architecture
 
-- Single crate (not a workspace), `edition = "2024"` (requires Rust >= 1.85.0).
-- All modules re-exported via `pub mod` in `src/lib.rs`.
-- Entries: `src/bin/vic20.rs` (emulator), `src/bin/disassembler.rs` (6502 disassembler).
+Single crate (not a workspace), `edition = "2024"` (requires Rust >= 1.85.0). `#![feature(likely_unlikely)]` in `src/lib.rs`.
+Entries: `src/bin/vic20.rs` (emulator — trivial main, env_logger init + controller run), `src/bin/disassembler.rs` (6502 disassembler).
 
-### Core Emulation
+### Top-level modules (`src/lib.rs`)
 
-- **`Addressable` trait** (`src/addressable.rs`): Foundational `read_byte`/`write_byte` interface. Implemented by `Memory`, `VIC`, `VIA`, and `Bus`. CPU interacts with the bus exclusively through `dyn Addressable` / `impl Addressable`.
-- **`Bus`** (`src/bus.rs`): 64KB address router owning `Memory`, `VIC`, two `VIA`s, watchpoints, and framebuffer. `step_devices()` steps VIC, then VIA1 (with NMI), then VIA2 internal. Routes reads/writes to the correct device based on address range. `render_active_screen()` delegates to VIC.
-- **`CPU6502`** (`src/cpu/cpu6502.rs`): Cycle-accurate — each `cpu.step()` is exactly one clock cycle. Uses a state machine (`cycle_count`, `operands_index`, `current_instruction_info`) for multi-cycle instructions.
-- **Instruction executor traits** (`src/cpu/instruction_executor.rs`, `src/cpu/interrupt_handler.rs`, `src/cpu/addressing_mode.rs`): Traits enable `unimock` testing. `DefaultInstructionExecutor` is a zero-sized struct.
-- **`VIC`** (`src/vic.rs`): Renders 176×184 text-mode screen from screen RAM + Character ROM + color RAM. Registers at 0x9000–0x900F.
-- **`VIA`** (`src/via.rs`): 6522 chip — Timer1 countdown/underflow/latch, IFR/IER/IRQ logic (`Cell` for interior mutability), CA1 edge detect via `EdgeLatch` (`src/edge_latch.rs`). Port A/B for keyboard matrix. `port_b_callback` fires on port B writes (used for cassette motor control).
+| Module | Directory | Purpose |
+|--------|-----------|---------|
+| `controller` | `src/controller.rs` | `Vic20Controller` — winit event loop, thread spawning, cross-thread shared state |
+| `cpu` | `src/cpu/` | `CPU6502`, registers, instructions, addressing modes, executor traits |
+| `emulator` | `src/emulator/` | `EmulatorRunner`, `spawn_emulator()`, `ThreadSenders`/`ThreadReceivers`, paste |
+| `hardware` | `src/hardware/` | `Addressable` trait, `Bus`, `Memory`, `VIC`, `VIA`, `EdgeLatch` |
+| `peripherals` | `src/peripherals/` | Brake, keyboard (matrix), joystick, cassette, serial, speaker, direct loader |
+| `tools` | `src/tools/` | `Breakpoint` trait, watchpoints, disassembler |
+| `ui` | `src/ui/` | Audio (`audio.rs`), control panel, keyboard UI, screen rendering |
+| `virtual_clock` | `src/virtual_clock.rs` | `Clock` trait + `SystemClock`/`MockClock` (for testable keyboard timing) |
 
-### Peripherals (`src/peripherals/`)
+### Key types and locations
 
-Re-exported via `src/peripherals/mod.rs`:
+- **`Addressable` trait** — `src/hardware/addressable.rs`: `read_byte`/`write_byte`. Implemented by `Memory`, `VIC`, `VIA`, and `Bus`. CPU interacts with the bus exclusively through `dyn Addressable` / `impl Addressable`.
+- **`Bus`** — `src/hardware/bus.rs`: 64KB address router. Owns `Memory`, `VIC`, two `VIA`s, watchpoints, and framebuffer. `via1` and `via2` are `pub`. `step_devices()` steps VIA1 internal → NMI latch → VIA2 internal → IRQ line.
+- **`CPU6502`** — `src/cpu/cpu6502.rs`: Cycle-accurate (`cpu.step()` = exactly one clock cycle). State machine with `cycle_count`, `operands_index`, `current_instruction_info`. Uses `InstructionExecutor`/`InterruptHandler`/`OperandResolution` traits for testability.
+- **`VIC`** — `src/hardware/vic.rs`: Renders 176×184 text-mode screen. Has sound generators (`generate_sample()`). Dirty-flag optimization.
+- **`VIA`** — `src/hardware/via.rs`: 6522 chip. Uses `Cell` for interior mutability on `ifr`, `t1_counter`, `t1_latch`. `port_b_callback` for cassette motor. `joystick_right_pressed` field. CA1 edge detect via `EdgeLatch` (`src/hardware/edge_latch.rs`).
+- **`EmulatorRunner`** — `src/emulator/runner.rs`: Main emulation orchestrator. `step_keyboard()` → `step()` (bus.step_devices → cpu.step → peripherals → brake.step). `generate_audio()` mixes VIC + VIA2 CB2. `run_loop()` is the core loop entry point.
+- **`spawn_emulator()`** — `src/emulator/mod.rs`: Spawns the `"vic20-core-loop"` thread with all channel receivers.
+- **`ThreadSenders` / `ThreadReceivers`** — `src/emulator/api.rs`: All channel types (keyboard, paste, load, cassette, joystick, direct_loader, brake, shutdown).
 
-- **brake**: Speed control. Reads `BrakeSpeed` from a channel, adjusts cycle timing every 10k cycles against the real `Clock`. Speeds: Normal, Quarter, Half, TwoX, Max.
-- **keyboard**: Matrix scanning; reads `HashSet<Key>` via `sync_channel(2)` from UI → `keyboard.step(port_b)` → `via2.set_port_a()`. Also handles paste injection and RESTORE key (CA1 on VIA1 via `set_ca1_pin`).
-- **joystick**: Maps directional + fire to VIA port A bits; channel from UI.
-- **cassette_player**: Motor sense via VIA1 port B callback; `.step()` advances tape counters.
-- **serial_port**: IEC serial bus stubs.
-- **direct_loader**: Bypasses KERNAL loader, injects bytes directly on `step()`.
-- **speaker**: Sound output logic.
+### UI windows
 
-### Audio (`src/audio.rs`)
+Three `pixels`/`winit` windows, created in `Vic20Controller::resumed`:
+- **screen** (`src/ui/screen/`): 176×184 at 3x scale, displays VIC framebuffer + border.
+- **keyboard** (`src/ui/keyboard/`): PNG layout image + virtual keyboard with click/hold/flash interaction.
+- **control** (`src/ui/control/`): Tabbed panel (Perf / Io / Joystick / Memory). Cassette, direct load, joystick, memory expansion, speed/brake.
 
-Uses `cpal` + `ringbuf` for audio output (44100 Hz, mono). `AudioProducer::push()` feeds samples; `AudioProducer::noop()` creates a no-op for tests. Sample generation happens in `EmulatorRunner::generate_audio()` mixing VIC + VIA2 CB2.
+### Tools
 
-### Paste (`src/paste.rs`)
-
-Clipboard paste: Unicode→PETSCII conversion, injected into KERNAL keyboard buffer at `0x0277` (count at `0x00C6`). `PasteQueue = Arc<Mutex<VecDeque<u8>>>`.
-
-### Runner (`src/runner.rs`)
-
-`EmulatorRunner` consolidates emulation state (bus, cpu, and all peripherals including brake and audio). Key methods:
-- `step_keyboard()` — call before `step()`. Handles keyboard matrix + paste injection + RESTORE key.
-- `step()` — one cycle: `step_devices` → `cpu.step` → peripherals → `brake.step()`.
-- `generate_audio(elapsed_secs)` — generates audio samples for the given wall-clock time.
-- `step_multiple(count)` — convenience loop.
-- `from_receiver(...)` — full constructor; `default()` creates a no-audio runner (for tests).
-
-### UI (`src/ui/`)
-
-Three `pixels`/`winit` windows, all created in `resumed`:
-- **screen**: 176×184 at 3x scale, displays VIC framebuffer + border.
-- **keyboard**: PNG layout image + virtual keyboard with click/hold/flash interaction.
-- **control**: Tabbed panel (Perf / Io / Joystick / Memory). Handles cassette file open, direct load, joystick virtual controls, memory expansion setting, and speed/brake control. No memory hex grid.
-
-### Controller (`src/controller.rs`)
-
-`Vic20Controller` implements `winit::ApplicationHandler`:
-- **`resumed`**: Creates 3 windows, spawns `"vic20-core-loop"` worker thread with all shared state channels.
-- **`window_event`**: Routes events to the correct window. Screen window gets keyboard events forwarded; control window actions trigger cassette/joystick/load/brake/reboot.
-- **`about_to_wait`**: Nearest-deadline timing between 50Hz screen refresh and keyboard animation.
-- **Paste**: Ctrl+V / Cmd+V → clipboard text → Unicode→PETSCII → `paste_queue` → injected into KERNAL buffer.
-- **Shared state**: `Arc<Mutex<SharedVideoState>>` (framebuffer + border RGBA) and `SharedPerfState` (perf metrics). No memory or register mirroring.
-
-### Tools (`src/tools.rs`)
-
-- **debug**: `Breakpoint` trait + `LoggingAddressBreakpoint`, `MemoryWriteWatchpoint` with single-address and range predicates.
-- **disassembler**: `DefaultDisassembler` — parse and format 6502 instructions.
+- **debug** (`src/tools/debug.rs`): `Breakpoint` trait + `LoggingAddressBreakpoint`, `MemoryWriteWatchpoint` with single-address and range predicates.
+- **disassembler** (`src/tools/disassembler.rs`): `DefaultDisassembler` — parse and format 6502 instructions.
 
 ## Threading and Shared State
 
 - **`winit` event loop** runs on the main thread (required for macOS).
-- **CPU/bus stepping** runs on a named worker thread (`"vic20-core-loop"`).
+- **CPU/bus stepping** runs on a named worker thread (`"vic20-core-loop"`), spawned via `spawn_emulator()` in `src/emulator/mod.rs`.
 - Peripherals communicate via `sync_channel` — UI sends, emulator `try_recv()`s non-blockingly.
 - `LoadQueue` (`.prg` files) and `PasteQueue` (clipboard) use `Arc<Mutex<VecDeque<>>>` with `try_lock()` in the emulator loop.
-- **Locking asymmetry:** emulator uses `try_lock()` for non-blocking reads; UI uses blocking `lock()` for frame/perf reads.
-- Video state (`SharedVideoState`) and performance metrics (`SharedPerformanceMetrics`) are the only `Arc<Mutex<>>` shared state for UI display.
+- **Locking asymmetry:** emulator uses `try_lock()` for non-blocking reads; UI uses blocking `lock()` for video/perf reads.
+- **Shared state:** only `Arc<Mutex<SharedVideoState>>` and `Arc<Mutex<SharedPerformanceMetrics>>`. No memory mirror or register debug state.
 
 ## Known Pitfalls
 
 - Avoid self-referential lifetime designs around CPU execution helpers; construct short-lived executors per step.
 - In bus/device stepping, avoid aliasing mutable borrows of a field and `&mut self` in the same call path.
-- For `unimock` with trait objects, local `Debug` impls may be needed for test expectations (see `src/addressable.rs`).
+- For `unimock` with trait objects, a local `Debug` impl is needed for test expectations (see `src/hardware/addressable.rs:33-38`).
 - Integration tests and benchmarks require ROM files in `data/` — they'll panic if ROMs are missing.
 - `cargo test` without ROMs: use `cargo test --lib` for unit tests only.
+- CI (`rust.yml`) runs `cargo +nightly test --verbose` on ubuntu-latest with ALSA dev libs.
 
 ## References
 
-- [README.md](README.md) — project overview and roadmap
+- [README.md](README.md) — project overview
 - [ARCHITECTURE.md](ARCHITECTURE.md) — full architectural detail
-- [WIP.md](WIP.md) — missing rendering features
+- [WIP.md](WIP.md) — missing features / roadmap
 - [docs/REFERENCES.md](docs/REFERENCES.md) — VIC-20 hardware references

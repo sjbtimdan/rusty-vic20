@@ -1,6 +1,6 @@
 use crate::{
-    addressable::Addressable,
-    paste::{KBD_BUFFER_COUNT, KBD_BUFFER_SIZE, KBD_BUFFER_START, PasteQueue},
+    emulator::paste::{KBD_BUFFER_COUNT, KBD_BUFFER_SIZE, KBD_BUFFER_START, PasteQueue},
+    hardware::addressable::Addressable,
     ui::keyboard::key::Key,
 };
 use log::{Level, debug};
@@ -288,7 +288,7 @@ mod tests {
         let (_tx, rx) = make_keyboard_channel();
         let queue: PasteQueue = Arc::new(Mutex::new(VecDeque::from([0x41, 0x42, 0x43])));
         let mut keyboard = Keyboard::new(rx, Some(queue.clone()));
-        let mut mem = crate::memory::Memory::default();
+        let mut mem = crate::hardware::memory::Memory::default();
 
         keyboard.inject_paste_into_buffer(&mut mem);
         assert_eq!(mem.read_byte(KBD_BUFFER_COUNT), 1);
@@ -311,7 +311,7 @@ mod tests {
         let queue: PasteQueue = Arc::new(Mutex::new(VecDeque::from([0x41])));
         let mut keyboard = Keyboard::new(rx, Some(queue));
         keyboard.paste_cooldown = 5;
-        let mut mem = crate::memory::Memory::default();
+        let mut mem = crate::hardware::memory::Memory::default();
 
         keyboard.inject_paste_into_buffer(&mut mem);
         assert_eq!(keyboard.paste_cooldown, 4);
@@ -328,7 +328,7 @@ mod tests {
         let queue: PasteQueue = Arc::new(Mutex::new(VecDeque::from([0x41])));
         let mut keyboard = Keyboard::new(rx, Some(queue));
         keyboard.paste_cooldown = 1;
-        let mut mem = crate::memory::Memory::default();
+        let mut mem = crate::hardware::memory::Memory::default();
 
         keyboard.inject_paste_into_buffer(&mut mem);
         assert_eq!(keyboard.paste_cooldown, 0);
@@ -345,7 +345,7 @@ mod tests {
         let (_tx, rx) = make_keyboard_channel();
         let queue: PasteQueue = Arc::new(Mutex::new(VecDeque::new()));
         let mut keyboard = Keyboard::new(rx, Some(queue));
-        let mut mem = crate::memory::Memory::default();
+        let mut mem = crate::hardware::memory::Memory::default();
 
         keyboard.inject_paste_into_buffer(&mut mem);
         assert_eq!(mem.read_byte(KBD_BUFFER_COUNT), 0);

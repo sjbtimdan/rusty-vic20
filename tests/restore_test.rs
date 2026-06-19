@@ -1,15 +1,15 @@
 mod common;
 
 use common::{UNEXPANDED_SCREEN_RAM_START, screen_code};
-use rusty_vic20::{addressable::Addressable, ui::keyboard::key::Key};
+use rusty_vic20::{hardware::addressable::Addressable, ui::keyboard::key::Key};
 use std::{collections::HashSet, sync::mpsc::SyncSender};
 
-fn run_boot_with_keyboard() -> (rusty_vic20::runner::EmulatorRunner, SyncSender<HashSet<Key>>) {
+fn run_boot_with_keyboard() -> (rusty_vic20::emulator::EmulatorRunner, SyncSender<HashSet<Key>>) {
     let (keyboard_sender, keyboard_receiver) = rusty_vic20::peripherals::keyboard::make_keyboard_channel();
-    let mut runner = rusty_vic20::runner::EmulatorRunner::from_receiver(
+    let mut runner = rusty_vic20::emulator::EmulatorRunner::from_receiver(
         keyboard_receiver,
-        rusty_vic20::paste::new_paste_queue(),
-        rusty_vic20::memory::MemoryExpansion::None,
+        rusty_vic20::emulator::paste::new_paste_queue(),
+        rusty_vic20::hardware::memory::MemoryExpansion::None,
         rusty_vic20::peripherals::brake::make_brake_channel().1,
         rusty_vic20::ui::audio::AudioProducer::noop(),
     );

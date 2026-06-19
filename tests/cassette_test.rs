@@ -1,7 +1,7 @@
 mod common;
 
 use common::{UNEXPANDED_SCREEN_RAM_START, assert_screen_line, splash_screen_lines};
-use rusty_vic20::paste::text_to_petscii;
+use rusty_vic20::emulator::paste::text_to_petscii;
 
 #[test]
 fn load_command_shows_press_play_on_tape() {

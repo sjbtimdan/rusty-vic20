@@ -1,4 +1,4 @@
-pub use crate::memory::MemoryExpansion;
+pub use crate::hardware::memory::MemoryExpansion;
 use crate::peripherals::joystick::JoystickDirection;
 
 pub mod brake;

@@ -2,7 +2,10 @@
 
 extern crate test;
 
-use rusty_vic20::{addressable::Addressable, bus::Bus, cpu::cpu6502::CPU6502};
+use rusty_vic20::{
+    cpu::cpu6502::CPU6502,
+    hardware::{addressable::Addressable, bus::Bus},
+};
 use test::Bencher;
 
 fn run_steps(steps: usize) -> (Bus, CPU6502) {

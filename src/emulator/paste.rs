@@ -13,7 +13,11 @@ pub const KBD_BUFFER_COUNT: u16 = 0x00C6;
 pub const KBD_BUFFER_START: u16 = 0x0277;
 pub const KBD_BUFFER_SIZE: u8 = 10;
 
-pub fn char_to_petscii(c: char) -> Option<u8> {
+pub fn text_to_petscii(text: &str) -> Vec<u8> {
+    text.chars().filter_map(char_to_petscii).collect()
+}
+
+fn char_to_petscii(c: char) -> Option<u8> {
     match c {
         '\n' | '\r' => Some(0x0D),
         ' ' => Some(0x20),
@@ -51,10 +55,6 @@ pub fn char_to_petscii(c: char) -> Option<u8> {
         '♥' => Some(0x53),
         _ => None,
     }
-}
-
-pub fn text_to_petscii(text: &str) -> Vec<u8> {
-    text.chars().filter_map(char_to_petscii).collect()
 }
 
 #[cfg(test)]

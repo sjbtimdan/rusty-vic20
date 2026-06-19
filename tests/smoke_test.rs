@@ -1,13 +1,13 @@
 mod common;
 
 use common::splash_screen_lines;
-use rusty_vic20::{addressable::Addressable, memory::MemoryExpansion};
+use rusty_vic20::hardware::{addressable::Addressable, memory::MemoryExpansion};
 
 const JIFFY_MSB: u16 = 0x00A0;
 const JIFFY_MID: u16 = 0x00A1;
 const JIFFY_LSB: u16 = 0x00A2;
 
-fn read_jiffy(bus: &rusty_vic20::bus::Bus) -> u32 {
+fn read_jiffy(bus: &rusty_vic20::hardware::bus::Bus) -> u32 {
     (bus.read_byte(JIFFY_MSB) as u32) << 16 | (bus.read_byte(JIFFY_MID) as u32) << 8 | bus.read_byte(JIFFY_LSB) as u32
 }
 

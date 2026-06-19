@@ -1,5 +1,4 @@
 use crate::{
-    addressable::Addressable,
     cpu::{
         addressing_mode::OperandResolution,
         instructions::Instruction,
@@ -15,6 +14,7 @@ use crate::{
             ZERO_FLAG_BITMASK,
         },
     },
+    hardware::addressable::Addressable,
 };
 
 pub(crate) fn execute_instruction(
@@ -342,7 +342,7 @@ mod tests {
             interrupt_handler::{InterruptHandlerMock, NoOpInterruptHandler},
             registers::*,
         },
-        memory::Memory,
+        hardware::memory::Memory,
     };
     use unimock::Unimock;
 
@@ -353,7 +353,7 @@ mod tests {
 
     #[fixture]
     fn memory() -> Memory {
-        crate::memory::Memory::default()
+        crate::hardware::memory::Memory::default()
     }
 
     // adc_binary: (a, operand, carry_in, expected, carry, overflow, zero, negative)

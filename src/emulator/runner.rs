@@ -1,59 +1,129 @@
 use crate::{
-    bus::Bus,
     cpu::cpu6502::CPU6502,
-    memory::MemoryExpansion,
-    paste::PasteQueue,
-    peripherals::{self, brake::BrakeSpeed},
-    runner::EmulatorRunner,
+    hardware::{addressable::Addressable, bus::Bus, memory::MemoryExpansion},
+    peripherals::{
+        brake::{Brake, BrakeSpeed},
+        cassette_player::CassettePlayer,
+        direct_loader::DirectLoad,
+        joystick::Joystick,
+        keyboard::{Keyboard, RestoreKeyStatus, make_keyboard_channel},
+        serial_port::SerialPort,
+    },
     ui::{
-        audio,
+        audio::AudioProducer,
         control::SharedPerformanceMetrics,
-        keyboard::key,
+        keyboard::key::Key,
         screen::{display::SharedVideoState, renderer::CHAR_WIDTH},
     },
 };
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::HashSet,
     sync::{
         Arc,
         Mutex,
         mpsc::{Receiver, SyncSender, TryRecvError},
     },
-    thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
 
-pub const FRAME_TIME: Duration = Duration::from_nanos(1_000_000_000 / 50);
+use super::{LoadQueue, PrgLoadRequest, paste::PasteQueue};
+
 const FRAME_PUBLISH_INTERVAL: Duration = Duration::from_millis(50);
 const PERF_PUBLISH_INTERVAL: Duration = Duration::from_secs(1);
 
-pub struct ThreadSenders {
-    pub video: Arc<Mutex<SharedVideoState>>,
-    pub perf: Arc<Mutex<SharedPerformanceMetrics>>,
-    pub keyboard_sender: SyncSender<HashSet<key::Key>>,
+pub struct EmulatorRunner {
+    pub bus: Bus,
+    pub cpu: CPU6502,
+    pub cassette_player: CassettePlayer,
+    pub joystick: Joystick,
+    pub serial_port: SerialPort,
+    pub direct_loader: DirectLoad,
+    pub keyboard: Keyboard,
+    pub keyboard_sender: SyncSender<HashSet<Key>>,
     pub paste_queue: PasteQueue,
-    pub load_queue: LoadQueue,
-    pub cassette_sender: SyncSender<bool>,
-    pub joystick_sender: SyncSender<peripherals::joystick::JoystickUpdate>,
-    pub direct_loader_sender: SyncSender<Vec<u8>>,
-    pub brake_sender: SyncSender<BrakeSpeed>,
-    pub shutdown_sender: SyncSender<()>,
-}
-
-pub struct ThreadReceivers {
-    pub video: Arc<Mutex<SharedVideoState>>,
-    pub perf: Arc<Mutex<SharedPerformanceMetrics>>,
-    pub load_queue: LoadQueue,
-    pub paste_queue: PasteQueue,
-    pub keyboard_receiver: Receiver<HashSet<key::Key>>,
-    pub cassette_receiver: Receiver<bool>,
-    pub joystick_receiver: Receiver<peripherals::joystick::JoystickUpdate>,
-    pub direct_loader_receiver: Receiver<Vec<u8>>,
-    pub brake_receiver: Receiver<BrakeSpeed>,
-    pub shutdown_receiver: Receiver<()>,
+    pub brake: Brake,
+    pub audio_producer: AudioProducer,
+    pub audio_cycle: u64,
+    pub audio_frac: f64,
 }
 
 impl EmulatorRunner {
+    pub fn create_bus_and_cpu(memory_expansion: MemoryExpansion) -> (Bus, CPU6502) {
+        let mut bus = Bus::default();
+        bus.memory.set_expansion(memory_expansion);
+        bus.load_standard_roms_from_data_dir();
+        let reset_vector = bus.read_word(0xFFFC);
+        let mut cpu = CPU6502::default();
+        cpu.reset(reset_vector);
+        (bus, cpu)
+    }
+
+    pub fn from_receiver(
+        keyboard_receiver: Receiver<HashSet<Key>>,
+        paste_queue: PasteQueue,
+        memory_expansion: MemoryExpansion,
+        brake_receiver: Receiver<BrakeSpeed>,
+        audio_producer: AudioProducer,
+    ) -> Self {
+        let (bus, cpu) = Self::create_bus_and_cpu(memory_expansion);
+        let (dummy_tx, _) = make_keyboard_channel();
+        Self {
+            bus,
+            cpu,
+            cassette_player: CassettePlayer::default(),
+            joystick: Joystick::default(),
+            serial_port: SerialPort,
+            direct_loader: DirectLoad::default(),
+            keyboard: Keyboard::new(keyboard_receiver, Some(paste_queue.clone())),
+            keyboard_sender: dummy_tx,
+            paste_queue,
+            brake: Brake::new_default(brake_receiver),
+            audio_producer,
+            audio_cycle: 0,
+            audio_frac: 0.0,
+        }
+    }
+
+    pub fn step_keyboard(&mut self) {
+        self.keyboard.inject_paste_into_buffer(&mut self.bus);
+        if let Some(port_a) = self.keyboard.step(self.bus.via2.port_b()) {
+            self.bus.via2.set_port_a(port_a);
+        } else {
+            self.bus.via2.set_port_a(0xFF);
+        }
+        let restore = self.keyboard.restore_key_status();
+        self.bus.via1.set_ca1_pin(restore == RestoreKeyStatus::Up);
+    }
+
+    pub fn step(&mut self) {
+        self.bus.step_devices(&mut self.cpu);
+        self.cpu.step(&mut self.bus);
+        self.cassette_player.step(&mut self.bus.via1);
+        self.joystick.step(&mut self.bus.via1, &mut self.bus.via2);
+        self.serial_port.step(&mut self.bus.via1);
+        self.direct_loader.step(&mut self.bus);
+        self.brake.step();
+    }
+
+    pub fn generate_audio(&mut self, elapsed_secs: f64) {
+        const PHI2_HZ: f64 = 1_108_404.0;
+        const AUDIO_HZ: f64 = 44_100.0;
+        self.audio_frac += elapsed_secs * AUDIO_HZ;
+        while self.audio_frac >= 1.0 {
+            self.audio_frac -= 1.0;
+            let vic = self.bus.vic.generate_sample(self.audio_cycle);
+            let cb2 = self.bus.via2.generate_cb2_sample(self.audio_cycle);
+            self.audio_producer.push((vic + cb2).clamp(-1.0, 1.0));
+            self.audio_cycle += (PHI2_HZ / AUDIO_HZ) as u64;
+        }
+    }
+
+    pub fn step_multiple(&mut self, count: usize) {
+        for _ in 0..count {
+            self.step();
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn run_loop(
         self,
@@ -61,7 +131,7 @@ impl EmulatorRunner {
         shared_perf: Arc<Mutex<SharedPerformanceMetrics>>,
         load_queue: LoadQueue,
         cassette_receiver: Receiver<bool>,
-        joystick_receiver: Receiver<peripherals::joystick::JoystickUpdate>,
+        joystick_receiver: Receiver<crate::peripherals::joystick::JoystickUpdate>,
         direct_loader_receiver: Receiver<Vec<u8>>,
         shutdown_receiver: Receiver<()>,
     ) {
@@ -142,52 +212,6 @@ impl EmulatorRunner {
             }
         }
     }
-}
-
-pub fn spawn_emulator(
-    memory_expansion: MemoryExpansion,
-    audio_producer: audio::AudioProducer,
-    receivers: ThreadReceivers,
-) -> JoinHandle<()> {
-    thread::Builder::new()
-        .name("vic20-core-loop".to_string())
-        .spawn(move || {
-            let runner = EmulatorRunner::from_receiver(
-                receivers.keyboard_receiver,
-                receivers.paste_queue,
-                memory_expansion,
-                receivers.brake_receiver,
-                audio_producer,
-            );
-            runner.run_loop(
-                receivers.video,
-                receivers.perf,
-                receivers.load_queue,
-                receivers.cassette_receiver,
-                receivers.joystick_receiver,
-                receivers.direct_loader_receiver,
-                receivers.shutdown_receiver,
-            )
-        })
-        .expect("failed to spawn VIC-20 core thread")
-}
-
-pub struct PrgLoadRequest {
-    path: String,
-    data: Vec<u8>,
-}
-
-pub type LoadQueue = Arc<Mutex<VecDeque<PrgLoadRequest>>>;
-
-pub fn read_prg_file(path: &str) -> Result<PrgLoadRequest, String> {
-    let data = std::fs::read(path).map_err(|e| format!("Failed to read '{}': {}", path, e))?;
-    if data.len() < 2 {
-        return Err(format!("'{}' is too small to be a valid .prg file", path));
-    }
-    Ok(PrgLoadRequest {
-        path: path.to_string(),
-        data,
-    })
 }
 
 fn load_prg(bus: &mut Bus, _cpu: &mut CPU6502, request: &PrgLoadRequest) {

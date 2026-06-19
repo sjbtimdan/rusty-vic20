@@ -1,4 +1,4 @@
-use crate::bus::Bus;
+use crate::hardware::bus::Bus;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 
 pub fn make_direct_loader_channel() -> (SyncSender<Vec<u8>>, Receiver<Vec<u8>>) {
@@ -34,7 +34,7 @@ impl DirectLoad {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::addressable::Addressable;
+    use crate::hardware::addressable::Addressable;
     use rstest::{fixture, rstest};
 
     #[fixture]

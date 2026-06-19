@@ -1,10 +1,12 @@
 use crate::{
-    addressable::Addressable,
     cpu::{
         interrupt_handler::{Interrupt, InterruptHandler},
         registers::Registers,
     },
-    edge_latch::{Edge, EdgeLatch},
+    hardware::{
+        addressable::Addressable,
+        edge_latch::{Edge, EdgeLatch},
+    },
     peripherals::joystick::JoystickControl,
 };
 use std::{cell::Cell, hint::assert_unchecked};
@@ -322,11 +324,11 @@ impl Addressable for VIA {
 mod tests {
     use super::*;
     use crate::{
-        addressable::UnimplementedAddressable,
         cpu::{
             interrupt_handler::{Interrupt, InterruptHandlerMock, NoOpInterruptHandler},
             registers::Registers,
         },
+        hardware::addressable::UnimplementedAddressable,
     };
     use rstest::{fixture, rstest};
     use unimock::{MockFn, Unimock, matching};

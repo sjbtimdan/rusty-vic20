@@ -1,6 +1,5 @@
 use crate::{
-    emulator::{FRAME_TIME, ThreadReceivers, ThreadSenders, read_prg_file, spawn_emulator},
-    paste::{self, PasteQueue},
+    emulator::{FRAME_TIME, PasteQueue, ThreadReceivers, ThreadSenders, paste, read_prg_file, spawn_emulator},
     peripherals,
     ui::{
         audio,
@@ -40,7 +39,7 @@ pub struct Vic20Controller {
     screen: ScreenWindow,
     keyboard_window: KeyboardWindow,
     control_window: ControlWindow,
-    shared_state: Option<ThreadSenders>,
+    senders: Option<ThreadSenders>,
     _emulator_thread: Option<JoinHandle<()>>,
     _audio_stream: Option<Stream>,
     keyboard_state: KeyboardState,
@@ -49,8 +48,8 @@ pub struct Vic20Controller {
 }
 
 impl Vic20Controller {
-    fn shared_state(&self) -> &ThreadSenders {
-        self.shared_state.as_ref().unwrap()
+    fn thread_senders(&self) -> &ThreadSenders {
+        self.senders.as_ref().unwrap()
     }
 
     pub fn run(&mut self) {
@@ -72,7 +71,7 @@ impl ApplicationHandler for Vic20Controller {
         if Some(window_id) == self.screen.window_id() {
             match event {
                 WindowEvent::RedrawRequested => {
-                    let video_ref = Arc::clone(&self.shared_state().video);
+                    let video_ref = Arc::clone(&self.thread_senders().video);
                     let shared = match video_ref.lock() {
                         Ok(guard) => guard,
                         Err(poisoned) => poisoned.into_inner(),
@@ -92,7 +91,7 @@ impl ApplicationHandler for Vic20Controller {
                     self.keyboard_window
                         .handle_event(event_loop, event, &mut self.keyboard_state);
                     let _ = self
-                        .shared_state()
+                        .thread_senders()
                         .keyboard_sender
                         .send(self.keyboard_state.physical_keys.clone());
                 }
@@ -118,7 +117,7 @@ impl ApplicationHandler for Vic20Controller {
                     self.keyboard_window
                         .handle_event(event_loop, event, &mut self.keyboard_state);
                     let _ = self
-                        .shared_state()
+                        .thread_senders()
                         .keyboard_sender
                         .send(self.keyboard_state.physical_keys.clone());
                 }
@@ -126,13 +125,13 @@ impl ApplicationHandler for Vic20Controller {
                     self.keyboard_window
                         .handle_event(event_loop, event, &mut self.keyboard_state);
                     let _ = self
-                        .shared_state()
+                        .thread_senders()
                         .keyboard_sender
                         .send(self.keyboard_state.physical_keys.clone());
                 }
             }
         } else if Some(window_id) == self.control_window.window_id() {
-            let perf = Arc::clone(&self.shared_state().perf);
+            let perf = Arc::clone(&self.thread_senders().perf);
             match event {
                 WindowEvent::RedrawRequested => {
                     self.control_window.draw(&self.control_state, &perf);
@@ -180,7 +179,7 @@ impl Vic20Controller {
         let (audio_producer, audio_stream) = audio::create_audio_channel();
         let (state, receivers) = self.create_channels();
         let handle = spawn_emulator(self.control_state.memory_expansion, audio_producer, receivers);
-        self.shared_state = Some(state);
+        self.senders = Some(state);
         self._emulator_thread = Some(handle);
         self._audio_stream = Some(audio_stream);
     }
@@ -252,7 +251,7 @@ impl Vic20Controller {
             IoAction::TogglePlay => {
                 self.control_state.cassette_playing = !self.control_state.cassette_playing;
                 let _ = self
-                    .shared_state()
+                    .thread_senders()
                     .cassette_sender
                     .send(self.control_state.cassette_playing);
             }
@@ -261,7 +260,7 @@ impl Vic20Controller {
                 if let Some(path) = path {
                     match std::fs::read(&path) {
                         Ok(data) => {
-                            let _ = self.shared_state().direct_loader_sender.send(data);
+                            let _ = self.thread_senders().direct_loader_sender.send(data);
                         }
                         Err(e) => {
                             log::error!("DirectLoad: failed to read '{}': {}", path.display(), e);
@@ -282,7 +281,7 @@ impl Vic20Controller {
             self.control_state.cassette_file = Some(path_str.to_string());
             match read_prg_file(path_str) {
                 Ok(request) => {
-                    if let Ok(mut q) = self.shared_state().load_queue.lock() {
+                    if let Ok(mut q) = self.thread_senders().load_queue.lock() {
                         q.push_back(request);
                     }
                 }
@@ -300,7 +299,7 @@ impl Vic20Controller {
                     direction: self.control_state.joystick_direction,
                     fire: self.control_state.joystick_fire,
                 };
-                let _ = self.shared_state().joystick_sender.send(update);
+                let _ = self.thread_senders().joystick_sender.send(update);
             }
         }
     }
@@ -323,7 +322,7 @@ impl Vic20Controller {
         match action {
             BrakeAction::SetSpeed(speed) => {
                 self.control_state.brake_speed = speed;
-                let _ = self.shared_state().brake_sender.send(speed);
+                let _ = self.thread_senders().brake_sender.send(speed);
             }
         }
     }
@@ -337,7 +336,7 @@ impl Vic20Controller {
             }
         };
         let petscii_bytes = paste::text_to_petscii(&text);
-        if let Ok(mut q) = self.shared_state().paste_queue.lock() {
+        if let Ok(mut q) = self.thread_senders().paste_queue.lock() {
             q.extend(petscii_bytes);
         }
     }

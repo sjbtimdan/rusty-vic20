@@ -1,5 +1,4 @@
 use crate::{
-    addressable::Addressable,
     cpu::{
         addressing_mode::OperandResolution,
         instruction_executor::execute_instruction,
@@ -8,7 +7,7 @@ use crate::{
         interrupt_handler::Interrupt,
         registers::{DECIMAL_FLAG_BITMASK, INTERRUPT_FLAG_BITMASK, Registers},
     },
-    edge_latch::EdgeLatch,
+    hardware::{addressable::Addressable, edge_latch::EdgeLatch},
     tools::{
         debug::{Breakpoint, LoggingAddressBreakpoint},
         disassembler::disassemble_instruction,
@@ -235,8 +234,8 @@ mod tests {
     use rstest::{fixture, rstest};
 
     #[fixture]
-    fn memory() -> crate::memory::Memory {
-        crate::memory::Memory::default()
+    fn memory() -> crate::hardware::memory::Memory {
+        crate::hardware::memory::Memory::default()
     }
 
     #[fixture]
@@ -245,7 +244,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_inx_executes_after_two_steps(mut memory: crate::memory::Memory, mut cpu: CPU6502) {
+    fn test_inx_executes_after_two_steps(mut memory: crate::hardware::memory::Memory, mut cpu: CPU6502) {
         cpu.registers.pc = 0x8000;
         memory.data[0x8000] = INX_IMPLIED.opcode;
 
@@ -259,7 +258,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_lda_immediate_executes_after_two_cycles(mut memory: crate::memory::Memory, mut cpu: CPU6502) {
+    fn test_lda_immediate_executes_after_two_cycles(mut memory: crate::hardware::memory::Memory, mut cpu: CPU6502) {
         cpu.registers.pc = 0x8000;
         memory.data[0x8000] = LDA_IMMEDIATE.opcode;
         memory.data[0x8001] = 0x20; // LDA immediate operand
@@ -275,7 +274,7 @@ mod tests {
 
     #[rstest]
     fn test_lda_absolute_x_executes_after_four_cycles_without_page_crossing(
-        mut memory: crate::memory::Memory,
+        mut memory: crate::hardware::memory::Memory,
         mut cpu: CPU6502,
     ) {
         cpu.registers.pc = 0x8000;
@@ -301,7 +300,7 @@ mod tests {
 
     #[rstest]
     fn test_lda_absolute_x_executes_after_five_cycles_when_crossing_page_boundary(
-        mut memory: crate::memory::Memory,
+        mut memory: crate::hardware::memory::Memory,
         mut cpu: CPU6502,
     ) {
         cpu.registers.pc = 0x8000;
@@ -329,7 +328,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_nmi_fires_on_falling_edge(mut memory: crate::memory::Memory, mut cpu: CPU6502) {
+    fn test_nmi_fires_on_falling_edge(mut memory: crate::hardware::memory::Memory, mut cpu: CPU6502) {
         cpu.registers.pc = 0x8000;
         cpu.registers.sp = 0xFF;
         memory.data[0x8000] = NOP_IMPLIED.opcode;
@@ -346,7 +345,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_nmi_does_not_refire_when_line_stays_low(mut memory: crate::memory::Memory, mut cpu: CPU6502) {
+    fn test_nmi_does_not_refire_when_line_stays_low(mut memory: crate::hardware::memory::Memory, mut cpu: CPU6502) {
         cpu.registers.pc = 0x8000;
         cpu.registers.sp = 0xFF;
         memory.data[0x8000] = NOP_IMPLIED.opcode;
@@ -366,7 +365,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_nmi_fires_again_on_new_edge(mut memory: crate::memory::Memory, mut cpu: CPU6502) {
+    fn test_nmi_fires_again_on_new_edge(mut memory: crate::hardware::memory::Memory, mut cpu: CPU6502) {
         cpu.registers.pc = 0x8000;
         cpu.registers.sp = 0xFF;
         memory.data[0x8000] = NOP_IMPLIED.opcode;
@@ -388,7 +387,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_nmi_latches_mid_instruction_and_fires_after(mut memory: crate::memory::Memory, mut cpu: CPU6502) {
+    fn test_nmi_latches_mid_instruction_and_fires_after(mut memory: crate::hardware::memory::Memory, mut cpu: CPU6502) {
         cpu.registers.pc = 0x8000;
         cpu.registers.sp = 0xFF;
         memory.data[0x8000] = LDA_IMMEDIATE.opcode;
@@ -415,7 +414,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_nmi_fires_when_only_restore_asserts(mut memory: crate::memory::Memory, mut cpu: CPU6502) {
+    fn test_nmi_fires_when_only_restore_asserts(mut memory: crate::hardware::memory::Memory, mut cpu: CPU6502) {
         cpu.registers.pc = 0x8000;
         cpu.registers.sp = 0xFF;
         memory.data[0x8000] = NOP_IMPLIED.opcode;
