@@ -1,7 +1,7 @@
 use font8x8::{BASIC_FONTS, UnicodeFonts};
 use log::error;
 use pixels::{Pixels, SurfaceTexture};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::{ElementState, KeyEvent, MouseButton, WindowEvent},
@@ -9,6 +9,8 @@ use winit::{
     keyboard::Key,
     window::Window,
 };
+
+use crate::ui::control::SharedPerformanceMetrics;
 
 use super::{
     BrakeAction,
@@ -20,7 +22,6 @@ use super::{
     JoystickDirection,
     MemoryAction,
     MemoryExpansion,
-    SharedPerfState,
     brake,
 };
 
@@ -234,7 +235,7 @@ impl ControlWindow {
         event_loop: &ActiveEventLoop,
         event: WindowEvent,
         state: &mut ControlState,
-        perf: &SharedPerfState,
+        perf: &Arc<Mutex<SharedPerformanceMetrics>>,
     ) {
         match event {
             WindowEvent::CloseRequested => {
@@ -448,7 +449,7 @@ impl ControlWindow {
         }
     }
 
-    pub fn draw(&mut self, state: &ControlState, perf: &SharedPerfState) {
+    pub fn draw(&mut self, state: &ControlState, perf: &Arc<Mutex<SharedPerformanceMetrics>>) {
         let Some(pixels) = self.pixels.as_mut() else {
             return;
         };
@@ -538,7 +539,12 @@ fn draw_tab_bar(frame: &mut [u8], active_tab: ControlTab, pressed_tab: Option<Co
     }
 }
 
-fn draw_perf_tab(frame: &mut [u8], state: &ControlState, perf: &SharedPerfState, pressed: Option<PressedElement>) {
+fn draw_perf_tab(
+    frame: &mut [u8],
+    state: &ControlState,
+    perf: &Arc<Mutex<SharedPerformanceMetrics>>,
+    pressed: Option<PressedElement>,
+) {
     let metrics = match perf.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),

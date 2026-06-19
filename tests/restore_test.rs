@@ -2,15 +2,23 @@ mod common;
 
 use common::{UNEXPANDED_SCREEN_RAM_START, screen_code};
 use rusty_vic20::{addressable::Addressable, ui::keyboard::key::Key};
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::mpsc::SyncSender};
 
-fn run_boot_with_keyboard() -> rusty_vic20::runner::EmulatorRunner {
-    let mut runner = common::run_boot();
+fn run_boot_with_keyboard() -> (rusty_vic20::runner::EmulatorRunner, SyncSender<HashSet<Key>>) {
+    let (keyboard_sender, keyboard_receiver) = rusty_vic20::peripherals::keyboard::make_keyboard_channel();
+    let mut runner = rusty_vic20::runner::EmulatorRunner::from_receiver(
+        keyboard_receiver,
+        rusty_vic20::paste::new_paste_queue(),
+        rusty_vic20::memory::MemoryExpansion::None,
+        rusty_vic20::peripherals::brake::make_brake_channel().1,
+        rusty_vic20::ui::audio::AudioProducer::noop(),
+    );
+    runner.step_multiple(600_000);
     for _ in 0..100_000 {
         runner.step_keyboard();
         runner.step();
     }
-    runner
+    (runner, keyboard_sender)
 }
 
 #[test]
@@ -26,7 +34,7 @@ fn via1_ca1_enabled_after_boot() {
 
 #[test]
 fn held_key_repeats_in_kernal() {
-    let mut runner = run_boot_with_keyboard();
+    let (mut runner, keyboard_sender) = run_boot_with_keyboard();
 
     common::assert_screen_lines(
         &runner.bus,
@@ -40,7 +48,7 @@ fn held_key_repeats_in_kernal() {
         ],
     );
 
-    runner.keyboard_sender.send(HashSet::from([Key::Single('A')])).ok();
+    keyboard_sender.send(HashSet::from([Key::Single('A')])).ok();
 
     for _ in 0..500_000 {
         runner.step_keyboard();

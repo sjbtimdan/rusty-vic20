@@ -1,4 +1,5 @@
 # rusty-vic20
+[![Rust](https://github.com/sjbtimdan/rusty-vic20/actions/workflows/rust.yml/badge.svg)](https://github.com/sjbtimdan/rusty-vic20/actions/workflows/rust.yml)
 
 A Vic 20 emulator written in Rust.
 
@@ -21,13 +22,16 @@ A Vic 20 emulator written in Rust.
 
 ## Usage
 ```
-cargo run --release --bin vic20
+cargo +nightly run --release --bin vic20
 ```
 
 ## Screenshots
 ![Start screen](docs/start-screen.png)
 ![Kaleido](docs/kaleido.png)
-!![Chess](docs/sargon-ii-chess.png)
+![Chess](docs/sargon-ii-chess.png)
+
+## Docs
+![References](docs/REFERENCES.md)
 
 ## Disassembler
 

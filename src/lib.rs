@@ -5,6 +5,7 @@ pub mod bus;
 pub mod controller;
 pub mod cpu;
 pub mod edge_latch;
+pub mod emulator;
 pub mod memory;
 pub mod paste;
 pub mod peripherals;

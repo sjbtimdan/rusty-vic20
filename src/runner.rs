@@ -5,7 +5,7 @@ use crate::{
     memory::MemoryExpansion,
     paste::PasteQueue,
     peripherals::{
-        brake::{Brake, BrakeSpeed, make_brake_channel},
+        brake::{Brake, BrakeSpeed},
         cassette_player::CassettePlayer,
         direct_loader::DirectLoad,
         joystick::Joystick,
@@ -24,19 +24,19 @@ pub struct EmulatorRunner {
     pub cpu: CPU6502,
     pub cassette_player: CassettePlayer,
     pub joystick: Joystick,
-    serial_port: SerialPort,
+    pub serial_port: SerialPort,
     pub direct_loader: DirectLoad,
-    keyboard: Keyboard,
+    pub keyboard: Keyboard,
     pub keyboard_sender: SyncSender<HashSet<Key>>,
     pub paste_queue: PasteQueue,
     pub brake: Brake,
-    audio_producer: AudioProducer,
-    audio_cycle: u64,
-    audio_frac: f64,
+    pub audio_producer: AudioProducer,
+    pub audio_cycle: u64,
+    pub audio_frac: f64,
 }
 
 impl EmulatorRunner {
-    fn create_bus_and_cpu(memory_expansion: MemoryExpansion) -> (Bus, CPU6502) {
+    pub fn create_bus_and_cpu(memory_expansion: MemoryExpansion) -> (Bus, CPU6502) {
         let mut bus = Bus::default();
         bus.memory.set_expansion(memory_expansion);
         bus.load_standard_roms_from_data_dir();
@@ -71,33 +71,7 @@ impl EmulatorRunner {
             audio_frac: 0.0,
         }
     }
-}
 
-impl Default for EmulatorRunner {
-    fn default() -> Self {
-        let (bus, cpu) = Self::create_bus_and_cpu(MemoryExpansion::None);
-        let paste_queue = crate::paste::new_paste_queue();
-        let (tx, rx) = make_keyboard_channel();
-        let (_, brake_rx) = make_brake_channel();
-        Self {
-            bus,
-            cpu,
-            cassette_player: CassettePlayer::default(),
-            joystick: Joystick::default(),
-            serial_port: SerialPort,
-            direct_loader: DirectLoad::default(),
-            keyboard: Keyboard::new(rx, Some(paste_queue.clone())),
-            keyboard_sender: tx,
-            paste_queue,
-            brake: Brake::new_default(brake_rx),
-            audio_producer: AudioProducer::noop(),
-            audio_cycle: 0,
-            audio_frac: 0.0,
-        }
-    }
-}
-
-impl EmulatorRunner {
     pub fn step_keyboard(&mut self) {
         self.keyboard.inject_paste_into_buffer(&mut self.bus);
         if let Some(port_a) = self.keyboard.step(self.bus.via2.port_b()) {

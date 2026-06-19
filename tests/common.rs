@@ -1,6 +1,14 @@
 #![allow(dead_code)]
 
-use rusty_vic20::{addressable::Addressable, bus::Bus, memory::MemoryExpansion, runner::EmulatorRunner};
+use rusty_vic20::{
+    addressable::Addressable,
+    bus::Bus,
+    memory::MemoryExpansion,
+    paste::new_paste_queue,
+    peripherals::{brake::make_brake_channel, keyboard::make_keyboard_channel},
+    runner::EmulatorRunner,
+    ui::audio::AudioProducer,
+};
 
 pub const UNEXPANDED_SCREEN_RAM_START: u16 = 0x1E00;
 pub const SCREEN_LINE_LEN: u16 = 22;
@@ -72,14 +80,25 @@ pub fn count_screen_chars(bus: &Bus, screen_code: u8) -> usize {
 }
 
 pub fn run_boot() -> EmulatorRunner {
-    let mut runner = EmulatorRunner::default();
+    let mut runner = EmulatorRunner::from_receiver(
+        make_keyboard_channel().1,
+        new_paste_queue(),
+        MemoryExpansion::None,
+        make_brake_channel().1,
+        AudioProducer::noop(),
+    );
     runner.step_multiple(600_000);
     runner
 }
 
 pub fn run_boot_with_expansion(expansion: MemoryExpansion) -> EmulatorRunner {
-    let mut runner = EmulatorRunner::default();
-    runner.bus.memory.set_expansion(expansion);
+    let mut runner = EmulatorRunner::from_receiver(
+        make_keyboard_channel().1,
+        new_paste_queue(),
+        expansion,
+        make_brake_channel().1,
+        AudioProducer::noop(),
+    );
     let steps = match expansion {
         MemoryExpansion::EightK | MemoryExpansion::SixteenK | MemoryExpansion::ThirtyTwoK => 2_000_000,
         _ => 600_000,

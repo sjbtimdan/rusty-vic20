@@ -1,11 +1,7 @@
 use crate::{
-    bus::Bus,
-    cpu::cpu6502::CPU6502,
-    memory::MemoryExpansion,
+    emulator::{FRAME_TIME, ThreadReceivers, ThreadSenders, read_prg_file, spawn_emulator},
     paste::{self, PasteQueue},
     peripherals,
-    peripherals::brake::BrakeSpeed,
-    runner::EmulatorRunner,
     ui::{
         audio,
         control::{
@@ -14,7 +10,6 @@ use crate::{
             IoAction,
             JoystickAction,
             MemoryAction,
-            SharedPerfState,
             SharedPerformanceMetrics,
             display::ControlWindow,
         },
@@ -28,14 +23,10 @@ use crate::{
 use arboard::Clipboard;
 use cpal::Stream;
 use std::{
-    collections::{HashSet, VecDeque},
-    sync::{
-        Arc,
-        Mutex,
-        mpsc::{Receiver, SyncSender, TryRecvError},
-    },
-    thread::{self, JoinHandle},
-    time::{Duration, Instant},
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+    thread::JoinHandle,
+    time::Instant,
 };
 use winit::{
     application::ApplicationHandler,
@@ -44,201 +35,22 @@ use winit::{
     keyboard::ModifiersState,
 };
 
-const FRAME_TIME: Duration = Duration::from_nanos(1_000_000_000 / 50);
-const FRAME_PUBLISH_INTERVAL: Duration = Duration::from_millis(50);
-const PERF_PUBLISH_INTERVAL: Duration = Duration::from_secs(1);
-
-#[allow(dead_code)]
-struct Emulator {
-    state: SharedState,
-    thread: JoinHandle<()>,
-    _audio: Stream,
-}
-
-impl Emulator {
-    fn spawn(memory_expansion: MemoryExpansion) -> Self {
-        let default_active_width = TEXT_COLUMNS * CHAR_WIDTH;
-        let video = Arc::new(Mutex::new(SharedVideoState {
-            screen_rgba: vec![0_u8; default_active_width * ACTIVE_HEIGHT * 4],
-            border_rgba: [0x00, 0x44, 0xAA, 0xFF],
-            active_width: default_active_width,
-        }));
-        let perf: SharedPerfState = Arc::new(Mutex::new(SharedPerformanceMetrics::default()));
-        let (cassette_sender, cassette_receiver) = peripherals::cassette_player::make_cassette_channel();
-        let (joystick_sender, joystick_receiver) = peripherals::joystick::make_joystick_channel();
-        let (direct_loader_sender, direct_loader_receiver) = peripherals::direct_loader::make_direct_loader_channel();
-        let load_queue = Arc::new(Mutex::new(VecDeque::new()));
-        let load_queue_for_thread = load_queue.clone();
-        let (keyboard_sender, keyboard_receiver) = crate::peripherals::keyboard::make_keyboard_channel();
-        let paste_queue: PasteQueue = paste::new_paste_queue();
-        let paste_queue_for_state = paste_queue.clone();
-        let (shutdown_sender, shutdown_receiver) = std::sync::mpsc::sync_channel::<()>(0);
-        let (brake_sender, brake_receiver) = peripherals::brake::make_brake_channel();
-
-        let (audio_producer, audio_stream) = audio::create_audio_channel();
-
-        let handle = thread::Builder::new()
-            .name("vic20-core-loop".to_string())
-            .spawn({
-                let video = Arc::clone(&video);
-                let perf = Arc::clone(&perf);
-                move || {
-                    let runner = EmulatorRunner::from_receiver(
-                        keyboard_receiver,
-                        paste_queue,
-                        memory_expansion,
-                        brake_receiver,
-                        audio_producer,
-                    );
-                    run_emulator(
-                        runner,
-                        video,
-                        perf,
-                        load_queue_for_thread,
-                        cassette_receiver,
-                        joystick_receiver,
-                        direct_loader_receiver,
-                        shutdown_receiver,
-                    )
-                }
-            })
-            .expect("failed to spawn VIC-20 core thread");
-
-        Emulator {
-            state: SharedState {
-                video,
-                perf,
-                keyboard_sender,
-                paste_queue: paste_queue_for_state,
-                load_queue,
-                cassette_sender,
-                joystick_sender,
-                direct_loader_sender,
-                brake_sender,
-                shutdown_sender,
-            },
-            thread: handle,
-            _audio: audio_stream,
-        }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn run_emulator(
-    mut runner: EmulatorRunner,
-    shared_video_state: Arc<Mutex<SharedVideoState>>,
-    shared_perf: SharedPerfState,
-    load_queue: LoadQueue,
-    cassette_receiver: std::sync::mpsc::Receiver<bool>,
-    joystick_receiver: std::sync::mpsc::Receiver<peripherals::joystick::JoystickUpdate>,
-    direct_loader_receiver: std::sync::mpsc::Receiver<Vec<u8>>,
-    shutdown_receiver: Receiver<()>,
-) {
-    let mut last_frame_publish = Instant::now();
-    let mut last_perf_publish = Instant::now();
-    let mut last_audio_batch = Instant::now();
-    let mut frame_count: u64 = 0;
-    let mut last_perf_total_cycles: u64 = 0;
-    let mut last_perf_frame_count: u64 = 0;
-
-    runner.bus.via1.set_port_b_callback(Box::new(cassette_motor_control));
-
-    loop {
-        if shutdown_receiver.try_recv() == Err(TryRecvError::Disconnected) {
-            break;
-        }
-
-        runner.step_keyboard();
-
-        if let Ok(pressed) = cassette_receiver.try_recv() {
-            runner.cassette_player.set_play_button(pressed);
-        }
-        if let Ok(update) = joystick_receiver.try_recv() {
-            runner.joystick.set_state(update);
-        }
-        if let Ok(data) = direct_loader_receiver.try_recv() {
-            runner.direct_loader.set_state(data);
-        }
-        if let Ok(mut q) = load_queue.try_lock() {
-            while let Some(request) = q.pop_front() {
-                load_prg(&mut runner.bus, &mut runner.cpu, &request);
-            }
-        }
-
-        runner.step();
-
-        if last_frame_publish.elapsed() >= FRAME_PUBLISH_INTERVAL {
-            let elapsed = last_audio_batch.elapsed().as_secs_f64();
-            if elapsed > 0.0 {
-                runner.generate_audio(elapsed);
-            }
-            last_audio_batch = Instant::now();
-
-            runner.bus.render_active_screen();
-            let latest_border_rgba = runner.bus.border_rgba();
-            let active_width = runner.bus.columns() * CHAR_WIDTH;
-            let mut shared = match shared_video_state.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            let fb = runner.bus.frame_buffer();
-            if shared.screen_rgba.len() != fb.len() {
-                shared.screen_rgba.resize(fb.len(), 0);
-            }
-            shared.screen_rgba.copy_from_slice(fb);
-            shared.border_rgba = latest_border_rgba;
-            shared.active_width = active_width;
-            last_frame_publish = Instant::now();
-            frame_count += 1;
-        }
-
-        if last_perf_publish.elapsed() >= PERF_PUBLISH_INTERVAL {
-            let elapsed = last_perf_publish.elapsed().as_secs_f64();
-            let cycles_delta = runner.cpu.total_cycles() - last_perf_total_cycles;
-            let frames_delta = frame_count - last_perf_frame_count;
-            let mut perf = match shared_perf.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            perf.cycles_per_second = cycles_delta as f64 / elapsed;
-            perf.frames_per_second = frames_delta as f64 / elapsed;
-            perf.total_cycles = runner.cpu.total_cycles();
-            perf.total_frames = frame_count;
-            last_perf_total_cycles = runner.cpu.total_cycles();
-            last_perf_frame_count = frame_count;
-            last_perf_publish = Instant::now();
-        }
-    }
-}
-
-struct SharedState {
-    video: Arc<Mutex<SharedVideoState>>,
-    perf: SharedPerfState,
-    keyboard_sender: SyncSender<HashSet<crate::ui::keyboard::key::Key>>,
-    paste_queue: PasteQueue,
-    load_queue: LoadQueue,
-    cassette_sender: SyncSender<bool>,
-    joystick_sender: SyncSender<peripherals::joystick::JoystickUpdate>,
-    direct_loader_sender: SyncSender<Vec<u8>>,
-    brake_sender: SyncSender<BrakeSpeed>,
-    #[allow(dead_code)]
-    shutdown_sender: SyncSender<()>,
-}
-
 #[derive(Default)]
 pub struct Vic20Controller {
     screen: ScreenWindow,
     keyboard_window: KeyboardWindow,
     control_window: ControlWindow,
-    emulator: Option<Emulator>,
+    shared_state: Option<ThreadSenders>,
+    _emulator_thread: Option<JoinHandle<()>>,
+    _audio_stream: Option<Stream>,
     keyboard_state: KeyboardState,
-    debug_state: ControlState,
+    control_state: ControlState,
     modifiers: ModifiersState,
 }
 
 impl Vic20Controller {
-    fn shared_state(&self) -> &SharedState {
-        &self.emulator.as_ref().unwrap().state
+    fn shared_state(&self) -> &ThreadSenders {
+        self.shared_state.as_ref().unwrap()
     }
 
     pub fn run(&mut self) {
@@ -253,7 +65,7 @@ impl ApplicationHandler for Vic20Controller {
         self.keyboard_window.create(event_loop);
         self.control_window.create(event_loop);
 
-        self.emulator = Some(Emulator::spawn(self.debug_state.memory_expansion));
+        self.restart_emulator();
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: winit::window::WindowId, event: WindowEvent) {
@@ -323,21 +135,21 @@ impl ApplicationHandler for Vic20Controller {
             let perf = Arc::clone(&self.shared_state().perf);
             match event {
                 WindowEvent::RedrawRequested => {
-                    self.control_window.draw(&self.debug_state, &perf);
+                    self.control_window.draw(&self.control_state, &perf);
                 }
                 _ => {
                     self.control_window
-                        .handle_event(event_loop, event, &mut self.debug_state, &perf);
-                    if let Some(action) = self.debug_state.io_action_pending.take() {
+                        .handle_event(event_loop, event, &mut self.control_state, &perf);
+                    if let Some(action) = self.control_state.io_action_pending.take() {
                         self.handle_io_action(action);
                     }
-                    if let Some(action) = self.debug_state.joystick_action_pending.take() {
+                    if let Some(action) = self.control_state.joystick_action_pending.take() {
                         self.handle_joystick_action(action);
                     }
-                    if let Some(action) = self.debug_state.memory_action_pending.take() {
+                    if let Some(action) = self.control_state.memory_action_pending.take() {
                         self.handle_memory_action(action);
                     }
-                    if let Some(action) = self.debug_state.brake_action_pending.take() {
+                    if let Some(action) = self.control_state.brake_action_pending.take() {
                         self.handle_brake_action(action);
                     }
                 }
@@ -364,6 +176,59 @@ impl ApplicationHandler for Vic20Controller {
 }
 
 impl Vic20Controller {
+    fn restart_emulator(&mut self) {
+        let (audio_producer, audio_stream) = audio::create_audio_channel();
+        let (state, receivers) = self.create_channels();
+        let handle = spawn_emulator(self.control_state.memory_expansion, audio_producer, receivers);
+        self.shared_state = Some(state);
+        self._emulator_thread = Some(handle);
+        self._audio_stream = Some(audio_stream);
+    }
+
+    fn create_channels(&self) -> (ThreadSenders, ThreadReceivers) {
+        let default_active_width = TEXT_COLUMNS * CHAR_WIDTH;
+        let video = Arc::new(Mutex::new(SharedVideoState {
+            screen_rgba: vec![0_u8; default_active_width * ACTIVE_HEIGHT * 4],
+            border_rgba: [0x00, 0x44, 0xAA, 0xFF],
+            active_width: default_active_width,
+        }));
+        let perf = Arc::new(Mutex::new(SharedPerformanceMetrics::default()));
+        let (cassette_sender, cassette_receiver) = peripherals::cassette_player::make_cassette_channel();
+        let (joystick_sender, joystick_receiver) = peripherals::joystick::make_joystick_channel();
+        let (direct_loader_sender, direct_loader_receiver) = peripherals::direct_loader::make_direct_loader_channel();
+        let load_queue = Arc::new(Mutex::new(VecDeque::new()));
+        let (keyboard_sender, keyboard_receiver) = crate::peripherals::keyboard::make_keyboard_channel();
+        let paste_queue: PasteQueue = paste::new_paste_queue();
+        let (shutdown_sender, shutdown_receiver) = std::sync::mpsc::sync_channel::<()>(0);
+        let (brake_sender, brake_receiver) = peripherals::brake::make_brake_channel();
+
+        let state = ThreadSenders {
+            video: Arc::clone(&video),
+            perf: Arc::clone(&perf),
+            keyboard_sender,
+            paste_queue: paste_queue.clone(),
+            load_queue: load_queue.clone(),
+            cassette_sender,
+            joystick_sender,
+            direct_loader_sender,
+            brake_sender,
+            shutdown_sender,
+        };
+        let receivers = ThreadReceivers {
+            video,
+            perf,
+            load_queue,
+            paste_queue,
+            keyboard_receiver,
+            cassette_receiver,
+            joystick_receiver,
+            direct_loader_receiver,
+            brake_receiver,
+            shutdown_receiver,
+        };
+        (state, receivers)
+    }
+
     fn is_paste_shortcut(&self, key_event: &winit::event::KeyEvent) -> bool {
         if key_event.logical_key == winit::keyboard::Key::Character("v".into())
             || key_event.logical_key == winit::keyboard::Key::Character("V".into())
@@ -385,11 +250,11 @@ impl Vic20Controller {
         match action {
             IoAction::OpenFile => self.handle_cassette_open_file(),
             IoAction::TogglePlay => {
-                self.debug_state.cassette_playing = !self.debug_state.cassette_playing;
+                self.control_state.cassette_playing = !self.control_state.cassette_playing;
                 let _ = self
                     .shared_state()
                     .cassette_sender
-                    .send(self.debug_state.cassette_playing);
+                    .send(self.control_state.cassette_playing);
             }
             IoAction::DirectLoad => {
                 let path = rfd::FileDialog::new().add_filter("PRG files", &["prg"]).pick_file();
@@ -414,7 +279,7 @@ impl Vic20Controller {
         if let Some(path) = path
             && let Some(path_str) = path.to_str()
         {
-            self.debug_state.cassette_file = Some(path_str.to_string());
+            self.control_state.cassette_file = Some(path_str.to_string());
             match read_prg_file(path_str) {
                 Ok(request) => {
                     if let Ok(mut q) = self.shared_state().load_queue.lock() {
@@ -432,8 +297,8 @@ impl Vic20Controller {
         match action {
             JoystickAction::StateChanged => {
                 let update = peripherals::joystick::JoystickUpdate {
-                    direction: self.debug_state.joystick_direction,
-                    fire: self.debug_state.joystick_fire,
+                    direction: self.control_state.joystick_direction,
+                    fire: self.control_state.joystick_fire,
                 };
                 let _ = self.shared_state().joystick_sender.send(update);
             }
@@ -444,11 +309,11 @@ impl Vic20Controller {
         match action {
             MemoryAction::SetExpansion(expansion) => {
                 log::info!("Memory expansion set to {:?}", expansion);
-                self.debug_state.memory_expansion = expansion;
+                self.control_state.memory_expansion = expansion;
             }
             MemoryAction::Reboot => {
                 log::info!("Rebooting emulator");
-                self.emulator = Some(Emulator::spawn(self.debug_state.memory_expansion));
+                self.restart_emulator();
                 log::info!("Emulator rebooted");
             }
         }
@@ -457,7 +322,7 @@ impl Vic20Controller {
     fn handle_brake_action(&mut self, action: BrakeAction) {
         match action {
             BrakeAction::SetSpeed(speed) => {
-                self.debug_state.brake_speed = speed;
+                self.control_state.brake_speed = speed;
                 let _ = self.shared_state().brake_sender.send(speed);
             }
         }
@@ -466,53 +331,14 @@ impl Vic20Controller {
     fn handle_paste(&mut self) {
         let text = match Clipboard::new().and_then(|mut c| c.get_text()) {
             Ok(t) => t,
-            Err(_) => return,
+            Err(e) => {
+                log::error!("Error getting clipboard text: {:?}", e);
+                return;
+            }
         };
-
         let petscii_bytes = paste::text_to_petscii(&text);
         if let Ok(mut q) = self.shared_state().paste_queue.lock() {
             q.extend(petscii_bytes);
         }
     }
-}
-
-struct PrgLoadRequest {
-    path: String,
-    data: Vec<u8>,
-}
-
-type LoadQueue = Arc<Mutex<VecDeque<PrgLoadRequest>>>;
-
-fn read_prg_file(path: &str) -> Result<PrgLoadRequest, String> {
-    let data = std::fs::read(path).map_err(|e| format!("Failed to read '{}': {}", path, e))?;
-    if data.len() < 2 {
-        return Err(format!("'{}' is too small to be a valid .prg file", path));
-    }
-    Ok(PrgLoadRequest {
-        path: path.to_string(),
-        data,
-    })
-}
-
-fn load_prg(bus: &mut Bus, _cpu: &mut CPU6502, request: &PrgLoadRequest) {
-    let load_address = u16::from_le_bytes([request.data[0], request.data[1]]);
-    log::info!("Loading program into memory starting at {}", load_address);
-    let program = &request.data[2..];
-    let len = program.len();
-    bus.load_data(load_address as usize, program);
-    log::info!(
-        "Loaded '{}' at ${:04X} ({} bytes), resetting PC to ${:04X}",
-        request.path,
-        load_address,
-        len,
-        load_address
-    );
-}
-
-fn cassette_motor_control(port_b: u8) {
-    if port_b & 0x08 == 0x08 {
-        log::debug!("Cassette motor on")
-    } else {
-        log::debug!("Cassette motor off")
-    };
 }

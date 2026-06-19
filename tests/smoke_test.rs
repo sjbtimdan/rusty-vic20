@@ -67,7 +67,6 @@ fn splash_screen_shows_6655_bytes_with_3k_expansion() {
 }
 
 #[test]
-#[ignore]
 fn debug_8k_expansion() {
     let mut runner8k = common::run_boot_with_expansion(MemoryExpansion::EightK);
     runner8k.step_multiple(800_000);
