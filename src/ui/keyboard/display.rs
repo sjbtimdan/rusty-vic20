@@ -46,6 +46,7 @@ pub struct KeyboardWindow {
     image_height: u32,
     cursor_pos: Option<(f64, f64)>,
     active_mappings: HashMap<KeyCode, Vec<Key>>,
+    pressed_key: Option<Key>,
 }
 
 impl Default for KeyboardWindow {
@@ -64,6 +65,7 @@ impl Default for KeyboardWindow {
             image_height,
             cursor_pos: None,
             active_mappings: HashMap::new(),
+            pressed_key: None,
         }
     }
 }
@@ -127,14 +129,22 @@ impl KeyboardWindow {
                 self.cursor_pos = Some((position.x, position.y));
             }
             WindowEvent::MouseInput {
-                state: ElementState::Released,
+                state: element_state,
                 button: MouseButton::Left,
                 ..
-            } => {
-                if let Some((img_x, img_y)) = self.window_pos_to_image_pos() {
-                    self.handle_mouse_click(img_x, img_y, state);
+            } => match element_state {
+                ElementState::Pressed => {
+                    if let Some((img_x, img_y)) = self.window_pos_to_image_pos() {
+                        self.pressed_key = state.key_at_pixel(img_x, img_y);
+                    }
                 }
-            }
+                ElementState::Released => {
+                    self.pressed_key = None;
+                    if let Some((img_x, img_y)) = self.window_pos_to_image_pos() {
+                        self.handle_mouse_click(img_x, img_y, state);
+                    }
+                }
+            },
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(keycode) = event.physical_key {
                     let pressed = event.state == ElementState::Pressed;
@@ -180,6 +190,18 @@ impl KeyboardWindow {
         frame.copy_from_slice(&self.image_rgba);
 
         let w = frame_size.width;
+
+        if let Some(pressed) = self.pressed_key {
+            let regions: Vec<_> = state
+                .key_regions
+                .iter()
+                .filter(|r| r.label == pressed)
+                .cloned()
+                .collect();
+            for region in &regions {
+                tint_region(frame, w, region, [220, 180, 60], 180);
+            }
+        }
 
         if let Some(held) = state.held_key {
             let regions: Vec<_> = state.key_regions.iter().filter(|r| r.label == held).cloned().collect();

@@ -12,6 +12,7 @@ use winit::{
 
 use super::{
     BrakeAction,
+    BrakeSpeed,
     ControlState,
     ControlTab,
     IoAction,
@@ -136,12 +137,53 @@ const MEM_RADIO_OPTIONS: [(MemoryExpansion, &str); 5] = [
 const BG_COLOR: [u8; 4] = [30, 30, 30, 255];
 pub(crate) const HEADER_COLOR: [u8; 4] = [100, 100, 100, 255];
 
+fn bevel_light(fill: [u8; 4]) -> [u8; 4] {
+    [
+        fill[0].saturating_add(50),
+        fill[1].saturating_add(50),
+        fill[2].saturating_add(50),
+        fill[3],
+    ]
+}
+
+fn bevel_dark(fill: [u8; 4]) -> [u8; 4] {
+    [fill[0] / 2, fill[1] / 2, fill[2] / 2, fill[3]]
+}
+
+pub(crate) fn draw_raised_rect(pixels: &mut [u8], x: i32, y: i32, w: i32, h: i32, fill: [u8; 4], pressed: bool) {
+    fill_rect_at(pixels, PIXEL_WIDTH as usize, x, y, w, h, fill);
+    let (top_left, bottom_right) = if pressed {
+        (bevel_dark(fill), bevel_light(fill))
+    } else {
+        (bevel_light(fill), bevel_dark(fill))
+    };
+    for dx in 0..w {
+        set_pixel(pixels, x + dx, y, top_left);
+        set_pixel(pixels, x + dx, y + h - 1, bottom_right);
+    }
+    for dy in 0..h {
+        set_pixel(pixels, x, y + dy, top_left);
+        set_pixel(pixels, x + w - 1, y + dy, bottom_right);
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PressedElement {
+    Tab(ControlTab),
+    IoButton(IoAction),
+    BrakeButton(BrakeSpeed),
+    JoystickCell,
+    MemoryRadio(MemoryExpansion),
+    RebootButton,
+}
+
 #[derive(Default)]
 pub struct ControlWindow {
     window: Option<Arc<Window>>,
     pixels: Option<Pixels<'static>>,
     cursor_pos: Option<(f64, f64)>,
     mouse_down: bool,
+    pressed_element: Option<PressedElement>,
 }
 
 impl ControlWindow {
@@ -249,12 +291,14 @@ impl ControlWindow {
         match element_state {
             ElementState::Pressed => {
                 self.mouse_down = true;
+                self.pressed_element = pressed_element_at(state, px as i32, py as i32);
                 if state.current_tab == ControlTab::Joystick {
                     apply_joystick_cell(state, px as i32, py as i32);
                 }
             }
             ElementState::Released => {
                 self.mouse_down = false;
+                self.pressed_element = None;
                 state.joystick_direction = None;
                 state.joystick_fire = false;
                 if state.current_tab == ControlTab::Joystick {
@@ -412,13 +456,25 @@ impl ControlWindow {
         let frame = pixels.frame_mut();
         fill_rect(frame, PIXEL_WIDTH as usize, PIXEL_HEIGHT as usize, BG_COLOR);
 
-        draw_tab_bar(frame, state.current_tab);
+        let pressed_tab = self
+            .pressed_element
+            .and_then(|pe| if let PressedElement::Tab(t) = pe { Some(t) } else { None });
+        draw_tab_bar(frame, state.current_tab, pressed_tab);
 
         match state.current_tab {
-            ControlTab::Perf => draw_perf_tab(frame, state, perf),
-            ControlTab::Io => draw_io_tab(frame, state),
+            ControlTab::Perf => draw_perf_tab(frame, state, perf, self.pressed_element),
+            ControlTab::Io => {
+                let pressed_io = self.pressed_element.and_then(|pe| {
+                    if let PressedElement::IoButton(a) = pe {
+                        Some(a)
+                    } else {
+                        None
+                    }
+                });
+                draw_io_tab(frame, state, pressed_io);
+            }
             ControlTab::Joystick => draw_joystick_tab(frame, state),
-            ControlTab::Memory => draw_memory_tab(frame, state),
+            ControlTab::Memory => draw_memory_tab(frame, state, self.pressed_element.as_ref()),
         }
 
         if let Err(err) = pixels.render() {
@@ -433,7 +489,7 @@ impl ControlWindow {
     }
 }
 
-fn draw_tab_bar(frame: &mut [u8], active_tab: ControlTab) {
+fn draw_tab_bar(frame: &mut [u8], active_tab: ControlTab, pressed_tab: Option<ControlTab>) {
     for y in 0..TAB_BAR_H {
         for x in 0..PIXEL_WIDTH as i32 {
             let idx = (y as usize * PIXEL_WIDTH as usize + x as usize) * 4;
@@ -470,7 +526,8 @@ fn draw_tab_bar(frame: &mut [u8], active_tab: ControlTab) {
         } else {
             TAB_INACTIVE_BG
         };
-        fill_rect_at(frame, PIXEL_WIDTH as usize, tx, 0, TAB_W, TAB_H, bg);
+        let is_pressed = pressed_tab == Some(tab);
+        draw_raised_rect(frame, tx, 0, TAB_W, TAB_H, bg, is_pressed);
         let text_color = if active_tab == tab {
             [255u8, 255, 255, 255]
         } else {
@@ -481,7 +538,7 @@ fn draw_tab_bar(frame: &mut [u8], active_tab: ControlTab) {
     }
 }
 
-fn draw_perf_tab(frame: &mut [u8], state: &ControlState, perf: &SharedPerfState) {
+fn draw_perf_tab(frame: &mut [u8], state: &ControlState, perf: &SharedPerfState, pressed: Option<PressedElement>) {
     let metrics = match perf.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
@@ -510,43 +567,50 @@ fn draw_perf_tab(frame: &mut [u8], state: &ControlState, perf: &SharedPerfState)
     draw_str(frame, MARGIN, y + 2 * (ROW_H + 4), &line2, PERF_VALUE_COLOR);
     draw_str(frame, MARGIN, y + 3 * (ROW_H + 4), &line3, PERF_VALUE_COLOR);
 
-    brake::draw_brake_controls(frame, state.brake_speed);
+    let pressed_brake = pressed.and_then(|pe| {
+        if let PressedElement::BrakeButton(s) = pe {
+            Some(s)
+        } else {
+            None
+        }
+    });
+    brake::draw_brake_controls(frame, state.brake_speed, pressed_brake);
 }
 
-fn draw_io_tab(frame: &mut [u8], state: &ControlState) {
+fn draw_io_tab(frame: &mut [u8], state: &ControlState, pressed_action: Option<IoAction>) {
     draw_str(frame, MARGIN, IO_SECTION_Y, "Cassette Tape", HEADER_COLOR);
 
-    fill_rect_at(
+    draw_raised_rect(
         frame,
-        PIXEL_WIDTH as usize,
         IO_BTN_OPEN_X,
         IO_BTN_Y,
         IO_BTN_OPEN_W,
         IO_BTN_H,
         BTN_COLOR,
+        pressed_action == Some(IoAction::OpenFile),
     );
     draw_str(frame, IO_BTN_OPEN_X + CHAR_W, IO_BTN_Y + 2, "Open File", BTN_TEXT_COLOR);
 
-    fill_rect_at(
+    draw_raised_rect(
         frame,
-        PIXEL_WIDTH as usize,
         IO_BTN_PLAY_X,
         IO_BTN_Y,
         IO_BTN_PLAY_W,
         IO_BTN_H,
         BTN_COLOR,
+        pressed_action == Some(IoAction::TogglePlay),
     );
     let play_text = if state.cassette_playing { "Stop" } else { "Play" };
     draw_str(frame, IO_BTN_PLAY_X + CHAR_W, IO_BTN_Y + 2, play_text, BTN_TEXT_COLOR);
 
-    fill_rect_at(
+    draw_raised_rect(
         frame,
-        PIXEL_WIDTH as usize,
         IO_BTN_DIRECT_LOAD_X,
         IO_BTN_Y,
         IO_BTN_DIRECT_LOAD_W,
         IO_BTN_H,
         BTN_COLOR,
+        pressed_action == Some(IoAction::DirectLoad),
     );
     draw_str(
         frame,
@@ -711,6 +775,41 @@ fn draw_char(pixels: &mut [u8], x: i32, y: i32, ch: char, color: [u8; 4]) {
     }
 }
 
+fn pressed_element_at(state: &ControlState, px: i32, py: i32) -> Option<PressedElement> {
+    if let Some(tab) = tab_at(px, py) {
+        return Some(PressedElement::Tab(tab));
+    }
+    match state.current_tab {
+        ControlTab::Perf => brake::brake_button_at(px, py).map(PressedElement::BrakeButton),
+        ControlTab::Io => io_button_at(px, py).map(PressedElement::IoButton),
+        ControlTab::Joystick => joy_cell_at(px, py).then_some(PressedElement::JoystickCell),
+        ControlTab::Memory => memory_pressed_at(px, py),
+    }
+}
+
+fn joy_cell_at(px: i32, py: i32) -> bool {
+    JOY_GRID.iter().enumerate().any(|(row, cells)| {
+        cells.iter().enumerate().any(|(col, _)| {
+            let x = joy_cell_x(col);
+            let y = joy_cell_y(row);
+            px >= x && px < x + JOY_PAD_SIZE && py >= y && py < y + JOY_PAD_SIZE
+        })
+    })
+}
+
+fn memory_pressed_at(px: i32, py: i32) -> Option<PressedElement> {
+    for (i, &(exp, _)) in MEM_RADIO_OPTIONS.iter().enumerate() {
+        let y = MEM_RADIO_START_Y + i as i32 * RADIO_SPACING;
+        if (y..y + RADIO_SIZE).contains(&py) && (MEM_RADIO_X..MEM_RADIO_X + RADIO_SIZE + 96).contains(&px) {
+            return Some(PressedElement::MemoryRadio(exp));
+        }
+    }
+    if (MEM_BTN_Y..MEM_BTN_Y + MEM_BTN_H).contains(&py) && (MARGIN..MARGIN + MEM_BTN_W).contains(&px) {
+        return Some(PressedElement::RebootButton);
+    }
+    None
+}
+
 fn tab_at(px: i32, py: i32) -> Option<ControlTab> {
     if !(0..TAB_BAR_H).contains(&py) {
         return None;
@@ -743,29 +842,31 @@ fn io_button_at(px: i32, py: i32) -> Option<IoAction> {
     }
 }
 
-fn draw_memory_tab(frame: &mut [u8], state: &ControlState) {
+fn draw_memory_tab(frame: &mut [u8], state: &ControlState, pressed: Option<&PressedElement>) {
     draw_str(frame, MARGIN, MEM_HEADER_Y, "Memory Expansion", HEADER_COLOR);
 
     for (i, &(exp, label)) in MEM_RADIO_OPTIONS.iter().enumerate() {
         let y = MEM_RADIO_START_Y + i as i32 * RADIO_SPACING;
         let selected = state.memory_expansion == exp;
-        draw_radio(frame, MEM_RADIO_X, y, RADIO_SIZE, selected);
+        let is_pressed = pressed == Some(&PressedElement::MemoryRadio(exp));
+        draw_radio(frame, MEM_RADIO_X, y, RADIO_SIZE, selected, is_pressed);
         draw_str(frame, MEM_RADIO_LABEL_X, y + 1, label, RADIO_COLOR);
     }
 
-    fill_rect_at(
+    let reboot_pressed = pressed == Some(&PressedElement::RebootButton);
+    draw_raised_rect(
         frame,
-        PIXEL_WIDTH as usize,
         MARGIN,
         MEM_BTN_Y,
         MEM_BTN_W,
         MEM_BTN_H,
         BTN_COLOR,
+        reboot_pressed,
     );
     draw_str(frame, MARGIN + CHAR_W, MEM_BTN_Y + 2, "Reboot", BTN_TEXT_COLOR);
 }
 
-fn draw_radio(frame: &mut [u8], x: i32, y: i32, size: i32, selected: bool) {
+fn draw_radio(frame: &mut [u8], x: i32, y: i32, size: i32, selected: bool, pressed: bool) {
     let color = RADIO_COLOR;
     for dx in 0..size {
         set_pixel(frame, x + dx, y, color);
@@ -775,12 +876,13 @@ fn draw_radio(frame: &mut [u8], x: i32, y: i32, size: i32, selected: bool) {
         set_pixel(frame, x, y + dy, color);
         set_pixel(frame, x + size - 1, y + dy, color);
     }
-    if selected {
+    if selected || pressed {
         let inner = RADIO_INNER;
         let offset = (size - inner) / 2;
+        let fill_color = if selected { RADIO_FILL_COLOR } else { RADIO_COLOR };
         for dy in 0..inner {
             for dx in 0..inner {
-                set_pixel(frame, x + offset + dx, y + offset + dy, RADIO_FILL_COLOR);
+                set_pixel(frame, x + offset + dx, y + offset + dy, fill_color);
             }
         }
     }

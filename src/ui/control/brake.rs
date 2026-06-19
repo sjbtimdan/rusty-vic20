@@ -9,8 +9,8 @@ use super::{
         PIXEL_WIDTH,
         ROW_H,
         SCALE,
+        draw_raised_rect,
         draw_str,
-        fill_rect_at,
     },
 };
 
@@ -37,7 +37,7 @@ fn brake_btn_x(index: usize) -> i32 {
     BRAKE_BTNS_START_X + index as i32 * (BRAKE_BTN_W + BRAKE_BTN_GAP)
 }
 
-pub fn draw_brake_controls(frame: &mut [u8], active_speed: BrakeSpeed) {
+pub fn draw_brake_controls(frame: &mut [u8], active_speed: BrakeSpeed, pressed_speed: Option<BrakeSpeed>) {
     draw_str(frame, MARGIN, BRAKE_SECTION_Y, "Emulator Speed", HEADER_COLOR);
 
     for (i, &(speed, label)) in BRAKE_SPEEDS.iter().enumerate() {
@@ -47,15 +47,8 @@ pub fn draw_brake_controls(frame: &mut [u8], active_speed: BrakeSpeed) {
         } else {
             BTN_COLOR
         };
-        fill_rect_at(
-            frame,
-            PIXEL_WIDTH as usize,
-            x,
-            BRAKE_BTN_Y,
-            BRAKE_BTN_W,
-            BRAKE_BTN_H,
-            color,
-        );
+        let pressed = pressed_speed == Some(speed);
+        draw_raised_rect(frame, x, BRAKE_BTN_Y, BRAKE_BTN_W, BRAKE_BTN_H, color, pressed);
         let text_x = x + (BRAKE_BTN_W - label.len() as i32 * CHAR_W * SCALE) / 2;
         draw_str(frame, text_x, BRAKE_BTN_Y + 2, label, BTN_TEXT_COLOR);
     }

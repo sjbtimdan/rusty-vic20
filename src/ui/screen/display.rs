@@ -8,7 +8,7 @@ use winit::{
     window::Window,
 };
 
-use crate::ui::screen::renderer::{BORDER_LEFT, BORDER_RIGHT, PAL_HEIGHT, display_vic20_screen};
+use crate::ui::screen::renderer::{BORDER_LEFT, BORDER_RIGHT, PAL_HEIGHT, render_vic20_screen};
 
 pub struct SharedVideoState {
     pub screen_rgba: Vec<u8>,
@@ -109,7 +109,7 @@ impl ScreenWindow {
         };
 
         let frame = pixels.frame_mut();
-        display_vic20_screen(frame, &shared.border_rgba, &shared.screen_rgba, shared.active_width);
+        render_vic20_screen(frame, &shared.border_rgba, &shared.screen_rgba, shared.active_width);
 
         if let Err(err) = pixels.render() {
             error!("pixels render failed: {err}");

@@ -12,7 +12,7 @@ pub const BORDER_BOTTOM: usize = 16;
 
 pub const PAL_HEIGHT: usize = ACTIVE_HEIGHT + BORDER_TOP + BORDER_BOTTOM;
 
-pub fn display_vic20_screen(frame: &mut [u8], border_rgba: &[u8; 4], screen_rgba: &[u8], active_width: usize) {
+pub fn render_vic20_screen(frame: &mut [u8], border_rgba: &[u8; 4], screen_rgba: &[u8], active_width: usize) {
     let pal_width = active_width + BORDER_LEFT + BORDER_RIGHT;
     let pal_height = ACTIVE_HEIGHT + BORDER_TOP + BORDER_BOTTOM;
 
@@ -74,14 +74,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn display_writes_border_and_inner_screen() {
+    fn render_writes_border_and_inner_screen() {
         let active_width = TEXT_COLUMNS * CHAR_WIDTH;
         let pal_width = active_width + BORDER_LEFT + BORDER_RIGHT;
         let mut frame = vec![0_u8; pal_width * PAL_HEIGHT * 4];
         let border = [0x11, 0x22, 0x33, 0x44];
         let screen = vec![0xAA_u8; active_width * ACTIVE_HEIGHT * 4];
 
-        display_vic20_screen(&mut frame, &border, &screen, active_width);
+        render_vic20_screen(&mut frame, &border, &screen, active_width);
 
         assert_eq!(&frame[0..4], &[0x11, 0x22, 0x33, 0x44]);
 
