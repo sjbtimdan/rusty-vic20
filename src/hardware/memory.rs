@@ -1,4 +1,13 @@
 use crate::hardware::addressable::Addressable;
+use log::info;
+use std::fs;
+
+pub const BASIC_ROM_START: usize = 0xC000;
+pub const BASIC_ROM_END: usize = 0xDFFF;
+pub const CHARACTER_ROM_START: usize = 0x8000;
+pub const CHARACTER_ROM_END: usize = 0x8FFF;
+pub const KERNEL_ROM_START: usize = 0xE000;
+pub const KERNEL_ROM_END: usize = 0xFFFF;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum MemoryExpansion {
@@ -56,6 +65,32 @@ impl Memory {
     fn is_ram(&self, address: u16) -> bool {
         self.ram_pages[(address >> 8) as usize]
     }
+
+    pub fn load_rom(&mut self, data: &[u8], rom_name: &str, start_address: usize, end_address: usize) {
+        info!("Loading {} ROM", rom_name);
+        let expected_len = end_address - start_address + 1;
+        assert!(
+            data.len() == expected_len,
+            "ROM data is not expected size: expected {} bytes, got {} bytes",
+            expected_len,
+            data.len()
+        );
+        self.copy_from_slice(start_address, end_address + 1, data);
+    }
+}
+
+pub fn new_memory_with_roms(expansion: MemoryExpansion) -> Memory {
+    let data_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/data");
+    let basic_rom = fs::read(format!("{}/basic.901486-01.bin", data_dir)).expect("Missing basic_rom");
+    let characters_rom = fs::read(format!("{}/characters.901460-03.bin", data_dir)).expect("Missing characters_rom");
+    let kernal_rom = fs::read(format!("{}/kernal.901486-07.bin", data_dir)).expect("Missing kernal_rom");
+
+    let mut memory = Memory::default();
+    memory.set_expansion(expansion);
+    memory.load_rom(&basic_rom, "BASIC", BASIC_ROM_START, BASIC_ROM_END);
+    memory.load_rom(&characters_rom, "CHARACTER", CHARACTER_ROM_START, CHARACTER_ROM_END);
+    memory.load_rom(&kernal_rom, "KERNEL", KERNEL_ROM_START, KERNEL_ROM_END);
+    memory
 }
 
 impl Addressable for Memory {
@@ -73,10 +108,15 @@ impl Addressable for Memory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::{fixture, rstest};
 
-    #[test]
-    fn test_ram_read_write() {
-        let mut memory = Memory::default();
+    #[fixture]
+    fn memory() -> Memory {
+        Memory::default()
+    }
+
+    #[rstest]
+    fn test_ram_read_write(mut memory: Memory) {
         let ram_address = 0x0001;
 
         memory.write_byte(ram_address, 0xAB);
@@ -84,9 +124,8 @@ mod tests {
         assert_eq!(memory.read_byte(ram_address), 0xAB);
     }
 
-    #[test]
-    fn test_rom_read_write() {
-        let mut memory = Memory::default();
+    #[rstest]
+    fn test_rom_read_write(mut memory: Memory) {
         let rom_address = 0x8000;
 
         memory.data[rom_address as usize] = 0xCD;
@@ -95,9 +134,8 @@ mod tests {
         assert_eq!(memory.read_byte(rom_address), 0xCD);
     }
 
-    #[test]
-    fn test_3k_expansion_ram_at_0400() {
-        let mut memory = Memory::default();
+    #[rstest]
+    fn test_3k_expansion_ram_at_0400(mut memory: Memory) {
         memory.set_expansion(MemoryExpansion::ThreeK);
         let addr = 0x0400;
 
@@ -105,18 +143,16 @@ mod tests {
         assert_eq!(memory.read_byte(addr), 0x42);
     }
 
-    #[test]
-    fn test_3k_expansion_range_end() {
-        let mut memory = Memory::default();
+    #[rstest]
+    fn test_3k_expansion_range_end(mut memory: Memory) {
         memory.set_expansion(MemoryExpansion::ThreeK);
 
         memory.write_byte(0x0FFF, 0xAB);
         assert_eq!(memory.read_byte(0x0FFF), 0xAB);
     }
 
-    #[test]
-    fn test_no_expansion_0400_is_read_only() {
-        let mut memory = Memory::default();
+    #[rstest]
+    fn test_no_expansion_0400_is_read_only(mut memory: Memory) {
         let addr = 0x0400;
 
         memory.data[addr as usize] = 0xFF;
@@ -125,9 +161,8 @@ mod tests {
         assert_eq!(memory.read_byte(addr), 0xFF);
     }
 
-    #[test]
-    fn test_8k_expansion_ram_at_2000() {
-        let mut memory = Memory::default();
+    #[rstest]
+    fn test_8k_expansion_ram_at_2000(mut memory: Memory) {
         memory.set_expansion(MemoryExpansion::EightK);
         let addr = 0x2000;
 
@@ -135,18 +170,16 @@ mod tests {
         assert_eq!(memory.read_byte(addr), 0x42);
     }
 
-    #[test]
-    fn test_8k_expansion_ram_at_3fff() {
-        let mut memory = Memory::default();
+    #[rstest]
+    fn test_8k_expansion_ram_at_3fff(mut memory: Memory) {
         memory.set_expansion(MemoryExpansion::EightK);
 
         memory.write_byte(0x3FFF, 0xAB);
         assert_eq!(memory.read_byte(0x3FFF), 0xAB);
     }
 
-    #[test]
-    fn test_8k_expansion_0400_still_read_only() {
-        let mut memory = Memory::default();
+    #[rstest]
+    fn test_8k_expansion_0400_still_read_only(mut memory: Memory) {
         memory.set_expansion(MemoryExpansion::EightK);
         let addr = 0x0400;
 
@@ -156,36 +189,32 @@ mod tests {
         assert_eq!(memory.read_byte(addr), 0xFF);
     }
 
-    #[test]
-    fn test_colour_ram_lower_half_writable() {
-        let mut memory = Memory::default();
+    #[rstest]
+    fn test_colour_ram_lower_half_writable(mut memory: Memory) {
         let addr = 0x9400;
 
         memory.write_byte(addr, 0xAB);
         assert_eq!(memory.read_byte(addr), 0xAB);
     }
 
-    #[test]
-    fn test_colour_ram_upper_half_writable() {
-        let mut memory = Memory::default();
+    #[rstest]
+    fn test_colour_ram_upper_half_writable(mut memory: Memory) {
         let addr = 0x9700;
 
         memory.write_byte(addr, 0xCD);
         assert_eq!(memory.read_byte(addr), 0xCD);
     }
 
-    #[test]
-    fn test_16k_expansion_ram_at_5fff() {
-        let mut memory = Memory::default();
+    #[rstest]
+    fn test_16k_expansion_ram_at_5fff(mut memory: Memory) {
         memory.set_expansion(MemoryExpansion::SixteenK);
 
         memory.write_byte(0x5FFF, 0xAB);
         assert_eq!(memory.read_byte(0x5FFF), 0xAB);
     }
 
-    #[test]
-    fn test_32k_expansion_ram_at_7fff() {
-        let mut memory = Memory::default();
+    #[rstest]
+    fn test_32k_expansion_ram_at_7fff(mut memory: Memory) {
         memory.set_expansion(MemoryExpansion::ThirtyTwoK);
 
         memory.write_byte(0x7FFF, 0xAB);

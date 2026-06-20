@@ -3,7 +3,11 @@
 use rusty_vic20::{
     cpu::cpu6502::CPU6502,
     emulator::{EmulatorRunner, ThreadReceivers, paste::new_paste_queue},
-    hardware::{addressable::Addressable, bus::Bus, memory::MemoryExpansion},
+    hardware::{
+        addressable::Addressable,
+        bus::Bus,
+        memory::{MemoryExpansion, new_memory_with_roms},
+    },
     peripherals::{
         brake::{Brake, make_brake_channel},
         cassette_player::CassettePlayer,
@@ -116,8 +120,7 @@ fn build_runner(expansion: MemoryExpansion) -> EmulatorRunner {
     let keyboard = Keyboard::new(make_keyboard_channel().1);
     let brake = Brake::new_default(make_brake_channel().1);
     let mut bus = Bus::default();
-    bus.memory.set_expansion(expansion);
-    bus.load_standard_roms_from_data_dir();
+    bus.memory = new_memory_with_roms(expansion);
     let reset_vector = bus.read_word(0xFFFC);
     let mut cpu = CPU6502::default();
     cpu.reset(reset_vector);

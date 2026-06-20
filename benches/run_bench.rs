@@ -11,7 +11,7 @@ use test::Bencher;
 fn run_steps(steps: usize) -> (Bus, CPU6502) {
     let mut cpu = CPU6502::default();
     let mut bus = Bus::default();
-    bus.load_standard_roms_from_data_dir();
+    bus.memory.load_standard_roms_from_data_dir();
     let reset_vector = bus.read_word(0xFFFC);
     cpu.reset(reset_vector);
 

@@ -330,7 +330,7 @@ impl Addressable for VIC {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hardware::bus::CHARACTER_ROM_START;
+    use crate::hardware::memory::CHARACTER_ROM_START;
     use rstest::{fixture, rstest};
 
     const SCREEN_COLOR: u8 = 2;

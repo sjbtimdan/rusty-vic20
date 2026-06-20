@@ -4,7 +4,11 @@ use common::{UNEXPANDED_SCREEN_RAM_START, run_extra_steps, screen_code};
 use rusty_vic20::{
     cpu::cpu6502::CPU6502,
     emulator::{ThreadReceivers, paste::new_paste_queue},
-    hardware::{addressable::Addressable, bus::Bus, memory::MemoryExpansion},
+    hardware::{
+        addressable::Addressable,
+        bus::Bus,
+        memory::{MemoryExpansion, new_memory_with_roms},
+    },
     peripherals::{
         brake::{Brake, make_brake_channel},
         cassette_player::CassettePlayer,
@@ -40,8 +44,7 @@ fn run_boot_with_keyboard() -> (rusty_vic20::emulator::EmulatorRunner, SyncSende
         shutdown_receiver: std::sync::mpsc::channel().1,
     };
     let mut bus = Bus::default();
-    bus.memory.set_expansion(MemoryExpansion::None);
-    bus.load_standard_roms_from_data_dir();
+    bus.memory = new_memory_with_roms(MemoryExpansion::None);
     let reset_vector = bus.read_word(0xFFFC);
     let mut cpu = CPU6502::default();
     cpu.reset(reset_vector);
