@@ -1,9 +1,9 @@
 use crate::{
-    cpu::cpu6502::CPU6502,
     hardware::{addressable::Addressable, memory::Memory, via::VIA, vic::VIC},
     tools::debug::MemoryWriteWatchpoint,
     ui::screen::renderer::{ACTIVE_HEIGHT, CHAR_WIDTH},
 };
+use nmos6502::CPU6502;
 
 #[derive(Default)]
 pub struct Bus {
@@ -59,6 +59,16 @@ impl Addressable for Bus {
                 }
             }
         }
+    }
+}
+
+impl nmos6502::Addressable for Bus {
+    fn read_byte(&mut self, address: u16) -> u8 {
+        Addressable::read_byte(self, address)
+    }
+
+    fn write_byte(&mut self, address: u16, value: u8) {
+        Addressable::write_byte(self, address, value);
     }
 }
 

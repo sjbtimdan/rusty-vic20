@@ -921,7 +921,31 @@ Verify every sequence has exactly one `Fetch` and one `EndInstr`, and the number
 
 ---
 
-## 11. References
+## 11. Breakpoints
+
+The crate provides a `Breakpoint` trait for triggering actions when the CPU reaches a specific address:
+
+```rust
+pub trait Breakpoint {
+    fn on_hit(&self, address: u16);
+}
+```
+
+Breakpoints fire every cycle during `fetch_and_decode()`, receiving the PC of the instruction about to execute. The CPU stores them as `Vec<Box<dyn Breakpoint>>`:
+
+```rust
+cpu.add_breakpoint(Box::new(LoggingBreakpoint::new(0xC000)));
+```
+
+Built-in implementations:
+- `LoggingBreakpoint` — prints to stdout when address matches
+- `MessageBreakpoint` — prints a custom message
+
+Users implement `Breakpoint` for custom behavior (debugger integration, cycle counting, etc.).
+
+---
+
+## 12. References
 
 - [Visual 6502](http://www.visual6502.org/) — transistor-level cycle simulation
 - [NESdev Wiki: CPU](https://www.nesdev.org/wiki/CPU) — NMOS 6502 cycle timing

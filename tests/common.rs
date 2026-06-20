@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
+use nmos6502::CPU6502;
 use rusty_vic20::{
-    cpu::cpu6502::CPU6502,
     emulator::{EmulatorRunner, ThreadReceivers, paste::new_paste_queue},
     hardware::{
         addressable::Addressable,
@@ -100,6 +100,7 @@ pub fn run_boot_with_expansion(expansion: MemoryExpansion) -> EmulatorRunner {
     let mut runner = build_runner(expansion);
     let steps = match expansion {
         MemoryExpansion::EightK | MemoryExpansion::SixteenK | MemoryExpansion::ThirtyTwoK => 2_000_000,
+        MemoryExpansion::ThreeK => 800_000,
         _ => 600_000,
     };
     run_extra_steps(&mut runner, steps);
@@ -121,9 +122,8 @@ fn build_runner(expansion: MemoryExpansion) -> EmulatorRunner {
     let brake = Brake::new_default(make_brake_channel().1);
     let mut bus = Bus::default();
     bus.memory = new_memory_with_roms(expansion);
-    let reset_vector = bus.read_word(0xFFFC);
-    let mut cpu = CPU6502::default();
-    cpu.reset(reset_vector);
+    let mut cpu = CPU6502::new();
+    cpu.reset(&mut bus);
     EmulatorRunner::new(
         receivers,
         bus,

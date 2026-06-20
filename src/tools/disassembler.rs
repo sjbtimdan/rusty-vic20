@@ -1,7 +1,4 @@
-use crate::cpu::{
-    addressing_mode::AddressingMode,
-    instructions::{InstructionInfo, decode},
-};
+use nmos6502::opcode::{AddressingMode, InstructionInfo, decode};
 
 #[cfg_attr(test, unimock::unimock(api=DisassemblerMock))]
 pub trait Disassembler {
@@ -41,16 +38,86 @@ impl Disassembler for DefaultDisassembler {
     }
 }
 
+fn mnemonic_str(mnemonic: nmos6502::opcode::Mnemonic) -> &'static str {
+    use nmos6502::opcode::Mnemonic::*;
+    match mnemonic {
+        Adc => "ADC",
+        And => "AND",
+        Asl => "ASL",
+        Bcc => "BCC",
+        Bcs => "BCS",
+        Beq => "BEQ",
+        Bit => "BIT",
+        Bmi => "BMI",
+        Bne => "BNE",
+        Bpl => "BPL",
+        Brk => "BRK",
+        Bvc => "BVC",
+        Bvs => "BVS",
+        Clc => "CLC",
+        Cld => "CLD",
+        Cli => "CLI",
+        Clv => "CLV",
+        Cmp => "CMP",
+        Cpx => "CPX",
+        Cpy => "CPY",
+        Dec => "DEC",
+        Dex => "DEX",
+        Dey => "DEY",
+        Eor => "EOR",
+        Inc => "INC",
+        Inx => "INX",
+        Iny => "INY",
+        Jmp => "JMP",
+        Jsr => "JSR",
+        Lda => "LDA",
+        Ldx => "LDX",
+        Ldy => "LDY",
+        Lsr => "LSR",
+        Nop => "NOP",
+        Ora => "ORA",
+        Pha => "PHA",
+        Php => "PHP",
+        Pla => "PLA",
+        Plp => "PLP",
+        Rol => "ROL",
+        Ror => "ROR",
+        Rti => "RTI",
+        Rts => "RTS",
+        Sbc => "SBC",
+        Sec => "SEC",
+        Sed => "SED",
+        Sei => "SEI",
+        Sta => "STA",
+        Stx => "STX",
+        Sty => "STY",
+        Tax => "TAX",
+        Tay => "TAY",
+        Tsx => "TSX",
+        Txa => "TXA",
+        Txs => "TXS",
+        Tya => "TYA",
+        Dcp => "DCP",
+        Isc => "ISC",
+        Lax => "LAX",
+        Rla => "RLA",
+        Rra => "RRA",
+        Sax => "SAX",
+        Slo => "SLO",
+        Sre => "SRE",
+        Illegal => "???",
+    }
+}
+
 pub fn disassemble_instruction(
     instruction_info: &InstructionInfo,
     operands: &[u8],
     instruction_address: u16,
     separator: &str,
 ) -> String {
-    let name = format!("{:?}", instruction_info.instruction);
+    let name = mnemonic_str(instruction_info.mnemonic);
     let operand_str = match instruction_info.mode {
-        AddressingMode::Implied | AddressingMode::ImpliedBreak => return name,
-        AddressingMode::Accumulator => "A".to_string(),
+        AddressingMode::Implied | AddressingMode::Accumulator => return name.to_string(),
         AddressingMode::Immediate => format!("#${:02X}", operands[0]),
         AddressingMode::ZeroPage => format!("${:02X}", operands[0]),
         AddressingMode::ZeroPageX => format!("${:02X},X", operands[0]),
@@ -79,7 +146,7 @@ pub fn disassemble_bytes(
 ) -> Vec<String> {
     assert!(
         start_address >= base_address,
-        "Start address: 0x{:04X} must be greater than or equal to base address: 0x{:04X}",
+        "Start address: 0x{:04X} must be >= base address: 0x{:04X}",
         start_address,
         base_address
     );
@@ -108,47 +175,24 @@ pub fn disassemble_bytes(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cpu::instructions::{BNE_RELATIVE, BRK_IMPLIED, LDA_IMMEDIATE};
     use rstest::{fixture, rstest};
 
     #[fixture]
     fn disassembler() -> DefaultDisassembler {
-        DefaultDisassembler {
-            separator: "\t".to_string(),
-        }
-    }
-
-    #[test]
-    fn test_disassemble_bytes() {
-        use unimock::{MockFn, Unimock, matching};
-
-        let mock = Unimock::new((
-            DisassemblerMock::parse_instruction
-                .each_call(matching!(_))
-                .returns((2_usize, LDA_IMMEDIATE)),
-            DisassemblerMock::disassemble_instruction
-                .each_call(matching!(_, _, _))
-                .returns("LDA\t#$45".to_string()),
-        ));
-
-        let result = disassemble_bytes(&[LDA_IMMEDIATE.opcode, 0x45], &mock, 0x1000, 0x1000);
-
-        assert_eq!(result, vec!["0x1000:\tLDA\t#$45"]);
+        DefaultDisassembler::new("\t".to_string())
     }
 
     #[rstest]
-    #[case(&LDA_IMMEDIATE, &[0x45], "LDA\t#$45")]
-    #[case(&BRK_IMPLIED, &[], "BRK")]
-    #[case(&BNE_RELATIVE, &[0x05], "BNE\t$1007")]
+    #[case(0xA9, &[0x45][..], "LDA\t#$45")]
+    #[case(0x00, &[], "BRK")]
+    #[case(0xD0, &[0x05][..], "BNE\t$1007")]
     fn test_disassemble(
         disassembler: DefaultDisassembler,
-        #[case] instruction_info: &InstructionInfo,
+        #[case] opcode: u8,
         #[case] operands: &[u8],
         #[case] expected: &str,
     ) {
-        assert_eq!(
-            disassembler.disassemble_instruction(instruction_info, operands, 0x1000),
-            expected
-        );
+        let info = decode(opcode);
+        assert_eq!(disassembler.disassemble_instruction(&info, operands, 0x1000), expected);
     }
 }

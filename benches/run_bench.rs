@@ -2,22 +2,18 @@
 
 extern crate test;
 
-use rusty_vic20::{
-    cpu::cpu6502::CPU6502,
-    hardware::{addressable::Addressable, bus::Bus},
-};
+use nmos6502::CPU6502;
+use rusty_vic20::hardware::bus::Bus;
 use test::Bencher;
 
 fn run_steps(steps: usize) -> (Bus, CPU6502) {
-    let mut cpu = CPU6502::default();
+    let mut cpu = CPU6502::new();
     let mut bus = Bus::default();
-    bus.memory.load_standard_roms_from_data_dir();
-    let reset_vector = bus.read_word(0xFFFC);
-    cpu.reset(reset_vector);
+    cpu.reset(&mut bus);
 
     for _ in 0..steps {
         bus.step_devices(&mut cpu);
-        cpu.step(&mut bus);
+        cpu.cycle(&mut bus);
     }
     (bus, cpu)
 }

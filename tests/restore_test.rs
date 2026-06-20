@@ -1,8 +1,8 @@
 mod common;
 
 use common::{UNEXPANDED_SCREEN_RAM_START, run_extra_steps, screen_code};
+use nmos6502::CPU6502;
 use rusty_vic20::{
-    cpu::cpu6502::CPU6502,
     emulator::{ThreadReceivers, paste::new_paste_queue},
     hardware::{
         addressable::Addressable,
@@ -45,9 +45,8 @@ fn run_boot_with_keyboard() -> (rusty_vic20::emulator::EmulatorRunner, SyncSende
     };
     let mut bus = Bus::default();
     bus.memory = new_memory_with_roms(MemoryExpansion::None);
-    let reset_vector = bus.read_word(0xFFFC);
-    let mut cpu = CPU6502::default();
-    cpu.reset(reset_vector);
+    let mut cpu = CPU6502::new();
+    cpu.reset(&mut bus);
     let mut runner = rusty_vic20::emulator::EmulatorRunner::new(
         receivers,
         bus,

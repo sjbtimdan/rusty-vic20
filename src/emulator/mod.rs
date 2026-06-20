@@ -5,9 +5,7 @@ mod runner;
 pub use runner::EmulatorRunner;
 
 use crate::{
-    cpu::cpu6502::CPU6502,
     hardware::{
-        addressable::Addressable,
         bus::Bus,
         memory::{MemoryExpansion, new_memory_with_roms},
     },
@@ -21,6 +19,7 @@ use crate::{
     },
     ui::audio,
 };
+use nmos6502::CPU6502;
 use std::{
     collections::HashSet,
     sync::mpsc::Receiver,
@@ -44,9 +43,8 @@ pub fn spawn_emulator(
         .spawn(move || {
             let mut bus = Bus::default();
             bus.memory = new_memory_with_roms(memory_expansion);
-            let reset_vector = bus.read_word(0xFFFC);
-            let mut cpu = CPU6502::default();
-            cpu.reset(reset_vector);
+            let mut cpu = CPU6502::new();
+            cpu.reset(&mut bus);
             EmulatorRunner::new(
                 receivers,
                 bus,

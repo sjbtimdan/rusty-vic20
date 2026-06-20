@@ -1,0 +1,9 @@
+[package]
+name = "nmos6502"
+version = "0.1.0"
+edition = "2021"
+description = "Cycle-perfect NMOS 6502 CPU emulator — declarative micro-op execution"
+license = "MIT"
+repository = "https://github.com/steve/rusty-vic20"
+
+[dependencies]

@@ -1,5 +1,4 @@
 use crate::{
-    cpu::cpu6502::CPU6502,
     hardware::bus::Bus,
     peripherals::{
         brake::Brake,
@@ -11,6 +10,7 @@ use crate::{
     },
     ui::{audio::AudioProducer, screen::renderer::CHAR_WIDTH},
 };
+use nmos6502::CPU6502;
 use std::{
     sync::mpsc::TryRecvError,
     time::{Duration, Instant},
@@ -75,7 +75,7 @@ impl EmulatorRunner {
         self.bus.via1.set_ca1_pin(restore == RestoreKeyStatus::Up);
 
         self.bus.step_devices(&mut self.cpu);
-        self.cpu.step(&mut self.bus);
+        self.cpu.cycle(&mut self.bus);
         self.cassette_player.step(&mut self.bus.via1);
         self.joystick.step(&mut self.bus.via1, &mut self.bus.via2);
         self.serial_port.step(&mut self.bus.via1);
@@ -155,7 +155,7 @@ impl EmulatorRunner {
 
             if last_perf_publish.elapsed() >= PERF_PUBLISH_INTERVAL {
                 let elapsed = last_perf_publish.elapsed().as_secs_f64();
-                let cycles_delta = self.cpu.total_cycles() - last_perf_total_cycles;
+                let cycles_delta = self.cpu.total_cycles - last_perf_total_cycles;
                 let frames_delta = frame_count - last_perf_frame_count;
                 let mut perf = match self.receivers.perf.lock() {
                     Ok(guard) => guard,
@@ -163,9 +163,9 @@ impl EmulatorRunner {
                 };
                 perf.cycles_per_second = cycles_delta as f64 / elapsed;
                 perf.frames_per_second = frames_delta as f64 / elapsed;
-                perf.total_cycles = self.cpu.total_cycles();
+                perf.total_cycles = self.cpu.total_cycles;
                 perf.total_frames = frame_count;
-                last_perf_total_cycles = self.cpu.total_cycles();
+                last_perf_total_cycles = self.cpu.total_cycles;
                 last_perf_frame_count = frame_count;
                 last_perf_publish = Instant::now();
             }

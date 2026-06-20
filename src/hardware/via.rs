@@ -1,8 +1,4 @@
 use crate::{
-    cpu::{
-        interrupt_handler::{Interrupt, InterruptHandler},
-        registers::Registers,
-    },
     hardware::{
         addressable::Addressable,
         edge_latch::{Edge, EdgeLatch},
@@ -89,19 +85,6 @@ impl VIA {
         }
     }
 
-    pub fn step(
-        &mut self,
-        registers: &mut Registers,
-        memory: &mut dyn Addressable,
-        interrupt_handler: &mut dyn InterruptHandler,
-        interrupt: Interrupt,
-    ) {
-        self.step_internal();
-        if self.irq_active() {
-            interrupt_handler.handle_interrupt(registers, memory, interrupt);
-        }
-    }
-
     pub fn step_internal(&mut self) {
         self.step_timer1();
         self.check_ca1_edge();
@@ -110,6 +93,10 @@ impl VIA {
 
     pub fn irq_active(&self) -> bool {
         self.ifr_byte() & IFR_IRQ != 0
+    }
+
+    pub fn timer1_counter(&self) -> u16 {
+        self.t1_counter.get()
     }
 
     pub fn port_b(&self) -> u8 {
@@ -323,15 +310,7 @@ impl Addressable for VIA {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        cpu::{
-            interrupt_handler::{Interrupt, InterruptHandlerMock, NoOpInterruptHandler},
-            registers::Registers,
-        },
-        hardware::addressable::UnimplementedAddressable,
-    };
     use rstest::{fixture, rstest};
-    use unimock::{MockFn, Unimock, matching};
 
     fn addr(offset: usize) -> u16 {
         offset as u16
@@ -457,12 +436,7 @@ mod tests {
     fn step_decrements_timer1_counter(mut via: VIA) {
         via.t1_counter.set(5);
         via.t1_latch.set(100);
-        via.step(
-            &mut Registers::default(),
-            &mut UnimplementedAddressable,
-            &mut NoOpInterruptHandler,
-            Interrupt::IRQ,
-        );
+        via.step_internal();
         assert_eq!(via.t1_counter.get(), 4);
     }
 
@@ -472,12 +446,7 @@ mod tests {
     fn step_reloads_timer1_and_sets_flag_on_underflow(mut via: VIA) {
         via.t1_counter.set(0);
         via.t1_latch.set(100);
-        via.step(
-            &mut Registers::default(),
-            &mut UnimplementedAddressable,
-            &mut NoOpInterruptHandler,
-            Interrupt::IRQ,
-        );
+        via.step_internal();
         assert_eq!(via.t1_counter.get(), 100);
         assert_eq!(
             via.ifr.get() & IFR_TIMER1,
@@ -487,24 +456,14 @@ mod tests {
     }
 
     /// When timer1 underflows and IER has the timer1 bit enabled,
-    /// the interrupt handler is invoked with `is_break = false`.
+    /// irq_active returns true.
     #[rstest]
-    fn step_calls_interrupt_handler_when_timer1_nmi_enabled(mut via: VIA) {
+    fn timer1_underflow_with_ier_sets_irq(mut via: VIA) {
         via.t1_counter.set(0);
         via.t1_latch.set(100);
         via.ier |= IFR_TIMER1;
-        let mut handler = Unimock::new(
-            InterruptHandlerMock::handle_interrupt
-                .each_call(matching!(_, _, Interrupt::NMI))
-                .returns(()),
-        );
-        via.step(
-            &mut Registers::default(),
-            &mut UnimplementedAddressable,
-            &mut handler,
-            Interrupt::NMI,
-        );
-        handler.verify();
+        via.step_internal();
+        assert!(via.irq_active(), "IRQ should be active with IER timer1 enabled");
     }
 
     /// When timer1 underflows but IER does not have the timer1 bit enabled,
@@ -514,36 +473,23 @@ mod tests {
         via.t1_counter.set(0);
         via.t1_latch.set(100);
         // IER timer1 bit is clear (default).
-        via.step(
-            &mut Registers::default(),
-            &mut UnimplementedAddressable,
-            &mut NoOpInterruptHandler,
-            Interrupt::IRQ,
-        );
+        via.step_internal();
         // IFR_TIMER1 is flagged but IFR_IRQ should be clear (no enabled sources).
         assert_eq!(via.ifr.get() & IFR_TIMER1, IFR_TIMER1);
         assert_eq!(via.ifr.get() & IFR_IRQ, 0);
     }
 
-    /// Even when IFR_TIMER1 is already set from a previous underflow,
-    /// step calls the interrupt handler if the IER timer1 bit is enabled.
+    /// Even when IFR_TIMER1 is already set, irq_active returns true if IER enables it.
     #[rstest]
-    fn step_handles_already_pending_timer1_irq(mut via: VIA) {
+    fn pending_timer1_with_ier_sets_irq(mut via: VIA) {
         via.t1_counter.set(1); // won't underflow this step
         via.ifr.set(IFR_TIMER1); // left over from earlier event
         via.ier |= IFR_TIMER1;
-        let mut handler = Unimock::new(
-            InterruptHandlerMock::handle_interrupt
-                .each_call(matching!(_, _, Interrupt::IRQ))
-                .returns(()),
+        via.step_internal();
+        assert!(
+            via.irq_active(),
+            "IRQ should be active with pending IFR_TIMER1 and IER enabled"
         );
-        via.step(
-            &mut Registers::default(),
-            &mut UnimplementedAddressable,
-            &mut handler,
-            Interrupt::IRQ,
-        );
-        handler.verify();
     }
 
     /// PCR defaults to 0x00 → interrupt on falling (negative) edge of CA1
