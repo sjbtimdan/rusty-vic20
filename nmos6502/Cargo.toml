@@ -7,3 +7,7 @@ license = "MIT"
 repository = "https://github.com/steve/rusty-vic20"
 
 [dependencies]
+
+[[bench]]
+name = "cpu_bench"
+harness = true
