@@ -57,6 +57,10 @@ impl CPU6502 {
         }
     }
 
+    pub fn instruction_complete(&self) -> bool {
+        self.sequence.is_empty()
+    }
+
     pub fn add_breakpoint(&mut self, bp: Box<dyn Breakpoint>) {
         self.breakpoints.push(bp);
     }
