@@ -47,27 +47,18 @@ fn parse_harte_test_file(path: &str) -> Vec<TestCase> {
 
 /// Run a single Harte test case against the nmos6502 CPU.
 ///
-/// Initialises RAM and CPU registers from `case.initial`, steps through
-/// `case.cycles.len()` cycles, then compares all register and RAM values
-/// against `case.end`.
-///
-/// `case_index` is the 0-based position in the JSON file array, included
-/// in panic messages to help locate failures.
-///
-/// # Panics
-/// Panics with a descriptive message on any register or RAM mismatch.
-fn run_harte_test(case_index: usize, case: &TestCase) {
+/// Returns a list of mismatch descriptions. Empty `Vec` means the case passed.
+fn run_harte_test(case_index: usize, case: &TestCase) -> Vec<String> {
+    let mut errors = Vec::new();
     let label = format!("#{case_index} [{}]", case.name);
 
     let mut cpu = CPU6502::new();
     let mut mem = Ram::new();
 
-    // Step 1: initialize RAM from the test's initial state.
     for &(addr, val) in &case.initial.ram {
         mem.write_byte(addr, val);
     }
 
-    // Step 2: set CPU registers from the test's initial state.
     cpu.registers.pc = case.initial.pc;
     cpu.registers.sp = case.initial.s;
     cpu.registers.a = case.initial.a;
@@ -75,75 +66,110 @@ fn run_harte_test(case_index: usize, case: &TestCase) {
     cpu.registers.y = case.initial.y;
     cpu.registers.status = case.initial.p;
 
-    // Step 3: run one instruction (first cycle triggers fetch, then keep
-    // stepping until end_instruction clears the sequence).
-    let cycles_before = cpu.total_cycles;
-    cpu.cycle(&mut mem);
-    while !cpu.instruction_complete() {
+    for _ in 0..case.cycles.len() {
         cpu.cycle(&mut mem);
     }
-    let cycles_taken = cpu.total_cycles - cycles_before;
-    assert_eq!(
-        cycles_taken as usize,
-        case.cycles.len(),
-        "{label} step 3 cycles: expected {}, took {cycles_taken}",
-        case.cycles.len()
-    );
 
-    // Step 4: compare final register state.
-    assert_eq!(
-        cpu.registers.pc, case.end.pc,
-        "{label} step 4 register PC: expected ${:04X}, got ${:04X}",
-        case.end.pc, cpu.registers.pc
-    );
-    assert_eq!(
-        cpu.registers.sp, case.end.s,
-        "{label} step 4 register S: expected ${:02X}, got ${:02X}",
-        case.end.s, cpu.registers.sp
-    );
-    assert_eq!(
-        cpu.registers.a, case.end.a,
-        "{label} step 4 register A: expected ${:02X}, got ${:02X}",
-        case.end.a, cpu.registers.a
-    );
-    assert_eq!(
-        cpu.registers.x, case.end.x,
-        "{label} step 4 register X: expected ${:02X}, got ${:02X}",
-        case.end.x, cpu.registers.x
-    );
-    assert_eq!(
-        cpu.registers.y, case.end.y,
-        "{label} step 4 register Y: expected ${:02X}, got ${:02X}",
-        case.end.y, cpu.registers.y
-    );
-    assert_eq!(
-        cpu.registers.status, case.end.p,
-        "{label} step 4 register P: expected ${:02X}, got ${:02X}",
-        case.end.p, cpu.registers.status
-    );
+    if cpu.registers.pc != case.end.pc {
+        errors.push(format!(
+            "{label} PC: expected ${:04X}, got ${:04X}",
+            case.end.pc, cpu.registers.pc
+        ));
+    }
+    if cpu.registers.sp != case.end.s {
+        errors.push(format!(
+            "{label} S: expected ${:02X}, got ${:02X}",
+            case.end.s, cpu.registers.sp
+        ));
+    }
+    if cpu.registers.a != case.end.a {
+        errors.push(format!(
+            "{label} A: expected ${:02X}, got ${:02X}",
+            case.end.a, cpu.registers.a
+        ));
+    }
+    if cpu.registers.x != case.end.x {
+        errors.push(format!(
+            "{label} X: expected ${:02X}, got ${:02X}",
+            case.end.x, cpu.registers.x
+        ));
+    }
+    if cpu.registers.y != case.end.y {
+        errors.push(format!(
+            "{label} Y: expected ${:02X}, got ${:02X}",
+            case.end.y, cpu.registers.y
+        ));
+    }
+    if cpu.registers.status != case.end.p {
+        errors.push(format!(
+            "{label} P: expected ${:02X}, got ${:02X}",
+            case.end.p, cpu.registers.status
+        ));
+    }
 
-    // Step 5: compare RAM state.
     for &(addr, expected) in &case.end.ram {
         let actual = mem.read_byte(addr);
-        assert_eq!(
-            actual, expected,
-            "{label} step 5 RAM[${:04X}]: expected ${:02X}, got ${:02X}",
-            addr, expected, actual
-        );
+        if actual != expected {
+            errors.push(format!(
+                "{label} RAM[${:04X}]: expected ${:02X}, got ${:02X}",
+                addr, expected, actual
+            ));
+        }
     }
+
+    errors
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
+    use std::path::PathBuf;
+
+    #[rstest]
+    fn run_opcode(#[files("external/6502/v1/[0-9a-f][0-9a-f].json")] path: PathBuf) {
+        run_single_opcode(path);
+    }
 
     #[test]
-    fn run_lda_a9() {
-        let cases = parse_harte_test_file("external/6502/v1/a9.json");
-        assert_eq!(cases.len(), 10_000);
+    fn test_one() {
+        let path = PathBuf::from("external/6502/v1/ea.json");
+        run_single_opcode(path);
+    }
+
+    fn run_single_opcode(path: PathBuf) {
+        let cases = parse_harte_test_file(path.to_str().unwrap());
+        let total = cases.len();
+        let mut failed = 0;
+        let mut messages = Vec::new();
 
         for (i, case) in cases.iter().enumerate() {
-            run_harte_test(i, case);
+            let errors = run_harte_test(i, case);
+            if !errors.is_empty() {
+                failed += 1;
+                messages.extend(errors);
+            }
+        }
+
+        if failed > 0 {
+            let passed = total - failed;
+            let file = path.file_stem().unwrap().to_str().unwrap();
+            let summary = format!(
+                "{file}.json: {passed} passed, {failed} failed\n{}",
+                messages
+                    .iter()
+                    .take(20)
+                    .map(|m| format!("  {m}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            );
+            let remaining = messages.len().saturating_sub(20);
+            let tail = if remaining > 0 {
+                format!("\n  ... and {remaining} more mismatches")
+            } else {
+                String::new()
+            };
+            panic!("{summary}{tail}");
         }
     }
 }

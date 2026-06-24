@@ -57,10 +57,6 @@ impl CPU6502 {
         }
     }
 
-    pub fn instruction_complete(&self) -> bool {
-        self.sequence.is_empty()
-    }
-
     pub fn add_breakpoint(&mut self, bp: Box<dyn Breakpoint>) {
         self.breakpoints.push(bp);
     }
@@ -122,12 +118,12 @@ impl CPU6502 {
             }
             BusOp::ReadDummyZpX => {
                 let zp = self.operands[0];
-                let _ = memory.read_byte(zp as u16);
+                let _ = memory.read_zp_byte(zp);
                 self.addr = (zp.wrapping_add(self.registers.x) & 0xFF) as u16;
             }
             BusOp::ReadDummyZpY => {
                 let zp = self.operands[0];
-                let _ = memory.read_byte(zp as u16);
+                let _ = memory.read_zp_byte(zp);
                 self.addr = (zp.wrapping_add(self.registers.y) & 0xFF) as u16;
             }
 
