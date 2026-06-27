@@ -243,6 +243,11 @@ pub enum InternalOp {
     /// Set status register from data_latch: status = (data_latch | UNUSED) & !BREAK.
     SetStatus,
 
+    // ── Control transfer ──
+    /// Halt the CPU — JAM/KIL instruction. PC was already incremented by the
+    /// operand fetch; no further execution occurs until reset.
+    JamHalt,
+
     // ── Sequence control ──
     /// If page_crossed is true, skip the next `n` MicroOps in the sequence.
     SkipIfCrossed(u8),

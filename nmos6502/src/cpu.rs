@@ -35,6 +35,8 @@ pub struct CPU6502 {
 
     pub breakpoints: Vec<Box<dyn Breakpoint>>,
 
+    pub halted: bool,
+
     pub total_cycles: u64,
 }
 
@@ -53,6 +55,7 @@ impl CPU6502 {
             irq_line_low: false,
             nmi_latch: EdgeLatch::default(),
             breakpoints: Vec::new(),
+            halted: false,
             total_cycles: 0,
         }
     }
@@ -75,12 +78,17 @@ impl CPU6502 {
         self.nmi_latch.reset();
         self.nmi_latch.set_level(true);
         self.total_cycles = 0;
+        self.halted = false;
         self.enter_interrupt(Interrupt::Reset, memory);
     }
 
     /// Execute one CPU clock cycle.
     pub fn cycle(&mut self, memory: &mut impl Addressable) {
         self.total_cycles += 1;
+
+        if self.halted {
+            return;
+        }
 
         let op = if self.sequence_index < self.sequence.len() {
             self.sequence[self.sequence_index]
@@ -469,6 +477,9 @@ impl CPU6502 {
             }
 
             // ── Control flow ──
+            InternalOp::JamHalt => {
+                self.halted = true;
+            }
             InternalOp::BranchCC => self.branch_if(memory, |r| !r.is_flag_set(crate::registers::CARRY)),
             InternalOp::BranchCS => self.branch_if(memory, |r| r.is_flag_set(crate::registers::CARRY)),
             InternalOp::BranchEQ => self.branch_if(memory, |r| r.is_flag_set(crate::registers::ZERO)),
