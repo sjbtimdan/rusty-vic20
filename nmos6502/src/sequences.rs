@@ -376,14 +376,12 @@ static S_ORA_INDX: &[MicroOp] = &[
     b(B::ReadDummyZpX),
     m(BN, I::SetAddrIndX),
     m(B::ReadAddr, N),
-    m(B::ReadAddr, N),
     m(B::ReadAddr, I::Ora),
 ];
 static S_AND_INDX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
     m(BN, I::SetAddrIndX),
-    m(B::ReadAddr, N),
     m(B::ReadAddr, N),
     m(B::ReadAddr, I::And),
 ];
@@ -392,14 +390,12 @@ static S_EOR_INDX: &[MicroOp] = &[
     b(B::ReadDummyZpX),
     m(BN, I::SetAddrIndX),
     m(B::ReadAddr, N),
-    m(B::ReadAddr, N),
     m(B::ReadAddr, I::Eor),
 ];
 static S_ADC_INDX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
     m(BN, I::SetAddrIndX),
-    m(B::ReadAddr, N),
     m(B::ReadAddr, N),
     m(B::ReadAddr, I::Adc),
 ];
@@ -408,14 +404,12 @@ static S_SBC_INDX: &[MicroOp] = &[
     b(B::ReadDummyZpX),
     m(BN, I::SetAddrIndX),
     m(B::ReadAddr, N),
-    m(B::ReadAddr, N),
     m(B::ReadAddr, I::Sbc),
 ];
 static S_CMP_INDX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
     m(BN, I::SetAddrIndX),
-    m(B::ReadAddr, N),
     m(B::ReadAddr, N),
     m(B::ReadAddr, I::CmpA),
 ];
@@ -424,14 +418,12 @@ static S_LDA_INDX: &[MicroOp] = &[
     b(B::ReadDummyZpX),
     m(BN, I::SetAddrIndX),
     m(B::ReadAddr, N),
-    m(B::ReadAddr, N),
     m(B::ReadAddr, I::SetA),
 ];
 static S_STA_INDX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
     m(BN, I::SetAddrIndX),
-    m(B::ReadAddr, N),
     m(B::ReadAddr, N),
     m(B::WriteAddrA, N),
 ];
@@ -607,7 +599,6 @@ macro_rules! rmw_indx {
             b(B::ReadDummyZpX),
             m(BN, I::SetAddrIndX),
             m(B::ReadAddr, N),
-            m(B::ReadAddr, N),
             m(B::WriteDummy, N),
             m(BN, I::$alu),
             m(B::WriteAddrDL, N),
@@ -692,7 +683,6 @@ static S_LAX_INDX: &[MicroOp] = &[
     b(B::ReadDummyZpX),
     m(BN, I::SetAddrIndX),
     m(B::ReadAddr, N),
-    m(B::ReadAddr, N),
     m(B::ReadAddr, I::Lax),
 ];
 static S_LAX_INDY: &[MicroOp] = &[
@@ -711,7 +701,6 @@ static S_SAX_INDX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
     m(BN, I::SetAddrIndX),
-    m(B::ReadAddr, N),
     m(B::ReadAddr, N),
     m(B::WriteAddrAX, N),
 ];
