@@ -289,7 +289,7 @@ static OPCODES: [InstructionInfo; 256] = [
     info(0x90, Mnemonic::Bcc, AddressingMode::Relative, 2, 2),
     info(0x91, Mnemonic::Sta, AddressingMode::IndirectIndexed, 2, 6),
     info(0x92, Mnemonic::Illegal, AddressingMode::Implied, 1, 2),  // JAM
-    info(0x93, Mnemonic::Illegal, AddressingMode::Implied, 1, 1),  // EMPTY
+    info(0x93, Mnemonic::Illegal, AddressingMode::IndirectIndexed, 2, 6),  // AHX (indirect),Y
     info(0x94, Mnemonic::Sty, AddressingMode::ZeroPageX, 2, 4),
     info(0x95, Mnemonic::Sta, AddressingMode::ZeroPageX, 2, 4),
     info(0x96, Mnemonic::Stx, AddressingMode::ZeroPageY, 2, 4),

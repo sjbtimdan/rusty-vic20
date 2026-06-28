@@ -44,6 +44,8 @@ pub enum BusOp {
     WriteAddrY,
     /// Write (A & X) to memory[addr] (SAX unofficial opcode).
     WriteAddrAX,
+    /// Write A & X & ((addr >> 8) + 1) to memory[addr] (AHX/SHA unofficial opcode).
+    WriteAddrAHX,
     /// Write data_latch to memory[addr].
     WriteAddrDL,
     /// Write data_latch to memory[addr] — RMW dummy write of original value.
@@ -121,17 +123,3 @@ impl std::fmt::Debug for InternalOp {
         }
     }
 }
-
-impl PartialEq for InternalOp {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (InternalOp::Fn(a), InternalOp::Fn(b)) => std::ptr::fn_addr_eq(*a, *b),
-            (InternalOp::SkipIfCrossed(a), InternalOp::SkipIfCrossed(b)) => a == b,
-            (InternalOp::SkipIfNotCrossed(a), InternalOp::SkipIfNotCrossed(b)) => a == b,
-            (InternalOp::SkipIfNotTaken(a), InternalOp::SkipIfNotTaken(b)) => a == b,
-            _ => false,
-        }
-    }
-}
-
-impl Eq for InternalOp {}

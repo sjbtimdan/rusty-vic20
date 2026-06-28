@@ -139,6 +139,20 @@ impl CPU6502 {
             BusOp::WriteAddrX => memory.write_byte(self.addr, self.registers.x),
             BusOp::WriteAddrY => memory.write_byte(self.addr, self.registers.y),
             BusOp::WriteAddrAX => memory.write_byte(self.addr, self.registers.a & self.registers.x),
+            BusOp::WriteAddrAHX => {
+                // Low byte is always (base_lo + Y) & 0xFF
+                let lo = self.addr as u8;
+                let base_hi = self.operands[1];
+                // High byte depends on page cross
+                let hi = if self.page_crossed {
+                    self.registers.a & self.registers.x & base_hi.wrapping_add(1)
+                } else {
+                    (self.addr >> 8) as u8
+                };
+                // Value = A & X & (C5_addr_hi + 1), where C5_addr = self.addr
+                let val = self.registers.a & self.registers.x & ((self.addr >> 8) as u8).wrapping_add(1);
+                memory.write_byte((hi as u16) << 8 | lo as u16, val);
+            }
             BusOp::WriteAddrDL => memory.write_byte(self.addr, self.data_latch),
             BusOp::WriteDummy => memory.write_byte(self.addr, self.data_latch),
 
@@ -322,6 +336,20 @@ impl CPU6502 {
         let base = (hi as u16) << 8 | lo as u16;
         self.addr = base.wrapping_add(self.registers.y as u16);
         self.page_crossed = (base & 0xFF00) != (self.addr & 0xFF00);
+    }
+    /// AHX/SHA (indirect),Y setup: like `op_set_addr_indy` but stores the
+    /// page-wrapped address (C5 dummy-read target) in `self.addr` and saves
+    /// `base_hi` in `operands[1]` for later use by `WriteAddrAHX`.
+    pub(crate) fn op_ahx_setup_addr(&mut self, memory: &mut dyn Addressable) {
+        let ptr = self.operands[0];
+        let lo = memory.read_zp_byte(ptr);
+        let hi = memory.read_zp_byte(ptr.wrapping_add(1));
+        let base = (hi as u16) << 8 | lo as u16;
+        let final_addr = base.wrapping_add(self.registers.y as u16);
+        self.page_crossed = (base & 0xFF00) != (final_addr & 0xFF00);
+        self.operands[1] = hi; // save base_hi for the write-address computation
+                               // C5 dummy-read address: base page + low byte of (base + Y)
+        self.addr = (hi as u16) << 8 | (lo.wrapping_add(self.registers.y)) as u16;
     }
 
     // ── Register operations ──

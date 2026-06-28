@@ -704,6 +704,17 @@ static S_STA_INDY: &[MicroOp] = &[
     m(B::WriteAddrA, N),
 ];
 
+// AHX/SHA (indirect),Y — uses page-wrapped dummy-read address and conditional
+// write address.  `op_ahx_setup_addr` stores base_hi in operands[1] and sets
+// `addr` to the C5 dummy-read address (page-wrapped).  `WriteAddrAHX` computes
+// the final write address and value based on page-cross status.
+static S_AHX_INDY: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(BN, I::Fn(CPU6502::op_ahx_setup_addr)),
+    X_DUMMY,
+    m(B::WriteAddrAHX, N),
+];
+
 // ── Unofficial opcodes ──
 
 // RMW+ALU helpers (read-modify-write then combine with A)
@@ -923,7 +934,7 @@ pub static OPCODE_SEQUENCES: [&[MicroOp]; 256] = [
     S_NOP_IMM, S_STA_INDX, S_NOP_IMM, S_SAX_INDX, S_STY_ZP, S_STA_ZP, S_STX_ZP, S_SAX_ZP, S_DEY, S_NOP_IMM, S_TXA, EMPTY,
     S_STY_ABS, S_STA_ABS, S_STX_ABS, S_SAX_ABS,
     // 0x90-0x9F
-    S_BCC, S_STA_INDY, S_JAM, EMPTY, S_STY_ZPX, S_STA_ZPX, S_STX_ZPY, S_SAX_ZPY, S_TYA, S_STA_ABSY, S_TXS, EMPTY,
+    S_BCC, S_STA_INDY, S_JAM, S_AHX_INDY, S_STY_ZPX, S_STA_ZPX, S_STX_ZPY, S_SAX_ZPY, S_TYA, S_STA_ABSY, S_TXS, EMPTY,
     EMPTY, S_STA_ABSX, EMPTY, EMPTY,
     // 0xA0-0xAF
     S_LDY_IMM, S_LDA_INDX, S_LDX_IMM, S_LAX_INDX, S_LDY_ZP, S_LDA_ZP, S_LDX_ZP, S_LAX_ZP, S_TAY, S_LDA_IMM, S_TAX,
