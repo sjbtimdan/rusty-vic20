@@ -312,9 +312,6 @@ impl CPU6502 {
                 let base = (hi as u16) << 8 | lo as u16;
                 self.addr = base.wrapping_add(self.registers.y as u16);
                 self.page_crossed = (base & 0xFF00) != (self.addr & 0xFF00);
-                if !self.page_crossed {
-                    self.sequence_index += 1;
-                }
             }
 
             // ── Register operations ──
@@ -434,6 +431,11 @@ impl CPU6502 {
                 self.registers.set_x(self.data_latch);
                 // set_accumulator already set Z,N; set_x overwrites with same value, fine
             }
+            InternalOp::LaxImm => {
+                let result = self.registers.a & self.data_latch;
+                self.registers.set_accumulator(result);
+                self.registers.set_x(result);
+            }
 
             InternalOp::Slo => {
                 let c = self.data_latch & 0x80 != 0;
@@ -490,23 +492,75 @@ impl CPU6502 {
                 self.registers
                     .update_carry_flag(self.registers.is_flag_set(crate::registers::NEGATIVE));
             }
+            InternalOp::Alr => {
+                let result = self.registers.a & self.data_latch;
+                self.registers.update_carry_flag(result & 1 != 0);
+                let shifted = result >> 1;
+                self.registers.a = shifted;
+                self.registers.update_zero_and_negative(shifted);
+            }
+            InternalOp::Arr => {
+                let and = self.registers.a & self.data_latch;
+                let old_c = self.registers.is_flag_set(crate::registers::CARRY) as u8;
+
+                if self.registers.is_flag_set(crate::registers::DECIMAL) {
+                    let ah = and >> 4;
+                    let al = and & 0x0F;
+
+                    let result = (and >> 1) | (old_c << 7);
+
+                    // N = old C flag, Z from result, V = bit 6 of (and ^ result)
+                    self.registers.update_negative_flag(old_c != 0);
+                    self.registers.update_zero_flag(result == 0);
+                    self.registers.update_overflow_flag((and ^ result) & 0x40 != 0);
+
+                    let mut a = result;
+
+                    // BCD fixup for low nybble: if (AL + (AL & 1)) > 5, add 6 to low nybble
+                    if al + (al & 1) > 5 {
+                        a = (a & 0xF0) | ((a.wrapping_add(6)) & 0x0F);
+                    }
+
+                    // BCD fixup for high nybble and C flag:
+                    // if (AH + (AH & 1)) > 5, set C and add $60
+                    let carry_set = ah + (ah & 1) > 5;
+                    self.registers.update_carry_flag(carry_set);
+                    if carry_set {
+                        a = a.wrapping_add(0x60);
+                    }
+
+                    self.registers.a = a;
+                } else {
+                    let result = (and >> 1) | (old_c << 7);
+                    self.registers.a = result;
+                    self.registers.update_carry_flag(result & 0x40 != 0);
+                    self.registers.update_zero_and_negative(result);
+                    self.registers
+                        .update_overflow_flag(((result >> 6) ^ (result >> 5)) & 1 != 0);
+                }
+            }
 
             // ── Control flow ──
             InternalOp::JamHalt => {
                 self.halted = true;
             }
-            InternalOp::BranchCC => self.branch_if(memory, |r| !r.is_flag_set(crate::registers::CARRY)),
-            InternalOp::BranchCS => self.branch_if(memory, |r| r.is_flag_set(crate::registers::CARRY)),
-            InternalOp::BranchEQ => self.branch_if(memory, |r| r.is_flag_set(crate::registers::ZERO)),
-            InternalOp::BranchNE => self.branch_if(memory, |r| !r.is_flag_set(crate::registers::ZERO)),
-            InternalOp::BranchMI => self.branch_if(memory, |r| r.is_flag_set(crate::registers::NEGATIVE)),
-            InternalOp::BranchPL => self.branch_if(memory, |r| !r.is_flag_set(crate::registers::NEGATIVE)),
-            InternalOp::BranchVC => self.branch_if(memory, |r| !r.is_flag_set(crate::registers::OVERFLOW)),
-            InternalOp::BranchVS => self.branch_if(memory, |r| r.is_flag_set(crate::registers::OVERFLOW)),
+            InternalOp::BranchCC => self.branch_if(|r| !r.is_flag_set(crate::registers::CARRY)),
+            InternalOp::BranchCS => self.branch_if(|r| r.is_flag_set(crate::registers::CARRY)),
+            InternalOp::BranchEQ => self.branch_if(|r| r.is_flag_set(crate::registers::ZERO)),
+            InternalOp::BranchNE => self.branch_if(|r| !r.is_flag_set(crate::registers::ZERO)),
+            InternalOp::BranchMI => self.branch_if(|r| r.is_flag_set(crate::registers::NEGATIVE)),
+            InternalOp::BranchPL => self.branch_if(|r| !r.is_flag_set(crate::registers::NEGATIVE)),
+            InternalOp::BranchVC => self.branch_if(|r| !r.is_flag_set(crate::registers::OVERFLOW)),
+            InternalOp::BranchVS => self.branch_if(|r| r.is_flag_set(crate::registers::OVERFLOW)),
 
             InternalOp::JumpAbs => {
                 self.registers.pc = self.addr;
-                self.instruction_length = 0; // Don't auto-advance PC in EndInstr
+                self.instruction_length = 0;
+            }
+            InternalOp::JmpAbs => {
+                self.addr = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
+                self.registers.pc = self.addr;
+                self.instruction_length = 0;
             }
             InternalOp::JumpInd => {
                 let lo = memory.read_byte(self.addr);
@@ -563,9 +617,8 @@ impl CPU6502 {
         }
     }
 
-    fn branch_if(&mut self, memory: &mut impl Addressable, condition: fn(&Registers) -> bool) {
-        let offset = memory.read_byte(self.registers.pc.wrapping_add(1)) as i8;
-        self.operands[0] = offset as u8;
+    fn branch_if(&mut self, condition: fn(&Registers) -> bool) {
+        let offset = self.data_latch as i8;
 
         if condition(&self.registers) {
             let base = self.registers.pc.wrapping_add(2);
@@ -578,6 +631,7 @@ impl CPU6502 {
         } else {
             self.branch_taken = false;
             self.page_crossed = false;
+            self.sequence_index += 2;
         }
     }
 
@@ -618,38 +672,38 @@ fn instruction_length(opcode: u8) -> u8 {
         0xC8 | 0xCA | 0xD8 | 0xE8 | 0xEA | 0xF8 => 1,
 
         0x00 | 0x01 | 0x03 | 0x04 | 0x05 | 0x06 | 0x07 | 0x09 | 0x0B => 2,
-        0x10 | 0x11 | 0x14 | 0x15 | 0x16 | 0x17 => 2,
+        0x10 | 0x11 | 0x13 | 0x14 | 0x15 | 0x16 | 0x17 => 2,
         0x21 | 0x23 | 0x24 | 0x25 | 0x26 | 0x27 | 0x29 | 0x2B => 2,
-        0x30 | 0x31 | 0x34 | 0x35 | 0x36 | 0x37 => 2,
-        0x41 | 0x43 | 0x44 | 0x45 | 0x46 | 0x47 | 0x49 => 2,
-        0x50 | 0x51 | 0x54 | 0x55 | 0x56 | 0x57 => 2,
-        0x61 | 0x63 | 0x64 | 0x65 | 0x66 | 0x67 | 0x69 => 2,
-        0x70 | 0x71 | 0x74 | 0x75 | 0x76 | 0x77 => 2,
-        0x81 | 0x83 | 0x84 | 0x85 | 0x86 | 0x87 | 0x89 => 2,
+        0x30 | 0x31 | 0x33 | 0x34 | 0x35 | 0x36 | 0x37 => 2,
+        0x41 | 0x43 | 0x44 | 0x45 | 0x46 | 0x47 | 0x49 | 0x4B => 2,
+        0x50 | 0x51 | 0x53 | 0x54 | 0x55 | 0x56 | 0x57 => 2,
+        0x61 | 0x63 | 0x64 | 0x65 | 0x66 | 0x67 | 0x69 | 0x6B => 2,
+        0x70 | 0x71 | 0x73 | 0x74 | 0x75 | 0x76 | 0x77 => 2,
+        0x80 | 0x81 | 0x82 | 0x83 | 0x84 | 0x85 | 0x86 | 0x87 | 0x89 => 2,
         0x90 | 0x91 | 0x94 | 0x95 | 0x96 | 0x97 => 2,
-        0xA0 | 0xA1 | 0xA2 | 0xA3 | 0xA4 | 0xA5 | 0xA6 | 0xA7 | 0xA9 => 2,
-        0xB0 | 0xB1 | 0xB4 | 0xB5 | 0xB6 | 0xB7 => 2,
-        0xC0 | 0xC1 | 0xC3 | 0xC4 | 0xC5 | 0xC6 | 0xC7 | 0xC9 => 2,
-        0xD0 | 0xD1 | 0xD4 | 0xD5 | 0xD6 | 0xD7 => 2,
-        0xE0 | 0xE1 | 0xE3 | 0xE4 | 0xE5 | 0xE6 | 0xE7 | 0xE9 => 2,
-        0xF0 | 0xF1 | 0xF4 | 0xF5 | 0xF6 | 0xF7 => 2,
+        0xA0 | 0xA1 | 0xA2 | 0xA3 | 0xA4 | 0xA5 | 0xA6 | 0xA7 | 0xA9 | 0xAB => 2,
+        0xB0 | 0xB1 | 0xB3 | 0xB4 | 0xB5 | 0xB6 | 0xB7 => 2,
+        0xC0 | 0xC1 | 0xC2 | 0xC3 | 0xC4 | 0xC5 | 0xC6 | 0xC7 | 0xC9 => 2,
+        0xD0 | 0xD1 | 0xD3 | 0xD4 | 0xD5 | 0xD6 | 0xD7 => 2,
+        0xE0 | 0xE1 | 0xE2 | 0xE3 | 0xE4 | 0xE5 | 0xE6 | 0xE7 | 0xE9 | 0xEB => 2,
+        0xF0 | 0xF1 | 0xF3 | 0xF4 | 0xF5 | 0xF6 | 0xF7 => 2,
 
         0x0C | 0x0D | 0x0E | 0x0F => 3,
-        0x19 | 0x1C | 0x1D | 0x1E => 3,
-        0x20 | 0x2C | 0x2D | 0x2E => 3,
-        0x39 | 0x3C | 0x3D | 0x3E => 3,
-        0x4C | 0x4D | 0x4E => 3,
-        0x59 | 0x5C | 0x5D | 0x5E => 3,
-        0x6C | 0x6D | 0x6E => 3,
-        0x79 | 0x7C | 0x7D | 0x7E => 3,
-        0x8C | 0x8D | 0x8E => 3,
+        0x19 | 0x1B | 0x1C | 0x1D | 0x1E | 0x1F => 3,
+        0x20 | 0x2C | 0x2D | 0x2E | 0x2F => 3,
+        0x39 | 0x3B | 0x3C | 0x3D | 0x3E | 0x3F => 3,
+        0x4C | 0x4D | 0x4E | 0x4F => 3,
+        0x59 | 0x5B | 0x5C | 0x5D | 0x5E | 0x5F => 3,
+        0x6C | 0x6D | 0x6E | 0x6F => 3,
+        0x79 | 0x7B | 0x7C | 0x7D | 0x7E | 0x7F => 3,
+        0x8C | 0x8D | 0x8E | 0x8F => 3,
         0x99 | 0x9C | 0x9D | 0x9E => 3,
-        0xAC | 0xAD | 0xAE => 3,
-        0xB9 | 0xBC | 0xBD | 0xBE => 3,
-        0xCC | 0xCD | 0xCE => 3,
-        0xD9 | 0xDC | 0xDD | 0xDE => 3,
-        0xEC | 0xED | 0xEE => 3,
-        0xF9 | 0xFC | 0xFD | 0xFE => 3,
+        0xAC | 0xAD | 0xAE | 0xAF => 3,
+        0xB9 | 0xBC | 0xBD | 0xBE | 0xBF => 3,
+        0xCC | 0xCD | 0xCE | 0xCF => 3,
+        0xD9 | 0xDB | 0xDC | 0xDD | 0xDE | 0xDF => 3,
+        0xEC | 0xED | 0xEE | 0xEF => 3,
+        0xF9 | 0xFB | 0xFC | 0xFD | 0xFE | 0xFF => 3,
 
         _ => 1,
     }

@@ -139,7 +139,7 @@ static S_STX_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs),
 static S_STY_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::WriteAddrY, N)];
 
 // JMP
-static S_JMP_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), i(I::JumpAbs)];
+static S_JMP_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::JmpAbs)];
 static S_JMP_IND: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), i(I::JumpInd), NONE];
 
 // Absolute indexed X read (with page-cross handling)
@@ -182,7 +182,15 @@ static S_ROR_A: &[MicroOp] = &[i(I::RorA)];
 
 static S_NOP_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::ReadAddr, N)];
 
+static S_NOP_ZPX: &[MicroOp] = &[m(B::ReadPC1, N), b(B::ReadDummyZpX), m(B::ReadDummy, N)];
+
+static S_NOP_IMM: &[MicroOp] = &[m(B::ReadPC1, N)];
+
 static S_ANC_A: &[MicroOp] = &[m(B::ReadPC1, I::Anc)];
+
+static S_ALR_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Alr)];
+
+static S_ARR_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Arr)];
 
 // RMW absolute
 static S_ASL_ABS: &[MicroOp] = &[
@@ -384,9 +392,8 @@ static S_STA_INDX: &[MicroOp] = &[
 macro_rules! branch_seq {
     ($cond:ident) => {
         &[
-            m(BN, I::$cond),
-            m(BN, I::SkipIfNotTaken(2)),
-            m(BN, I::SkipIfNotCrossed(1)),
+            m(B::ReadPC1, I::$cond),
+            m(B::ReadDummy, I::SkipIfNotCrossed(1)),
             m(B::ReadDummy, N),
         ]
     };
@@ -427,7 +434,7 @@ static S_BRK: &[MicroOp] = &[
 
 // Indirect indexed (zp),Y read — 5 cycles, +1 if page cross
 // Note: SetAddrIndY performs both zp pointer reads internally (simplification).
-static S_ORA_INDY: &[MicroOp] = &[m(B::ReadPC1, N), m(BN, I::SetAddrIndY), X_DUMMY, m(B::ReadAddr, I::Ora)];
+static S_ORA_INDY: &[MicroOp] = &[b(B::ReadPC1), m(BN, I::SetAddrIndY), X_DUMMY, m(B::ReadAddr, I::Ora)];
 static S_AND_INDY: &[MicroOp] = &[m(B::ReadPC1, N), m(BN, I::SetAddrIndY), X_DUMMY, m(B::ReadAddr, I::And)];
 static S_EOR_INDY: &[MicroOp] = &[m(B::ReadPC1, N), m(BN, I::SetAddrIndY), X_DUMMY, m(B::ReadAddr, I::Eor)];
 static S_ADC_INDY: &[MicroOp] = &[m(B::ReadPC1, N), m(BN, I::SetAddrIndY), X_DUMMY, m(B::ReadAddr, I::Adc)];
@@ -518,6 +525,7 @@ macro_rules! rmw_indy {
     ($alu:ident) => {
         &[
             m(B::ReadPC1, N),
+            NONE,
             m(BN, I::SetAddrIndY),
             m(B::ReadAddr, N),
             m(B::ReadAddr, N),
@@ -586,6 +594,8 @@ static S_LAX_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::Lax)];
 static S_LAX_ZPY: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadDummyZpY, N), m(B::ReadAddr, I::Lax)];
 static S_LAX_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::ReadAddr, I::Lax)];
 static S_LAX_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::ReadAddr, I::Lax)];
+
+static S_LAX_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Lax)];
 static S_LAX_INDX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
@@ -632,40 +642,40 @@ pub static OPCODE_SEQUENCES: [&[MicroOp]; 256] = [
     S_BMI, S_AND_INDY, S_JAM, S_RLA_INDY, S_NOP_ZP, S_AND_ZPX, S_ROL_ZPX, S_RLA_ZPX, S_SEC, S_AND_ABSY, S_NOP, S_RLA_ABSY,
     S_NOP_ABSX, S_AND_ABSX, S_ROL_ABSX, S_RLA_ABSX,
     // 0x40-0x4F
-    S_RTI, S_EOR_INDX, S_JAM, S_SRE_INDX, S_NOP_ZP, S_EOR_ZP, S_LSR_ZP, S_SRE_ZP, S_PHA, S_EOR_IMM, S_LSR_A, EMPTY,
+    S_RTI, S_EOR_INDX, S_JAM, S_SRE_INDX, S_NOP_ZP, S_EOR_ZP, S_LSR_ZP, S_SRE_ZP, S_PHA, S_EOR_IMM, S_LSR_A, S_ALR_IMM,
     S_JMP_ABS, S_EOR_ABS, S_LSR_ABS, S_SRE_ABS,
     // 0x50-0x5F
-    S_BVC, S_EOR_INDY, S_JAM, S_SRE_INDY, EMPTY, S_EOR_ZPX, S_LSR_ZPX, S_SRE_ZPX, S_CLI, S_EOR_ABSY, S_NOP, S_SRE_ABSY,
+    S_BVC, S_EOR_INDY, S_JAM, S_SRE_INDY, S_NOP_ZPX, S_EOR_ZPX, S_LSR_ZPX, S_SRE_ZPX, S_CLI, S_EOR_ABSY, S_NOP, S_SRE_ABSY,
     S_NOP_ABSX, S_EOR_ABSX, S_LSR_ABSX, S_SRE_ABSX,
     // 0x60-0x6F
-    S_RTS, S_ADC_INDX, S_JAM, S_RRA_INDX, S_NOP_ZP, S_ADC_ZP, S_ROR_ZP, S_RRA_ZP, S_PLA, S_ADC_IMM, S_ROR_A, EMPTY,
+    S_RTS, S_ADC_INDX, S_JAM, S_RRA_INDX, S_NOP_ZP, S_ADC_ZP, S_ROR_ZP, S_RRA_ZP, S_PLA, S_ADC_IMM, S_ROR_A, S_ARR_IMM,
     S_JMP_IND, S_ADC_ABS, S_ROR_ABS, S_RRA_ABS,
     // 0x70-0x7F
-    S_BVS, S_ADC_INDY, S_JAM, S_RRA_INDY, EMPTY, S_ADC_ZPX, S_ROR_ZPX, S_RRA_ZPX, S_SEI, S_ADC_ABSY, S_NOP, S_RRA_ABSY,
+    S_BVS, S_ADC_INDY, S_JAM, S_RRA_INDY, S_NOP_ZPX, S_ADC_ZPX, S_ROR_ZPX, S_RRA_ZPX, S_SEI, S_ADC_ABSY, S_NOP, S_RRA_ABSY,
     S_NOP_ABSX, S_ADC_ABSX, S_ROR_ABSX, S_RRA_ABSX,
     // 0x80-0x8F
-    EMPTY, S_STA_INDX, EMPTY, S_SAX_INDX, S_STY_ZP, S_STA_ZP, S_STX_ZP, S_SAX_ZP, S_DEY, EMPTY, S_TXA, EMPTY,
+    S_NOP_IMM, S_STA_INDX, S_NOP_IMM, S_SAX_INDX, S_STY_ZP, S_STA_ZP, S_STX_ZP, S_SAX_ZP, S_DEY, S_NOP_IMM, S_TXA, EMPTY,
     S_STY_ABS, S_STA_ABS, S_STX_ABS, S_SAX_ABS,
     // 0x90-0x9F
     S_BCC, S_STA_INDY, S_JAM, EMPTY, S_STY_ZPX, S_STA_ZPX, S_STX_ZPY, S_SAX_ZPY, S_TYA, S_STA_ABSY, S_TXS, EMPTY,
     EMPTY, S_STA_ABSX, EMPTY, EMPTY,
     // 0xA0-0xAF
     S_LDY_IMM, S_LDA_INDX, S_LDX_IMM, S_LAX_INDX, S_LDY_ZP, S_LDA_ZP, S_LDX_ZP, S_LAX_ZP, S_TAY, S_LDA_IMM, S_TAX,
-    EMPTY, S_LDY_ABS, S_LDA_ABS, S_LDX_ABS, S_LAX_ABS,
+    S_LAX_IMM, S_LDY_ABS, S_LDA_ABS, S_LDX_ABS, S_LAX_ABS,
     // 0xB0-0xBF
     S_BCS, S_LDA_INDY, S_JAM, S_LAX_INDY, S_LDY_ZPX, S_LDA_ZPX, S_LDX_ZPY, S_LAX_ZPY, S_CLV, S_LDA_ABSY, S_TSX, EMPTY,
     S_LDY_ABSX, S_LDA_ABSX, S_LDX_ABSY, S_LAX_ABSY,
     // 0xC0-0xCF
-    S_CPY_IMM, S_CMP_INDX, EMPTY, S_DCP_INDX, S_CPY_ZP, S_CMP_ZP, S_DEC_ZP, S_DCP_ZP, S_INY, S_CMP_IMM, S_DEX, EMPTY,
+    S_CPY_IMM, S_CMP_INDX, S_NOP_IMM, S_DCP_INDX, S_CPY_ZP, S_CMP_ZP, S_DEC_ZP, S_DCP_ZP, S_INY, S_CMP_IMM, S_DEX, EMPTY,
     S_CPY_ABS, S_CMP_ABS, S_DEC_ABS, S_DCP_ABS,
     // 0xD0-0xDF
-    S_BNE, S_CMP_INDY, S_JAM, S_DCP_INDY, EMPTY, S_CMP_ZPX, S_DEC_ZPX, S_DCP_ZPX, S_CLD, S_CMP_ABSY, S_NOP, S_DCP_ABSY,
+    S_BNE, S_CMP_INDY, S_JAM, S_DCP_INDY, S_NOP_ZPX, S_CMP_ZPX, S_DEC_ZPX, S_DCP_ZPX, S_CLD, S_CMP_ABSY, S_NOP, S_DCP_ABSY,
     S_NOP_ABSX, S_CMP_ABSX, S_DEC_ABSX, S_DCP_ABSX,
     // 0xE0-0xEF
-    S_CPX_IMM, S_SBC_INDX, EMPTY, S_ISC_INDX, S_CPX_ZP, S_SBC_ZP, S_INC_ZP, S_ISC_ZP, S_INX, S_SBC_IMM, S_NOP, EMPTY,
+    S_CPX_IMM, S_SBC_INDX, S_NOP_IMM, S_ISC_INDX, S_CPX_ZP, S_SBC_ZP, S_INC_ZP, S_ISC_ZP, S_INX, S_SBC_IMM, S_NOP, S_SBC_IMM,
     S_CPX_ABS, S_SBC_ABS, S_INC_ABS, S_ISC_ABS,
     // 0xF0-0xFF
-    S_BEQ, S_SBC_INDY, S_JAM, S_ISC_INDY, EMPTY, S_SBC_ZPX, S_INC_ZPX, S_ISC_ZPX, S_SED, S_SBC_ABSY, S_NOP, S_ISC_ABSY,
+    S_BEQ, S_SBC_INDY, S_JAM, S_ISC_INDY, S_NOP_ZPX, S_SBC_ZPX, S_INC_ZPX, S_ISC_ZPX, S_SED, S_SBC_ABSY, S_NOP, S_ISC_ABSY,
     S_NOP_ABSX, S_SBC_ABSX, S_INC_ABSX, S_ISC_ABSX,
 ];
 

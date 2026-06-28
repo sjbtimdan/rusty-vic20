@@ -197,6 +197,8 @@ pub enum InternalOp {
     // ── Unofficial opcode ALU operations (RMW memory then combine with A) ──
     /// A = data_latch, X = data_latch; sets Z,N (LAX).
     Lax,
+    /// A = A & data_latch; X = A; sets Z,N from result (LAX immediate).
+    LaxImm,
     /// data_latch <<= 1; C = old bit 7; Z,N from data_latch; A |= data_latch; Z,N from A (SLO).
     Slo,
     /// data_latch = (data_latch << 1) | C; C = old bit 7; Z,N from data_latch; A &= data_latch; Z,N from A (RLA).
@@ -211,6 +213,10 @@ pub enum InternalOp {
     Isc,
     /// A = A & data_latch; Z,N from result; C = N (ANC immediate).
     Anc,
+    /// A = (A & data_latch) >> 1; N=0; Z from result; C = bit 0 of AND result (ALR immediate).
+    Alr,
+    /// A = ((A & data_latch) >> 1) | (C << 7); C = bit 0 of AND result; V = bit6 ^ bit5 of result (ARR immediate).
+    Arr,
 
     // ── Control flow and branches ──
     /// Read offset from PC+1; if C=0, compute target PC and set branch_taken/page_crossed.
@@ -232,6 +238,8 @@ pub enum InternalOp {
 
     /// PC = addr (JMP absolute).
     JumpAbs,
+    /// PC = (operands[1]<<8)|operands[0]; instruction_length=0 (JMP abs, same cycle as addr fetch).
+    JmpAbs,
     /// PC = mem[addr] with NMOS 6502 page-wrap bug (JMP indirect).
     JumpInd,
 
