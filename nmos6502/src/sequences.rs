@@ -104,6 +104,20 @@ macro_rules! seq_indy {
     };
 }
 
+macro_rules! interrupt_seq {
+    ($n:ident, $lo:expr, $hi:expr) => {
+        pub static $n: &[MicroOp] = &[
+            NONE,
+            NONE,
+            m(B::PushPCH, N),
+            m(B::PushPCL, N),
+            m(B::PushStatus, I::Fn(CPU6502::op_set_i)),
+            m(B::ReadVecLo($lo), N),
+            m(B::ReadVecHi($hi), N),
+        ];
+    };
+}
+
 macro_rules! rmw_zp {
     ($op:expr) => {
         &[R_ZP, m(B::ReadAddr, N), m(B::WriteDummy, $op), m(B::WriteAddrDL, N)]
@@ -656,25 +670,8 @@ pub static OPCODE_SEQUENCES: [&[MicroOp]; 256] = [
 
 // ── Interrupt sequences ──
 
-pub static INTERRUPT_SEQ_NMI: &[MicroOp] = &[
-    NONE,
-    NONE,
-    m(B::PushPCH, N),
-    m(B::PushPCL, N),
-    m(B::PushStatus, I::Fn(CPU6502::op_set_i)),
-    m(B::ReadVecLo(0xFFFA), N),
-    m(B::ReadVecHi(0xFFFB), N),
-];
-
-pub static INTERRUPT_SEQ_IRQ: &[MicroOp] = &[
-    NONE,
-    NONE,
-    m(B::PushPCH, N),
-    m(B::PushPCL, N),
-    m(B::PushStatus, I::Fn(CPU6502::op_set_i)),
-    m(B::ReadVecLo(0xFFFE), N),
-    m(B::ReadVecHi(0xFFFF), N),
-];
+interrupt_seq!(INTERRUPT_SEQ_NMI, 0xFFFA, 0xFFFB);
+interrupt_seq!(INTERRUPT_SEQ_IRQ, 0xFFFE, 0xFFFF);
 
 pub static INTERRUPT_SEQ_RESET: &[MicroOp] = &[
     NONE,
