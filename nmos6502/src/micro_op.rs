@@ -209,6 +209,8 @@ pub enum InternalOp {
     Dcp,
     /// data_latch += 1; Z,N from data_latch; SBC A - data_latch - (1-C); C,Z,N,V from SBC (ISC).
     Isc,
+    /// A = A & data_latch; Z,N from result; C = N (ANC immediate).
+    Anc,
 
     // ── Control flow and branches ──
     /// Read offset from PC+1; if C=0, compute target PC and set branch_taken/page_crossed.

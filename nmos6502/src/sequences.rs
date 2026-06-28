@@ -179,6 +179,8 @@ static S_LSR_A: &[MicroOp] = &[i(I::LsrA)];
 static S_ROL_A: &[MicroOp] = &[i(I::RolA)];
 static S_ROR_A: &[MicroOp] = &[i(I::RorA)];
 
+static S_ANC_A: &[MicroOp] = &[m(B::ReadPC1, I::Anc)];
+
 // RMW absolute
 static S_ASL_ABS: &[MicroOp] = &[
     m(B::ReadPC1, N),
@@ -647,13 +649,13 @@ const EMPTY: &[MicroOp] = &[];
 #[rustfmt::skip]
 pub static OPCODE_SEQUENCES: [&[MicroOp]; 256] = [
     // 0x00-0x0F
-    S_BRK, S_ORA_INDX, S_JAM, S_SLO_INDX, S_NOP_ZP, S_ORA_ZP, S_ASL_ZP, S_SLO_ZP, S_PHP, S_ORA_IMM, S_ASL_A, EMPTY, EMPTY,
+    S_BRK, S_ORA_INDX, S_JAM, S_SLO_INDX, S_NOP_ZP, S_ORA_ZP, S_ASL_ZP, S_SLO_ZP, S_PHP, S_ORA_IMM, S_ASL_A, S_ANC_A, EMPTY,
     S_ORA_ABS, S_ASL_ABS, S_SLO_ABS,
     // 0x10-0x1F
     S_BPL, S_ORA_INDY, S_JAM, S_SLO_INDY, EMPTY, S_ORA_ZPX, S_ASL_ZPX, S_SLO_ZPX, S_CLC, S_ORA_ABSY, EMPTY, S_SLO_ABSY,
     EMPTY, S_ORA_ABSX, S_ASL_ABSX, S_SLO_ABSX,
     // 0x20-0x2F
-    S_JSR, S_AND_INDX, S_JAM, S_RLA_INDX, S_BIT_ZP, S_AND_ZP, S_ROL_ZP, S_RLA_ZP, S_PLP, S_AND_IMM, S_ROL_A, EMPTY,
+    S_JSR, S_AND_INDX, S_JAM, S_RLA_INDX, S_BIT_ZP, S_AND_ZP, S_ROL_ZP, S_RLA_ZP, S_PLP, S_AND_IMM, S_ROL_A, S_ANC_A,
     S_BIT_ABS, S_AND_ABS, S_ROL_ABS, S_RLA_ABS,
     // 0x30-0x3F
     S_BMI, S_AND_INDY, S_JAM, S_RLA_INDY, EMPTY, S_AND_ZPX, S_ROL_ZPX, S_RLA_ZPX, S_SEC, S_AND_ABSY, EMPTY, S_RLA_ABSY,
