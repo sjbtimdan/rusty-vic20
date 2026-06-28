@@ -5,7 +5,10 @@
 //!
 //! Naming: `BusOp::None` = no bus access. `InternalOp::None` = no internal work.
 
-use crate::micro_op::{BusOp, InternalOp, MicroOp};
+use crate::{
+    cpu::CPU6502,
+    micro_op::{BusOp, InternalOp, MicroOp},
+};
 
 // Shorthand
 use BusOp as B;
@@ -24,16 +27,16 @@ const fn b(bus: B) -> MicroOp {
 }
 
 // Common constants
-const N: I = I::None;
+const N: I = I::Fn(CPU6502::op_none);
 const BN: B = B::None;
 const NONE: MicroOp = m(BN, N);
 
 // ── Commmon sub-sequences ──
 
-const R_ZP: MicroOp = m(B::ReadPC1, I::SetAddrZp);
+const R_ZP: MicroOp = m(B::ReadPC1, I::Fn(CPU6502::op_set_addr_zp));
 
-const C_ABSX: MicroOp = m(B::ReadPC2, I::SetAddrAbsX);
-const C_ABSY: MicroOp = m(B::ReadPC2, I::SetAddrAbsY);
+const C_ABSX: MicroOp = m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_absx));
+const C_ABSY: MicroOp = m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_absy));
 
 const X_DUMMY: MicroOp = m(B::ReadDummy, N);
 const S_NC1: MicroOp = m(BN, I::SkipIfNotCrossed(1));
@@ -42,58 +45,58 @@ const S_NC1: MicroOp = m(BN, I::SkipIfNotCrossed(1));
 
 // Implied/register
 static S_NOP: &[MicroOp] = &[NONE];
-static S_JAM: &[MicroOp] = &[m(B::ReadPC1, I::JamHalt)];
-static S_INX: &[MicroOp] = &[i(I::IncX)];
-static S_INY: &[MicroOp] = &[i(I::IncY)];
-static S_DEX: &[MicroOp] = &[i(I::DecX)];
-static S_DEY: &[MicroOp] = &[i(I::DecY)];
-static S_TXA: &[MicroOp] = &[i(I::Txa)];
-static S_TYA: &[MicroOp] = &[i(I::Tya)];
-static S_TAX: &[MicroOp] = &[i(I::Tax)];
-static S_TAY: &[MicroOp] = &[i(I::Tay)];
-static S_TSX: &[MicroOp] = &[i(I::Tsx)];
-static S_TXS: &[MicroOp] = &[i(I::Txs)];
-static S_CLC: &[MicroOp] = &[i(I::ClrC)];
-static S_SEC: &[MicroOp] = &[i(I::SetC)];
-static S_CLD: &[MicroOp] = &[i(I::ClrD)];
-static S_SED: &[MicroOp] = &[i(I::SetD)];
-static S_CLI: &[MicroOp] = &[i(I::ClrI)];
-static S_SEI: &[MicroOp] = &[i(I::SetI)];
-static S_CLV: &[MicroOp] = &[i(I::ClrV)];
+static S_JAM: &[MicroOp] = &[m(B::ReadPC1, I::Fn(CPU6502::op_jam_halt))];
+static S_INX: &[MicroOp] = &[i(I::Fn(CPU6502::op_inc_x))];
+static S_INY: &[MicroOp] = &[i(I::Fn(CPU6502::op_inc_y))];
+static S_DEX: &[MicroOp] = &[i(I::Fn(CPU6502::op_dec_x))];
+static S_DEY: &[MicroOp] = &[i(I::Fn(CPU6502::op_dec_y))];
+static S_TXA: &[MicroOp] = &[i(I::Fn(CPU6502::op_txa))];
+static S_TYA: &[MicroOp] = &[i(I::Fn(CPU6502::op_tya))];
+static S_TAX: &[MicroOp] = &[i(I::Fn(CPU6502::op_tax))];
+static S_TAY: &[MicroOp] = &[i(I::Fn(CPU6502::op_tay))];
+static S_TSX: &[MicroOp] = &[i(I::Fn(CPU6502::op_tsx))];
+static S_TXS: &[MicroOp] = &[i(I::Fn(CPU6502::op_txs))];
+static S_CLC: &[MicroOp] = &[i(I::Fn(CPU6502::op_clr_c))];
+static S_SEC: &[MicroOp] = &[i(I::Fn(CPU6502::op_set_c))];
+static S_CLD: &[MicroOp] = &[i(I::Fn(CPU6502::op_clr_d))];
+static S_SED: &[MicroOp] = &[i(I::Fn(CPU6502::op_set_d))];
+static S_CLI: &[MicroOp] = &[i(I::Fn(CPU6502::op_clr_i))];
+static S_SEI: &[MicroOp] = &[i(I::Fn(CPU6502::op_set_i))];
+static S_CLV: &[MicroOp] = &[i(I::Fn(CPU6502::op_clr_v))];
 
 // Stack
 static S_PHA: &[MicroOp] = &[NONE, m(B::PushA, N)];
 static S_PHP: &[MicroOp] = &[NONE, m(B::PushStatusB, N)];
-static S_PLA: &[MicroOp] = &[NONE, m(B::PopDummy, N), m(B::Pop, I::SetA)];
-static S_PLP: &[MicroOp] = &[NONE, m(B::PopDummy, N), m(B::Pop, I::SetStatus)];
+static S_PLA: &[MicroOp] = &[NONE, m(B::PopDummy, N), m(B::Pop, I::Fn(CPU6502::op_set_a))];
+static S_PLP: &[MicroOp] = &[NONE, m(B::PopDummy, N), m(B::Pop, I::Fn(CPU6502::op_set_status))];
 
 // Immediate
-static S_LDA_IMM: &[MicroOp] = &[m(B::ReadPC1, I::SetA)];
-static S_LDX_IMM: &[MicroOp] = &[m(B::ReadPC1, I::SetX)];
-static S_LDY_IMM: &[MicroOp] = &[m(B::ReadPC1, I::SetY)];
-static S_ADC_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Adc)];
-static S_SBC_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Sbc)];
-static S_AND_IMM: &[MicroOp] = &[m(B::ReadPC1, I::And)];
-static S_ORA_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Ora)];
-static S_EOR_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Eor)];
-static S_CMP_IMM: &[MicroOp] = &[m(B::ReadPC1, I::CmpA)];
-static S_CPX_IMM: &[MicroOp] = &[m(B::ReadPC1, I::CmpX)];
-static S_CPY_IMM: &[MicroOp] = &[m(B::ReadPC1, I::CmpY)];
+static S_LDA_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Fn(CPU6502::op_set_a))];
+static S_LDX_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Fn(CPU6502::op_set_x))];
+static S_LDY_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Fn(CPU6502::op_set_y))];
+static S_ADC_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Fn(CPU6502::op_adc))];
+static S_SBC_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Fn(CPU6502::op_sbc))];
+static S_AND_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Fn(CPU6502::op_and))];
+static S_ORA_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Fn(CPU6502::op_ora))];
+static S_EOR_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Fn(CPU6502::op_eor))];
+static S_CMP_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Fn(CPU6502::op_cmp_a))];
+static S_CPX_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Fn(CPU6502::op_cmp_x))];
+static S_CPY_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Fn(CPU6502::op_cmp_y))];
 
 // Zero page read
-static S_LDA_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::SetA)];
-static S_LDX_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::SetX)];
-static S_LDY_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::SetY)];
-static S_ADC_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::Adc)];
-static S_SBC_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::Sbc)];
-static S_AND_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::And)];
+static S_LDA_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::Fn(CPU6502::op_set_a))];
+static S_LDX_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::Fn(CPU6502::op_set_x))];
+static S_LDY_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::Fn(CPU6502::op_set_y))];
+static S_ADC_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::Fn(CPU6502::op_adc))];
+static S_SBC_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::Fn(CPU6502::op_sbc))];
+static S_AND_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::Fn(CPU6502::op_and))];
 static S_NOP_ZP: &[MicroOp] = &[R_ZP, NONE];
-static S_ORA_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::Ora)];
-static S_EOR_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::Eor)];
-static S_CMP_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::CmpA)];
-static S_CPX_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::CmpX)];
-static S_CPY_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::CmpY)];
-static S_BIT_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::Bit)];
+static S_ORA_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::Fn(CPU6502::op_ora))];
+static S_EOR_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::Fn(CPU6502::op_eor))];
+static S_CMP_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::Fn(CPU6502::op_cmp_a))];
+static S_CPX_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::Fn(CPU6502::op_cmp_x))];
+static S_CPY_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::Fn(CPU6502::op_cmp_y))];
+static S_BIT_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::Fn(CPU6502::op_bit))];
 
 // Zero page write
 static S_STA_ZP: &[MicroOp] = &[R_ZP, b(B::WriteAddrA)];
@@ -101,84 +104,295 @@ static S_STX_ZP: &[MicroOp] = &[R_ZP, b(B::WriteAddrX)];
 static S_STY_ZP: &[MicroOp] = &[R_ZP, b(B::WriteAddrY)];
 
 // Zero page indexed X read
-static S_LDA_ZPX: &[MicroOp] = &[m(B::ReadPC1, N), b(B::ReadDummyZpX), m(B::ReadAddr, I::SetA)];
-static S_LDY_ZPX: &[MicroOp] = &[m(B::ReadPC1, N), b(B::ReadDummyZpX), m(B::ReadAddr, I::SetY)];
-static S_ADC_ZPX: &[MicroOp] = &[m(B::ReadPC1, N), b(B::ReadDummyZpX), m(B::ReadAddr, I::Adc)];
-static S_SBC_ZPX: &[MicroOp] = &[m(B::ReadPC1, N), b(B::ReadDummyZpX), m(B::ReadAddr, I::Sbc)];
-static S_AND_ZPX: &[MicroOp] = &[m(B::ReadPC1, N), b(B::ReadDummyZpX), m(B::ReadAddr, I::And)];
-static S_ORA_ZPX: &[MicroOp] = &[m(B::ReadPC1, N), b(B::ReadDummyZpX), m(B::ReadAddr, I::Ora)];
-static S_EOR_ZPX: &[MicroOp] = &[m(B::ReadPC1, N), b(B::ReadDummyZpX), m(B::ReadAddr, I::Eor)];
-static S_CMP_ZPX: &[MicroOp] = &[m(B::ReadPC1, N), b(B::ReadDummyZpX), m(B::ReadAddr, I::CmpA)];
+static S_LDA_ZPX: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    b(B::ReadDummyZpX),
+    m(B::ReadAddr, I::Fn(CPU6502::op_set_a)),
+];
+static S_LDY_ZPX: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    b(B::ReadDummyZpX),
+    m(B::ReadAddr, I::Fn(CPU6502::op_set_y)),
+];
+static S_ADC_ZPX: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    b(B::ReadDummyZpX),
+    m(B::ReadAddr, I::Fn(CPU6502::op_adc)),
+];
+static S_SBC_ZPX: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    b(B::ReadDummyZpX),
+    m(B::ReadAddr, I::Fn(CPU6502::op_sbc)),
+];
+static S_AND_ZPX: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    b(B::ReadDummyZpX),
+    m(B::ReadAddr, I::Fn(CPU6502::op_and)),
+];
+static S_ORA_ZPX: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    b(B::ReadDummyZpX),
+    m(B::ReadAddr, I::Fn(CPU6502::op_ora)),
+];
+static S_EOR_ZPX: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    b(B::ReadDummyZpX),
+    m(B::ReadAddr, I::Fn(CPU6502::op_eor)),
+];
+static S_CMP_ZPX: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    b(B::ReadDummyZpX),
+    m(B::ReadAddr, I::Fn(CPU6502::op_cmp_a)),
+];
 
 // Zero page indexed X write
 static S_STA_ZPX: &[MicroOp] = &[m(B::ReadPC1, N), b(B::ReadDummyZpX), m(B::WriteAddrA, N)];
 static S_STY_ZPX: &[MicroOp] = &[m(B::ReadPC1, N), b(B::ReadDummyZpX), m(B::WriteAddrY, N)];
 
 // Zero page indexed Y
-static S_LDX_ZPY: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadDummyZpY, N), m(B::ReadAddr, I::SetX)];
+static S_LDX_ZPY: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadDummyZpY, N),
+    m(B::ReadAddr, I::Fn(CPU6502::op_set_x)),
+];
 static S_STX_ZPY: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadDummyZpY, N), m(B::WriteAddrX, N)];
 
 // Absolute read
-static S_LDA_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::ReadAddr, I::SetA)];
-static S_LDX_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::ReadAddr, I::SetX)];
-static S_LDY_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::ReadAddr, I::SetY)];
-static S_ADC_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::ReadAddr, I::Adc)];
-static S_SBC_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::ReadAddr, I::Sbc)];
-static S_AND_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::ReadAddr, I::And)];
-static S_ORA_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::ReadAddr, I::Ora)];
-static S_EOR_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::ReadAddr, I::Eor)];
-static S_CMP_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::ReadAddr, I::CmpA)];
-static S_CPX_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::ReadAddr, I::CmpX)];
-static S_CPY_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::ReadAddr, I::CmpY)];
-static S_BIT_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::ReadAddr, I::Bit)];
-static S_NOP_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), NONE];
+static S_LDA_ABS: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
+    m(B::ReadAddr, I::Fn(CPU6502::op_set_a)),
+];
+static S_LDX_ABS: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
+    m(B::ReadAddr, I::Fn(CPU6502::op_set_x)),
+];
+static S_LDY_ABS: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
+    m(B::ReadAddr, I::Fn(CPU6502::op_set_y)),
+];
+static S_ADC_ABS: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
+    m(B::ReadAddr, I::Fn(CPU6502::op_adc)),
+];
+static S_SBC_ABS: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
+    m(B::ReadAddr, I::Fn(CPU6502::op_sbc)),
+];
+static S_AND_ABS: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
+    m(B::ReadAddr, I::Fn(CPU6502::op_and)),
+];
+static S_ORA_ABS: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
+    m(B::ReadAddr, I::Fn(CPU6502::op_ora)),
+];
+static S_EOR_ABS: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
+    m(B::ReadAddr, I::Fn(CPU6502::op_eor)),
+];
+static S_CMP_ABS: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
+    m(B::ReadAddr, I::Fn(CPU6502::op_cmp_a)),
+];
+static S_CPX_ABS: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
+    m(B::ReadAddr, I::Fn(CPU6502::op_cmp_x)),
+];
+static S_CPY_ABS: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
+    m(B::ReadAddr, I::Fn(CPU6502::op_cmp_y)),
+];
+static S_BIT_ABS: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
+    m(B::ReadAddr, I::Fn(CPU6502::op_bit)),
+];
+static S_NOP_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)), NONE];
 
 // Absolute write
-static S_STA_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::WriteAddrA, N)];
-static S_STX_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::WriteAddrX, N)];
-static S_STY_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::WriteAddrY, N)];
+static S_STA_ABS: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
+    m(B::WriteAddrA, N),
+];
+static S_STX_ABS: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
+    m(B::WriteAddrX, N),
+];
+static S_STY_ABS: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
+    m(B::WriteAddrY, N),
+];
 
 // JMP
-static S_JMP_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::JmpAbs)];
-static S_JMP_IND: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), i(I::JumpInd), NONE];
+static S_JMP_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::Fn(CPU6502::op_jmp_abs))];
+static S_JMP_IND: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
+    i(I::Fn(CPU6502::op_jump_ind)),
+    NONE,
+];
 
 // Absolute indexed X read (with page-cross handling)
-static S_LDA_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::ReadAddr, I::SetA)];
-static S_LDY_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::ReadAddr, I::SetY)];
-static S_ADC_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::ReadAddr, I::Adc)];
-static S_SBC_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::ReadAddr, I::Sbc)];
-static S_AND_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::ReadAddr, I::And)];
-static S_ORA_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::ReadAddr, I::Ora)];
-static S_EOR_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::ReadAddr, I::Eor)];
-static S_CMP_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::ReadAddr, I::CmpA)];
+static S_LDA_ABSX: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    C_ABSX,
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_set_a)),
+];
+static S_LDY_ABSX: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    C_ABSX,
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_set_y)),
+];
+static S_ADC_ABSX: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    C_ABSX,
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_adc)),
+];
+static S_SBC_ABSX: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    C_ABSX,
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_sbc)),
+];
+static S_AND_ABSX: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    C_ABSX,
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_and)),
+];
+static S_ORA_ABSX: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    C_ABSX,
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_ora)),
+];
+static S_EOR_ABSX: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    C_ABSX,
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_eor)),
+];
+static S_CMP_ABSX: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    C_ABSX,
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_cmp_a)),
+];
 
 // Absolute indexed Y read
-static S_LDA_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::ReadAddr, I::SetA)];
-static S_LDX_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::ReadAddr, I::SetX)];
-static S_ADC_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::ReadAddr, I::Adc)];
-static S_SBC_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::ReadAddr, I::Sbc)];
-static S_AND_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::ReadAddr, I::And)];
-static S_ORA_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::ReadAddr, I::Ora)];
-static S_EOR_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::ReadAddr, I::Eor)];
-static S_CMP_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::ReadAddr, I::CmpA)];
+static S_LDA_ABSY: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    C_ABSY,
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_set_a)),
+];
+static S_LDX_ABSY: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    C_ABSY,
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_set_x)),
+];
+static S_ADC_ABSY: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    C_ABSY,
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_adc)),
+];
+static S_SBC_ABSY: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    C_ABSY,
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_sbc)),
+];
+static S_AND_ABSY: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    C_ABSY,
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_and)),
+];
+static S_ORA_ABSY: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    C_ABSY,
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_ora)),
+];
+static S_EOR_ABSY: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    C_ABSY,
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_eor)),
+];
+static S_CMP_ABSY: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    C_ABSY,
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_cmp_a)),
+];
 
 // Absolute indexed write (always 5 cycles)
 static S_STA_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::WriteAddrA, N)];
 static S_STA_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::WriteAddrA, N)];
 
 // RMW zero page
-static S_ASL_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, N), m(B::WriteDummy, I::Asl), m(B::WriteAddrDL, N)];
-static S_LSR_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, N), m(B::WriteDummy, I::Lsr), m(B::WriteAddrDL, N)];
-static S_ROL_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, N), m(B::WriteDummy, I::Rol), m(B::WriteAddrDL, N)];
-static S_ROR_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, N), m(B::WriteDummy, I::Ror), m(B::WriteAddrDL, N)];
-static S_INC_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, N), m(B::WriteDummy, I::Inc), m(B::WriteAddrDL, N)];
-static S_DEC_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, N), m(B::WriteDummy, I::Dec), m(B::WriteAddrDL, N)];
+static S_ASL_ZP: &[MicroOp] = &[
+    R_ZP,
+    m(B::ReadAddr, N),
+    m(B::WriteDummy, I::Fn(CPU6502::op_asl)),
+    m(B::WriteAddrDL, N),
+];
+static S_LSR_ZP: &[MicroOp] = &[
+    R_ZP,
+    m(B::ReadAddr, N),
+    m(B::WriteDummy, I::Fn(CPU6502::op_lsr)),
+    m(B::WriteAddrDL, N),
+];
+static S_ROL_ZP: &[MicroOp] = &[
+    R_ZP,
+    m(B::ReadAddr, N),
+    m(B::WriteDummy, I::Fn(CPU6502::op_rol)),
+    m(B::WriteAddrDL, N),
+];
+static S_ROR_ZP: &[MicroOp] = &[
+    R_ZP,
+    m(B::ReadAddr, N),
+    m(B::WriteDummy, I::Fn(CPU6502::op_ror)),
+    m(B::WriteAddrDL, N),
+];
+static S_INC_ZP: &[MicroOp] = &[
+    R_ZP,
+    m(B::ReadAddr, N),
+    m(B::WriteDummy, I::Fn(CPU6502::op_inc)),
+    m(B::WriteAddrDL, N),
+];
+static S_DEC_ZP: &[MicroOp] = &[
+    R_ZP,
+    m(B::ReadAddr, N),
+    m(B::WriteDummy, I::Fn(CPU6502::op_dec)),
+    m(B::WriteAddrDL, N),
+];
 
 // RMW accumulator
-static S_ASL_A: &[MicroOp] = &[i(I::AslA)];
-static S_LSR_A: &[MicroOp] = &[i(I::LsrA)];
-static S_ROL_A: &[MicroOp] = &[i(I::RolA)];
-static S_ROR_A: &[MicroOp] = &[i(I::RorA)];
+static S_ASL_A: &[MicroOp] = &[i(I::Fn(CPU6502::op_asl_a))];
+static S_LSR_A: &[MicroOp] = &[i(I::Fn(CPU6502::op_lsr_a))];
+static S_ROL_A: &[MicroOp] = &[i(I::Fn(CPU6502::op_rol_a))];
+static S_ROR_A: &[MicroOp] = &[i(I::Fn(CPU6502::op_ror_a))];
 
 static S_NOP_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::ReadAddr, N)];
 
@@ -186,53 +400,53 @@ static S_NOP_ZPX: &[MicroOp] = &[m(B::ReadPC1, N), b(B::ReadDummyZpX), m(B::Read
 
 static S_NOP_IMM: &[MicroOp] = &[m(B::ReadPC1, N)];
 
-static S_ANC_A: &[MicroOp] = &[m(B::ReadPC1, I::Anc)];
+static S_ANC_A: &[MicroOp] = &[m(B::ReadPC1, I::Fn(CPU6502::op_anc))];
 
-static S_ALR_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Alr)];
+static S_ALR_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Fn(CPU6502::op_alr))];
 
-static S_ARR_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Arr)];
+static S_ARR_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Fn(CPU6502::op_arr))];
 
 // RMW absolute
 static S_ASL_ABS: &[MicroOp] = &[
     m(B::ReadPC1, N),
-    m(B::ReadPC2, I::SetAddrAbs),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, I::Asl),
+    m(B::WriteDummy, I::Fn(CPU6502::op_asl)),
     m(B::WriteAddrDL, N),
 ];
 static S_LSR_ABS: &[MicroOp] = &[
     m(B::ReadPC1, N),
-    m(B::ReadPC2, I::SetAddrAbs),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, I::Lsr),
+    m(B::WriteDummy, I::Fn(CPU6502::op_lsr)),
     m(B::WriteAddrDL, N),
 ];
 static S_ROL_ABS: &[MicroOp] = &[
     m(B::ReadPC1, N),
-    m(B::ReadPC2, I::SetAddrAbs),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, I::Rol),
+    m(B::WriteDummy, I::Fn(CPU6502::op_rol)),
     m(B::WriteAddrDL, N),
 ];
 static S_ROR_ABS: &[MicroOp] = &[
     m(B::ReadPC1, N),
-    m(B::ReadPC2, I::SetAddrAbs),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, I::Ror),
+    m(B::WriteDummy, I::Fn(CPU6502::op_ror)),
     m(B::WriteAddrDL, N),
 ];
 static S_INC_ABS: &[MicroOp] = &[
     m(B::ReadPC1, N),
-    m(B::ReadPC2, I::SetAddrAbs),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, I::Inc),
+    m(B::WriteDummy, I::Fn(CPU6502::op_inc)),
     m(B::WriteAddrDL, N),
 ];
 static S_DEC_ABS: &[MicroOp] = &[
     m(B::ReadPC1, N),
-    m(B::ReadPC2, I::SetAddrAbs),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, I::Dec),
+    m(B::WriteDummy, I::Fn(CPU6502::op_dec)),
     m(B::WriteAddrDL, N),
 ];
 
@@ -242,7 +456,7 @@ static S_ASL_ABSX: &[MicroOp] = &[
     C_ABSX,
     m(B::ReadAddr, N),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, I::Asl),
+    m(B::WriteDummy, I::Fn(CPU6502::op_asl)),
     m(B::WriteAddrDL, N),
 ];
 static S_LSR_ABSX: &[MicroOp] = &[
@@ -250,7 +464,7 @@ static S_LSR_ABSX: &[MicroOp] = &[
     C_ABSX,
     m(B::ReadAddr, N),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, I::Lsr),
+    m(B::WriteDummy, I::Fn(CPU6502::op_lsr)),
     m(B::WriteAddrDL, N),
 ];
 static S_ROL_ABSX: &[MicroOp] = &[
@@ -258,7 +472,7 @@ static S_ROL_ABSX: &[MicroOp] = &[
     C_ABSX,
     m(B::ReadAddr, N),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, I::Rol),
+    m(B::WriteDummy, I::Fn(CPU6502::op_rol)),
     m(B::WriteAddrDL, N),
 ];
 static S_ROR_ABSX: &[MicroOp] = &[
@@ -266,7 +480,7 @@ static S_ROR_ABSX: &[MicroOp] = &[
     C_ABSX,
     m(B::ReadAddr, N),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, I::Ror),
+    m(B::WriteDummy, I::Fn(CPU6502::op_ror)),
     m(B::WriteAddrDL, N),
 ];
 static S_INC_ABSX: &[MicroOp] = &[
@@ -274,7 +488,7 @@ static S_INC_ABSX: &[MicroOp] = &[
     C_ABSX,
     m(B::ReadAddr, N),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, I::Inc),
+    m(B::WriteDummy, I::Fn(CPU6502::op_inc)),
     m(B::WriteAddrDL, N),
 ];
 static S_DEC_ABSX: &[MicroOp] = &[
@@ -282,7 +496,7 @@ static S_DEC_ABSX: &[MicroOp] = &[
     C_ABSX,
     m(B::ReadAddr, N),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, I::Dec),
+    m(B::WriteDummy, I::Fn(CPU6502::op_dec)),
     m(B::WriteAddrDL, N),
 ];
 
@@ -291,42 +505,42 @@ static S_ASL_ZPX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, I::Asl),
+    m(B::WriteDummy, I::Fn(CPU6502::op_asl)),
     m(B::WriteAddrDL, N),
 ];
 static S_LSR_ZPX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, I::Lsr),
+    m(B::WriteDummy, I::Fn(CPU6502::op_lsr)),
     m(B::WriteAddrDL, N),
 ];
 static S_ROL_ZPX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, I::Rol),
+    m(B::WriteDummy, I::Fn(CPU6502::op_rol)),
     m(B::WriteAddrDL, N),
 ];
 static S_ROR_ZPX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, I::Ror),
+    m(B::WriteDummy, I::Fn(CPU6502::op_ror)),
     m(B::WriteAddrDL, N),
 ];
 static S_INC_ZPX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, I::Inc),
+    m(B::WriteDummy, I::Fn(CPU6502::op_inc)),
     m(B::WriteAddrDL, N),
 ];
 static S_DEC_ZPX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, I::Dec),
+    m(B::WriteDummy, I::Fn(CPU6502::op_dec)),
     m(B::WriteAddrDL, N),
 ];
 
@@ -334,78 +548,78 @@ static S_DEC_ZPX: &[MicroOp] = &[
 static S_ORA_INDX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
-    m(BN, I::SetAddrIndX),
+    m(BN, I::Fn(CPU6502::op_set_addr_indx)),
     m(B::ReadAddr, N),
-    m(B::ReadAddr, I::Ora),
+    m(B::ReadAddr, I::Fn(CPU6502::op_ora)),
 ];
 static S_AND_INDX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
-    m(BN, I::SetAddrIndX),
+    m(BN, I::Fn(CPU6502::op_set_addr_indx)),
     m(B::ReadAddr, N),
-    m(B::ReadAddr, I::And),
+    m(B::ReadAddr, I::Fn(CPU6502::op_and)),
 ];
 static S_EOR_INDX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
-    m(BN, I::SetAddrIndX),
+    m(BN, I::Fn(CPU6502::op_set_addr_indx)),
     m(B::ReadAddr, N),
-    m(B::ReadAddr, I::Eor),
+    m(B::ReadAddr, I::Fn(CPU6502::op_eor)),
 ];
 static S_ADC_INDX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
-    m(BN, I::SetAddrIndX),
+    m(BN, I::Fn(CPU6502::op_set_addr_indx)),
     m(B::ReadAddr, N),
-    m(B::ReadAddr, I::Adc),
+    m(B::ReadAddr, I::Fn(CPU6502::op_adc)),
 ];
 static S_SBC_INDX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
-    m(BN, I::SetAddrIndX),
+    m(BN, I::Fn(CPU6502::op_set_addr_indx)),
     m(B::ReadAddr, N),
-    m(B::ReadAddr, I::Sbc),
+    m(B::ReadAddr, I::Fn(CPU6502::op_sbc)),
 ];
 static S_CMP_INDX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
-    m(BN, I::SetAddrIndX),
+    m(BN, I::Fn(CPU6502::op_set_addr_indx)),
     m(B::ReadAddr, N),
-    m(B::ReadAddr, I::CmpA),
+    m(B::ReadAddr, I::Fn(CPU6502::op_cmp_a)),
 ];
 static S_LDA_INDX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
-    m(BN, I::SetAddrIndX),
+    m(BN, I::Fn(CPU6502::op_set_addr_indx)),
     m(B::ReadAddr, N),
-    m(B::ReadAddr, I::SetA),
+    m(B::ReadAddr, I::Fn(CPU6502::op_set_a)),
 ];
 static S_STA_INDX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
-    m(BN, I::SetAddrIndX),
+    m(BN, I::Fn(CPU6502::op_set_addr_indx)),
     m(B::ReadAddr, N),
     m(B::WriteAddrA, N),
 ];
 
 // Branches
 macro_rules! branch_seq {
-    ($cond:ident) => {
+    ($op:expr) => {
         &[
-            m(B::ReadPC1, I::$cond),
+            m(B::ReadPC1, $op),
             m(B::ReadDummy, I::SkipIfNotCrossed(1)),
             m(B::ReadDummy, N),
         ]
     };
 }
-static S_BCC: &[MicroOp] = branch_seq!(BranchCC);
-static S_BCS: &[MicroOp] = branch_seq!(BranchCS);
-static S_BEQ: &[MicroOp] = branch_seq!(BranchEQ);
-static S_BNE: &[MicroOp] = branch_seq!(BranchNE);
-static S_BMI: &[MicroOp] = branch_seq!(BranchMI);
-static S_BPL: &[MicroOp] = branch_seq!(BranchPL);
-static S_BVC: &[MicroOp] = branch_seq!(BranchVC);
-static S_BVS: &[MicroOp] = branch_seq!(BranchVS);
+static S_BCC: &[MicroOp] = branch_seq!(I::Fn(CPU6502::op_branch_cc));
+static S_BCS: &[MicroOp] = branch_seq!(I::Fn(CPU6502::op_branch_cs));
+static S_BEQ: &[MicroOp] = branch_seq!(I::Fn(CPU6502::op_branch_eq));
+static S_BNE: &[MicroOp] = branch_seq!(I::Fn(CPU6502::op_branch_ne));
+static S_BMI: &[MicroOp] = branch_seq!(I::Fn(CPU6502::op_branch_mi));
+static S_BPL: &[MicroOp] = branch_seq!(I::Fn(CPU6502::op_branch_pl));
+static S_BVC: &[MicroOp] = branch_seq!(I::Fn(CPU6502::op_branch_vc));
+static S_BVS: &[MicroOp] = branch_seq!(I::Fn(CPU6502::op_branch_vs));
 
 // JSR / RTS / RTI / BRK
 static S_JSR: &[MicroOp] = &[
@@ -413,212 +627,264 @@ static S_JSR: &[MicroOp] = &[
     NONE,
     m(B::PushReturnHi, N),
     m(B::PushReturnLo, N),
-    m(B::ReadPC2, I::JsrC6),
+    m(B::ReadPC2, I::Fn(CPU6502::op_jsr_c6)),
 ];
-static S_RTS: &[MicroOp] = &[NONE, m(B::PopDummy, N), m(B::PopPCL, N), m(B::PopPCH, I::RtsFinish)];
+static S_RTS: &[MicroOp] = &[
+    NONE,
+    m(B::PopDummy, N),
+    m(B::PopPCL, N),
+    m(B::PopPCH, I::Fn(CPU6502::op_rts_finish)),
+];
 static S_RTI: &[MicroOp] = &[
     NONE,
     m(B::PopDummy, N),
-    m(B::Pop, I::SetStatus),
+    m(B::Pop, I::Fn(CPU6502::op_set_status)),
     m(B::PopPCL, N),
-    m(B::PopPCH, I::RtiFinish),
+    m(B::PopPCH, I::Fn(CPU6502::op_rti_finish)),
 ];
 static S_BRK: &[MicroOp] = &[
     m(B::ReadPC1, N),
     m(B::PushReturnHi, N),
     m(B::PushReturnLo, N),
-    m(B::PushStatusB, I::SetI),
+    m(B::PushStatusB, I::Fn(CPU6502::op_set_i)),
     m(B::ReadVecLo(0xFFFE), N),
     m(B::ReadVecHi(0xFFFF), N),
 ];
 
 // Indirect indexed (zp),Y read — 5 cycles, +1 if page cross
 // Note: SetAddrIndY performs both zp pointer reads internally (simplification).
-static S_ORA_INDY: &[MicroOp] = &[b(B::ReadPC1), m(BN, I::SetAddrIndY), X_DUMMY, m(B::ReadAddr, I::Ora)];
-static S_AND_INDY: &[MicroOp] = &[m(B::ReadPC1, N), m(BN, I::SetAddrIndY), X_DUMMY, m(B::ReadAddr, I::And)];
-static S_EOR_INDY: &[MicroOp] = &[m(B::ReadPC1, N), m(BN, I::SetAddrIndY), X_DUMMY, m(B::ReadAddr, I::Eor)];
-static S_ADC_INDY: &[MicroOp] = &[m(B::ReadPC1, N), m(BN, I::SetAddrIndY), X_DUMMY, m(B::ReadAddr, I::Adc)];
-static S_SBC_INDY: &[MicroOp] = &[m(B::ReadPC1, N), m(BN, I::SetAddrIndY), X_DUMMY, m(B::ReadAddr, I::Sbc)];
+static S_ORA_INDY: &[MicroOp] = &[
+    b(B::ReadPC1),
+    m(BN, I::Fn(CPU6502::op_set_addr_indy)),
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_ora)),
+];
+static S_AND_INDY: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(BN, I::Fn(CPU6502::op_set_addr_indy)),
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_and)),
+];
+static S_EOR_INDY: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(BN, I::Fn(CPU6502::op_set_addr_indy)),
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_eor)),
+];
+static S_ADC_INDY: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(BN, I::Fn(CPU6502::op_set_addr_indy)),
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_adc)),
+];
+static S_SBC_INDY: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(BN, I::Fn(CPU6502::op_set_addr_indy)),
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_sbc)),
+];
 static S_CMP_INDY: &[MicroOp] = &[
     m(B::ReadPC1, N),
-    m(BN, I::SetAddrIndY),
+    m(BN, I::Fn(CPU6502::op_set_addr_indy)),
     X_DUMMY,
-    m(B::ReadAddr, I::CmpA),
+    m(B::ReadAddr, I::Fn(CPU6502::op_cmp_a)),
 ];
 static S_LDA_INDY: &[MicroOp] = &[
     m(B::ReadPC1, N),
-    m(BN, I::SetAddrIndY),
+    m(BN, I::Fn(CPU6502::op_set_addr_indy)),
     X_DUMMY,
-    m(B::ReadAddr, I::SetA),
+    m(B::ReadAddr, I::Fn(CPU6502::op_set_a)),
 ];
 
 // Indirect indexed (zp),Y write — 6 cycles (always, extra dummy read)
-static S_STA_INDY: &[MicroOp] = &[m(B::ReadPC1, N), m(BN, I::SetAddrIndY), X_DUMMY, m(B::WriteAddrA, N)];
+static S_STA_INDY: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(BN, I::Fn(CPU6502::op_set_addr_indy)),
+    X_DUMMY,
+    m(B::WriteAddrA, N),
+];
 
 // ── Unofficial opcodes ──
 
 // RMW+ALU helpers (read-modify-write then combine with A)
 macro_rules! rmw_zp {
-    ($alu:ident) => {
-        &[R_ZP, m(B::ReadAddr, N), m(B::WriteDummy, I::$alu), m(B::WriteAddrDL, N)]
+    ($op:expr) => {
+        &[R_ZP, m(B::ReadAddr, N), m(B::WriteDummy, $op), m(B::WriteAddrDL, N)]
     };
 }
 macro_rules! rmw_zpx {
-    ($alu:ident) => {
+    ($op:expr) => {
         &[
             m(B::ReadPC1, N),
             b(B::ReadDummyZpX),
             m(B::ReadAddr, N),
-            m(B::WriteDummy, I::$alu),
+            m(B::WriteDummy, $op),
             m(B::WriteAddrDL, N),
         ]
     };
 }
 macro_rules! rmw_abs {
-    ($alu:ident) => {
+    ($op:expr) => {
         &[
             m(B::ReadPC1, N),
-            m(B::ReadPC2, I::SetAddrAbs),
+            m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
             m(B::ReadAddr, N),
-            m(B::WriteDummy, I::$alu),
+            m(B::WriteDummy, $op),
             m(B::WriteAddrDL, N),
         ]
     };
 }
 macro_rules! rmw_absx {
-    ($alu:ident) => {
+    ($op:expr) => {
         &[
             m(B::ReadPC1, N),
             C_ABSX,
             m(B::ReadAddr, N),
             m(B::ReadAddr, N),
-            m(B::WriteDummy, I::$alu),
+            m(B::WriteDummy, $op),
             m(B::WriteAddrDL, N),
         ]
     };
 }
 macro_rules! rmw_absy {
-    ($alu:ident) => {
+    ($op:expr) => {
         &[
             m(B::ReadPC1, N),
             C_ABSY,
             m(B::ReadAddr, N),
             m(B::ReadAddr, N),
-            m(B::WriteDummy, I::$alu),
+            m(B::WriteDummy, $op),
             m(B::WriteAddrDL, N),
         ]
     };
 }
 macro_rules! rmw_indx {
-    ($alu:ident) => {
+    ($op:expr) => {
         &[
             m(B::ReadPC1, N),
             b(B::ReadDummyZpX),
-            m(BN, I::SetAddrIndX),
+            m(BN, I::Fn(CPU6502::op_set_addr_indx)),
             m(B::ReadAddr, N),
-            m(B::WriteDummy, I::$alu),
+            m(B::WriteDummy, $op),
             m(B::WriteAddrDL, N),
         ]
     };
 }
 macro_rules! rmw_indy {
-    ($alu:ident) => {
+    ($op:expr) => {
         &[
             m(B::ReadPC1, N),
             NONE,
-            m(BN, I::SetAddrIndY),
+            m(BN, I::Fn(CPU6502::op_set_addr_indy)),
             m(B::ReadAddr, N),
             m(B::ReadAddr, N),
-            m(B::WriteDummy, I::$alu),
+            m(B::WriteDummy, $op),
             m(B::WriteAddrDL, N),
         ]
     };
 }
 
 // SLO (ASL + ORA)
-static S_SLO_ZP: &[MicroOp] = rmw_zp!(Slo);
-static S_SLO_ZPX: &[MicroOp] = rmw_zpx!(Slo);
-static S_SLO_ABS: &[MicroOp] = rmw_abs!(Slo);
-static S_SLO_ABSX: &[MicroOp] = rmw_absx!(Slo);
-static S_SLO_ABSY: &[MicroOp] = rmw_absy!(Slo);
-static S_SLO_INDX: &[MicroOp] = rmw_indx!(Slo);
-static S_SLO_INDY: &[MicroOp] = rmw_indy!(Slo);
+static S_SLO_ZP: &[MicroOp] = rmw_zp!(I::Fn(CPU6502::op_slo));
+static S_SLO_ZPX: &[MicroOp] = rmw_zpx!(I::Fn(CPU6502::op_slo));
+static S_SLO_ABS: &[MicroOp] = rmw_abs!(I::Fn(CPU6502::op_slo));
+static S_SLO_ABSX: &[MicroOp] = rmw_absx!(I::Fn(CPU6502::op_slo));
+static S_SLO_ABSY: &[MicroOp] = rmw_absy!(I::Fn(CPU6502::op_slo));
+static S_SLO_INDX: &[MicroOp] = rmw_indx!(I::Fn(CPU6502::op_slo));
+static S_SLO_INDY: &[MicroOp] = rmw_indy!(I::Fn(CPU6502::op_slo));
 
 // RLA (ROL + AND)
-static S_RLA_ZP: &[MicroOp] = rmw_zp!(Rla);
-static S_RLA_ZPX: &[MicroOp] = rmw_zpx!(Rla);
-static S_RLA_ABS: &[MicroOp] = rmw_abs!(Rla);
-static S_RLA_ABSX: &[MicroOp] = rmw_absx!(Rla);
-static S_RLA_ABSY: &[MicroOp] = rmw_absy!(Rla);
-static S_RLA_INDX: &[MicroOp] = rmw_indx!(Rla);
-static S_RLA_INDY: &[MicroOp] = rmw_indy!(Rla);
+static S_RLA_ZP: &[MicroOp] = rmw_zp!(I::Fn(CPU6502::op_rla));
+static S_RLA_ZPX: &[MicroOp] = rmw_zpx!(I::Fn(CPU6502::op_rla));
+static S_RLA_ABS: &[MicroOp] = rmw_abs!(I::Fn(CPU6502::op_rla));
+static S_RLA_ABSX: &[MicroOp] = rmw_absx!(I::Fn(CPU6502::op_rla));
+static S_RLA_ABSY: &[MicroOp] = rmw_absy!(I::Fn(CPU6502::op_rla));
+static S_RLA_INDX: &[MicroOp] = rmw_indx!(I::Fn(CPU6502::op_rla));
+static S_RLA_INDY: &[MicroOp] = rmw_indy!(I::Fn(CPU6502::op_rla));
 
 // SRE (LSR + EOR)
-static S_SRE_ZP: &[MicroOp] = rmw_zp!(Sre);
-static S_SRE_ZPX: &[MicroOp] = rmw_zpx!(Sre);
-static S_SRE_ABS: &[MicroOp] = rmw_abs!(Sre);
-static S_SRE_ABSX: &[MicroOp] = rmw_absx!(Sre);
-static S_SRE_ABSY: &[MicroOp] = rmw_absy!(Sre);
-static S_SRE_INDX: &[MicroOp] = rmw_indx!(Sre);
-static S_SRE_INDY: &[MicroOp] = rmw_indy!(Sre);
+static S_SRE_ZP: &[MicroOp] = rmw_zp!(I::Fn(CPU6502::op_sre));
+static S_SRE_ZPX: &[MicroOp] = rmw_zpx!(I::Fn(CPU6502::op_sre));
+static S_SRE_ABS: &[MicroOp] = rmw_abs!(I::Fn(CPU6502::op_sre));
+static S_SRE_ABSX: &[MicroOp] = rmw_absx!(I::Fn(CPU6502::op_sre));
+static S_SRE_ABSY: &[MicroOp] = rmw_absy!(I::Fn(CPU6502::op_sre));
+static S_SRE_INDX: &[MicroOp] = rmw_indx!(I::Fn(CPU6502::op_sre));
+static S_SRE_INDY: &[MicroOp] = rmw_indy!(I::Fn(CPU6502::op_sre));
 
 // RRA (ROR + ADC)
-static S_RRA_ZP: &[MicroOp] = rmw_zp!(Rra);
-static S_RRA_ZPX: &[MicroOp] = rmw_zpx!(Rra);
-static S_RRA_ABS: &[MicroOp] = rmw_abs!(Rra);
-static S_RRA_ABSX: &[MicroOp] = rmw_absx!(Rra);
-static S_RRA_ABSY: &[MicroOp] = rmw_absy!(Rra);
-static S_RRA_INDX: &[MicroOp] = rmw_indx!(Rra);
-static S_RRA_INDY: &[MicroOp] = rmw_indy!(Rra);
+static S_RRA_ZP: &[MicroOp] = rmw_zp!(I::Fn(CPU6502::op_rra));
+static S_RRA_ZPX: &[MicroOp] = rmw_zpx!(I::Fn(CPU6502::op_rra));
+static S_RRA_ABS: &[MicroOp] = rmw_abs!(I::Fn(CPU6502::op_rra));
+static S_RRA_ABSX: &[MicroOp] = rmw_absx!(I::Fn(CPU6502::op_rra));
+static S_RRA_ABSY: &[MicroOp] = rmw_absy!(I::Fn(CPU6502::op_rra));
+static S_RRA_INDX: &[MicroOp] = rmw_indx!(I::Fn(CPU6502::op_rra));
+static S_RRA_INDY: &[MicroOp] = rmw_indy!(I::Fn(CPU6502::op_rra));
 
 // DCP (DEC + CMP)
-static S_DCP_ZP: &[MicroOp] = rmw_zp!(Dcp);
-static S_DCP_ZPX: &[MicroOp] = rmw_zpx!(Dcp);
-static S_DCP_ABS: &[MicroOp] = rmw_abs!(Dcp);
-static S_DCP_ABSX: &[MicroOp] = rmw_absx!(Dcp);
-static S_DCP_ABSY: &[MicroOp] = rmw_absy!(Dcp);
-static S_DCP_INDX: &[MicroOp] = rmw_indx!(Dcp);
-static S_DCP_INDY: &[MicroOp] = rmw_indy!(Dcp);
+static S_DCP_ZP: &[MicroOp] = rmw_zp!(I::Fn(CPU6502::op_dcp));
+static S_DCP_ZPX: &[MicroOp] = rmw_zpx!(I::Fn(CPU6502::op_dcp));
+static S_DCP_ABS: &[MicroOp] = rmw_abs!(I::Fn(CPU6502::op_dcp));
+static S_DCP_ABSX: &[MicroOp] = rmw_absx!(I::Fn(CPU6502::op_dcp));
+static S_DCP_ABSY: &[MicroOp] = rmw_absy!(I::Fn(CPU6502::op_dcp));
+static S_DCP_INDX: &[MicroOp] = rmw_indx!(I::Fn(CPU6502::op_dcp));
+static S_DCP_INDY: &[MicroOp] = rmw_indy!(I::Fn(CPU6502::op_dcp));
 
 // ISC (INC + SBC)
-static S_ISC_ZP: &[MicroOp] = rmw_zp!(Isc);
-static S_ISC_ZPX: &[MicroOp] = rmw_zpx!(Isc);
-static S_ISC_ABS: &[MicroOp] = rmw_abs!(Isc);
-static S_ISC_ABSX: &[MicroOp] = rmw_absx!(Isc);
-static S_ISC_ABSY: &[MicroOp] = rmw_absy!(Isc);
-static S_ISC_INDX: &[MicroOp] = rmw_indx!(Isc);
-static S_ISC_INDY: &[MicroOp] = rmw_indy!(Isc);
+static S_ISC_ZP: &[MicroOp] = rmw_zp!(I::Fn(CPU6502::op_isc));
+static S_ISC_ZPX: &[MicroOp] = rmw_zpx!(I::Fn(CPU6502::op_isc));
+static S_ISC_ABS: &[MicroOp] = rmw_abs!(I::Fn(CPU6502::op_isc));
+static S_ISC_ABSX: &[MicroOp] = rmw_absx!(I::Fn(CPU6502::op_isc));
+static S_ISC_ABSY: &[MicroOp] = rmw_absy!(I::Fn(CPU6502::op_isc));
+static S_ISC_INDX: &[MicroOp] = rmw_indx!(I::Fn(CPU6502::op_isc));
+static S_ISC_INDY: &[MicroOp] = rmw_indy!(I::Fn(CPU6502::op_isc));
 
 // LAX (LDA + LDX)
-static S_LAX_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::Lax)];
-static S_LAX_ZPY: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadDummyZpY, N), m(B::ReadAddr, I::Lax)];
-static S_LAX_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::ReadAddr, I::Lax)];
-static S_LAX_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::ReadAddr, I::Lax)];
+static S_LAX_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::Fn(CPU6502::op_lax))];
+static S_LAX_ZPY: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadDummyZpY, N),
+    m(B::ReadAddr, I::Fn(CPU6502::op_lax)),
+];
+static S_LAX_ABS: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
+    m(B::ReadAddr, I::Fn(CPU6502::op_lax)),
+];
+static S_LAX_ABSY: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    C_ABSY,
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_lax)),
+];
 
-static S_LAX_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Lax)];
+static S_LAX_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Fn(CPU6502::op_lax_imm))];
 static S_LAX_INDX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
-    m(BN, I::SetAddrIndX),
+    m(BN, I::Fn(CPU6502::op_set_addr_indx)),
     m(B::ReadAddr, N),
-    m(B::ReadAddr, I::Lax),
+    m(B::ReadAddr, I::Fn(CPU6502::op_lax)),
 ];
 static S_LAX_INDY: &[MicroOp] = &[
     m(B::ReadPC1, N),
-    m(BN, I::SetAddrIndY),
+    m(BN, I::Fn(CPU6502::op_set_addr_indy)),
     S_NC1,
     X_DUMMY,
-    m(B::ReadAddr, I::Lax),
+    m(B::ReadAddr, I::Fn(CPU6502::op_lax)),
 ];
 
 // SAX (STA & STX — stores A & X)
 static S_SAX_ZP: &[MicroOp] = &[R_ZP, m(B::WriteAddrAX, N)];
 static S_SAX_ZPY: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadDummyZpY, N), m(B::WriteAddrAX, N)];
-static S_SAX_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::WriteAddrAX, N)];
+static S_SAX_ABS: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
+    m(B::WriteAddrAX, N),
+];
 static S_SAX_INDX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
-    m(BN, I::SetAddrIndX),
+    m(BN, I::Fn(CPU6502::op_set_addr_indx)),
     m(B::ReadAddr, N),
     m(B::WriteAddrAX, N),
 ];
@@ -686,7 +952,7 @@ pub static INTERRUPT_SEQ_NMI: &[MicroOp] = &[
     NONE,
     m(B::PushPCH, N),
     m(B::PushPCL, N),
-    m(B::PushStatus, I::SetI),
+    m(B::PushStatus, I::Fn(CPU6502::op_set_i)),
     m(B::ReadVecLo(0xFFFA), N),
     m(B::ReadVecHi(0xFFFB), N),
 ];
@@ -696,7 +962,7 @@ pub static INTERRUPT_SEQ_IRQ: &[MicroOp] = &[
     NONE,
     m(B::PushPCH, N),
     m(B::PushPCL, N),
-    m(B::PushStatus, I::SetI),
+    m(B::PushStatus, I::Fn(CPU6502::op_set_i)),
     m(B::ReadVecLo(0xFFFE), N),
     m(B::ReadVecHi(0xFFFF), N),
 ];

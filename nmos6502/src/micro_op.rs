@@ -82,183 +82,27 @@ pub enum BusOp {
     None,
 }
 
+use crate::{cpu::CPU6502, memory::Addressable};
+
+/// Function pointer type for internal CPU operations.
+///
+/// Each `InternalOp` variant (except the sequence-control ones) becomes a
+/// standalone function with this signature, eliminating the central dispatch
+/// match in `execute_internal()`.
+type InternalOpFn = fn(&mut CPU6502, &mut dyn Addressable);
+
 /// Internal operation performed concurrently with the bus operation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// The vast majority of variants carry no runtime data and are dispatched via
+/// function pointer. The three `Skip*` variants carry a `u8` skip count that
+/// the function-pointer pattern cannot express.
+#[derive(Clone, Copy)]
 #[allow(non_camel_case_types)]
 pub enum InternalOp {
-    /// No internal state change.
-    None,
+    /// Function-pointer-dispatched internal operation.
+    Fn(InternalOpFn),
 
-    /// Decode opcode fetched by Fetch, load the instruction sequence.
-    Decode,
-    /// Instruction complete — advance PC, check for pending interrupts.
-    EndInstr,
-
-    // ── Address computation ──
-    /// addr = operands[0] as u16 (zero-page mode).
-    SetAddrZp,
-    /// addr = (operands[0] + X) & 0xFF.
-    SetAddrZpX,
-    /// addr = (operands[0] + Y) & 0xFF.
-    SetAddrZpY,
-    /// addr = operands[1]<<8 | operands[0] (absolute mode).
-    SetAddrAbs,
-    /// addr = base + X; set page_crossed flag (absolute,X mode).
-    SetAddrAbsX,
-    /// addr = base + Y; set page_crossed flag (absolute,Y mode).
-    SetAddrAbsY,
-    /// addr = zp[(operands[0]+X)] | (zp[(operands[0]+X+1)] << 8)  (indexed indirect).
-    SetAddrIndX,
-    /// addr = zp[ptr] | (zp[ptr+1] << 8); addr += Y; set page_crossed (indirect indexed).
-    SetAddrIndY,
-
-    // ── Register operations (set Z,N from result) ──
-    /// A = data_latch.
-    SetA,
-    /// X = data_latch.
-    SetX,
-    /// Y = data_latch.
-    SetY,
-
-    /// A = X (TXA).
-    Txa,
-    /// A = Y (TYA).
-    Tya,
-    /// X = A (TAX).
-    Tax,
-    /// Y = A (TAY).
-    Tay,
-    /// X = SP (TSX).
-    Tsx,
-    /// SP = X (TXS, no flag changes).
-    Txs,
-
-    /// X = X + 1.
-    IncX,
-    /// Y = Y + 1.
-    IncY,
-    /// X = X - 1.
-    DecX,
-    /// Y = Y - 1.
-    DecY,
-
-    // ── Flag operations ──
-    SetC,
-    ClrC,
-    SetD,
-    ClrD,
-    SetI,
-    ClrI,
-    ClrV,
-
-    // ── ALU operations (operate on A and data_latch, or data_latch alone) ──
-    /// A = A + data_latch + C; sets C,Z,N,V (binary or BCD based on D flag).
-    Adc,
-    /// A = A - data_latch - (1-C); sets C,Z,N,V.
-    Sbc,
-    /// A = A & data_latch; sets Z,N.
-    And,
-    /// A = A | data_latch; sets Z,N.
-    Ora,
-    /// A = A ^ data_latch; sets Z,N.
-    Eor,
-
-    /// Compare A - data_latch (no store); sets C,Z,N.
-    CmpA,
-    /// Compare X - data_latch (no store); sets C,Z,N.
-    CmpX,
-    /// Compare Y - data_latch (no store); sets C,Z,N.
-    CmpY,
-    /// A & data_latch (no store); Z = (result==0), N = data_latch.7, V = data_latch.6.
-    Bit,
-
-    /// data_latch <<= 1; C = old bit 7; sets Z,N.
-    Asl,
-    /// data_latch >>= 1; C = old bit 0; sets Z,N.
-    Lsr,
-    /// data_latch = (data_latch << 1) | C; C = old bit 7; sets Z,N.
-    Rol,
-    /// data_latch = (data_latch >> 1) | (C << 7); C = old bit 0; sets Z,N.
-    Ror,
-    /// data_latch += 1; sets Z,N.
-    Inc,
-    /// data_latch -= 1; sets Z,N.
-    Dec,
-
-    /// A <<= 1; C = old bit 7; sets Z,N (ASL accumulator).
-    AslA,
-    /// A >>= 1; C = old bit 0; sets Z,N (LSR accumulator).
-    LsrA,
-    /// A = (A << 1) | C; C = old bit 7; sets Z,N (ROL accumulator).
-    RolA,
-    /// A = (A >> 1) | (C << 7); C = old bit 0; sets Z,N (ROR accumulator).
-    RorA,
-
-    // ── Unofficial opcode ALU operations (RMW memory then combine with A) ──
-    /// A = data_latch, X = data_latch; sets Z,N (LAX).
-    Lax,
-    /// A = A & data_latch; X = A; sets Z,N from result (LAX immediate).
-    LaxImm,
-    /// data_latch <<= 1; C = old bit 7; Z,N from data_latch; A |= data_latch; Z,N from A (SLO).
-    Slo,
-    /// data_latch = (data_latch << 1) | C; C = old bit 7; Z,N from data_latch; A &= data_latch; Z,N from A (RLA).
-    Rla,
-    /// data_latch >>= 1; C = old bit 0; Z,N from data_latch; A ^= data_latch; Z,N from A (SRE).
-    Sre,
-    /// data_latch = (data_latch >> 1) | (C << 7); C = old bit 0; Z,N from data_latch; ADC A + data_latch + C (RRA).
-    Rra,
-    /// data_latch -= 1; Z,N from data_latch; CMP A - data_latch; C,Z,N from compare (DCP).
-    Dcp,
-    /// data_latch += 1; Z,N from data_latch; SBC A - data_latch - (1-C); C,Z,N,V from SBC (ISC).
-    Isc,
-    /// A = A & data_latch; Z,N from result; C = N (ANC immediate).
-    Anc,
-    /// A = (A & data_latch) >> 1; N=0; Z from result; C = bit 0 of AND result (ALR immediate).
-    Alr,
-    /// A = ((A & data_latch) >> 1) | (C << 7); C = bit 0 of AND result; V = bit6 ^ bit5 of result (ARR immediate).
-    Arr,
-
-    // ── Control flow and branches ──
-    /// Read offset from PC+1; if C=0, compute target PC and set branch_taken/page_crossed.
-    BranchCC,
-    /// Read offset; if C=1, compute target.
-    BranchCS,
-    /// Read offset; if Z=1, compute target.
-    BranchEQ,
-    /// Read offset; if Z=0, compute target.
-    BranchNE,
-    /// Read offset; if N=1, compute target.
-    BranchMI,
-    /// Read offset; if N=0, compute target.
-    BranchPL,
-    /// Read offset; if V=0, compute target.
-    BranchVC,
-    /// Read offset; if V=1, compute target.
-    BranchVS,
-
-    /// PC = addr (JMP absolute).
-    JumpAbs,
-    /// PC = (operands[1]<<8)|operands[0]; instruction_length=0 (JMP abs, same cycle as addr fetch).
-    JmpAbs,
-    /// PC = mem[addr] with NMOS 6502 page-wrap bug (JMP indirect).
-    JumpInd,
-
-    /// JSR cycle 6: read PC+2, combine target address, set PC.
-    JsrC6,
-    /// RTS final cycle: combine popped bytes, PC = (hi<<8|lo)+1, dummy read at new PC.
-    RtsFinish,
-    /// RTI final cycle: pop PC_lo, PC_hi from stack, set PC (no +1).
-    RtiFinish,
-
-    /// Set status register from data_latch: status = (data_latch | UNUSED) & !BREAK.
-    SetStatus,
-
-    // ── Control transfer ──
-    /// Halt the CPU — JAM/KIL instruction. PC was already incremented by the
-    /// operand fetch; no further execution occurs until reset.
-    JamHalt,
-
-    // ── Sequence control ──
+    // ── Sequence control (parameterized — stay as enum variants) ──
     /// If page_crossed is true, skip the next `n` MicroOps in the sequence.
     SkipIfCrossed(u8),
     /// If page_crossed is false, skip the next `n` MicroOps.
@@ -266,3 +110,28 @@ pub enum InternalOp {
     /// If branch_taken is false, skip the next `n` MicroOps.
     SkipIfNotTaken(u8),
 }
+
+impl std::fmt::Debug for InternalOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InternalOp::Fn(_) => f.write_str("Fn"),
+            InternalOp::SkipIfCrossed(n) => write!(f, "SkipIfCrossed({})", n),
+            InternalOp::SkipIfNotCrossed(n) => write!(f, "SkipIfNotCrossed({})", n),
+            InternalOp::SkipIfNotTaken(n) => write!(f, "SkipIfNotTaken({})", n),
+        }
+    }
+}
+
+impl PartialEq for InternalOp {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (InternalOp::Fn(a), InternalOp::Fn(b)) => std::ptr::fn_addr_eq(*a, *b),
+            (InternalOp::SkipIfCrossed(a), InternalOp::SkipIfCrossed(b)) => a == b,
+            (InternalOp::SkipIfNotCrossed(a), InternalOp::SkipIfNotCrossed(b)) => a == b,
+            (InternalOp::SkipIfNotTaken(a), InternalOp::SkipIfNotTaken(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for InternalOp {}
