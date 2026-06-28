@@ -147,54 +147,31 @@ impl CPU6502 {
             BusOp::WriteAddrDL => memory.write_byte(self.addr, self.data_latch),
             BusOp::WriteDummy => memory.write_byte(self.addr, self.data_latch),
 
-            BusOp::PushPCH => {
-                memory.write_byte(0x0100 + self.registers.sp as u16, (self.registers.pc >> 8) as u8);
-                self.registers.sp = self.registers.sp.wrapping_sub(1);
-            }
-            BusOp::PushPCL => {
-                memory.write_byte(0x0100 + self.registers.sp as u16, self.registers.pc as u8);
-                self.registers.sp = self.registers.sp.wrapping_sub(1);
-            }
+            BusOp::PushPCH => self.push_byte(memory, (self.registers.pc >> 8) as u8),
+            BusOp::PushPCL => self.push_byte(memory, self.registers.pc as u8),
             BusOp::PushReturnHi => {
-                let ret = self.registers.pc.wrapping_add(2);
-                memory.write_byte(0x0100 + self.registers.sp as u16, (ret >> 8) as u8);
-                self.registers.sp = self.registers.sp.wrapping_sub(1);
+                self.push_byte(memory, (self.registers.pc.wrapping_add(2) >> 8) as u8);
             }
             BusOp::PushReturnLo => {
-                let ret = self.registers.pc.wrapping_add(2);
-                memory.write_byte(0x0100 + self.registers.sp as u16, ret as u8);
-                self.registers.sp = self.registers.sp.wrapping_sub(1);
+                self.push_byte(memory, self.registers.pc.wrapping_add(2) as u8);
             }
-            BusOp::PushA => {
-                memory.write_byte(0x0100 + self.registers.sp as u16, self.registers.a);
-                self.registers.sp = self.registers.sp.wrapping_sub(1);
-            }
+            BusOp::PushA => self.push_byte(memory, self.registers.a),
             BusOp::PushStatusB => {
-                let val = self.registers.status | crate::registers::UNUSED | crate::registers::BREAK;
-                memory.write_byte(0x0100 + self.registers.sp as u16, val);
-                self.registers.sp = self.registers.sp.wrapping_sub(1);
+                self.push_byte(
+                    memory,
+                    self.registers.status | crate::registers::UNUSED | crate::registers::BREAK,
+                );
             }
             BusOp::PushStatus => {
-                let val = self.registers.status | crate::registers::UNUSED;
-                memory.write_byte(0x0100 + self.registers.sp as u16, val);
-                self.registers.sp = self.registers.sp.wrapping_sub(1);
+                self.push_byte(memory, self.registers.status | crate::registers::UNUSED);
             }
 
             BusOp::PopDummy => {
                 let _ = memory.read_byte(0x0100 + self.registers.sp as u16);
             }
-            BusOp::Pop => {
-                self.registers.sp = self.registers.sp.wrapping_add(1);
-                self.data_latch = memory.read_byte(0x0100 + self.registers.sp as u16);
-            }
-            BusOp::PopPCL => {
-                self.registers.sp = self.registers.sp.wrapping_add(1);
-                self.operands[0] = memory.read_byte(0x0100 + self.registers.sp as u16);
-            }
-            BusOp::PopPCH => {
-                self.registers.sp = self.registers.sp.wrapping_add(1);
-                self.data_latch = memory.read_byte(0x0100 + self.registers.sp as u16);
-            }
+            BusOp::Pop => self.data_latch = self.pop_byte(memory),
+            BusOp::PopPCL => self.operands[0] = self.pop_byte(memory),
+            BusOp::PopPCH => self.data_latch = self.pop_byte(memory),
 
             BusOp::ReadVecLo(addr) => {
                 self.operands[0] = memory.read_byte(addr);
@@ -670,6 +647,16 @@ impl CPU6502 {
         };
         let val = reg_val & ((self.addr >> 8) as u8).wrapping_add(1);
         memory.write_byte((hi as u16) << 8 | lo as u16, val);
+    }
+
+    fn push_byte(&mut self, memory: &mut dyn Addressable, value: u8) {
+        memory.write_byte(0x0100 + self.registers.sp as u16, value);
+        self.registers.sp = self.registers.sp.wrapping_sub(1);
+    }
+
+    fn pop_byte(&mut self, memory: &mut dyn Addressable) -> u8 {
+        self.registers.sp = self.registers.sp.wrapping_add(1);
+        memory.read_byte(0x0100 + self.registers.sp as u16)
     }
 
     // ── Control flow ──
