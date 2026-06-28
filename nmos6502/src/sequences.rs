@@ -166,13 +166,7 @@ static S_STA_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::WriteA
 static S_STA_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::WriteAddrA, N)];
 
 // RMW zero page
-static S_ASL_ZP: &[MicroOp] = &[
-    R_ZP,
-    m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
-    m(BN, I::Asl),
-    m(B::WriteAddrDL, N),
-];
+static S_ASL_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, N), m(BN, I::Asl), m(B::WriteAddrDL, N)];
 static S_LSR_ZP: &[MicroOp] = &[
     R_ZP,
     m(B::ReadAddr, N),
@@ -220,7 +214,6 @@ static S_ASL_ABS: &[MicroOp] = &[
     m(B::ReadPC1, N),
     m(B::ReadPC2, I::SetAddrAbs),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
     m(BN, I::Asl),
     m(B::WriteAddrDL, N),
 ];
@@ -271,7 +264,6 @@ static S_ASL_ABSX: &[MicroOp] = &[
     C_ABSX,
     m(B::ReadAddr, N),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
     m(BN, I::Asl),
     m(B::WriteAddrDL, N),
 ];
@@ -326,7 +318,6 @@ static S_ASL_ZPX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
     m(BN, I::Asl),
     m(B::WriteAddrDL, N),
 ];
@@ -714,10 +705,10 @@ const EMPTY: &[MicroOp] = &[];
 pub static OPCODE_SEQUENCES: [&[MicroOp]; 256] = [
     // 0x00-0x0F
     S_BRK, S_ORA_INDX, S_JAM, S_SLO_INDX, S_NOP_ZP, S_ORA_ZP, S_ASL_ZP, S_SLO_ZP, S_PHP, S_ORA_IMM, S_ASL_A, EMPTY, EMPTY,
-    S_ORA_ABS, S_ASL_ABS, S_SLO_ABS, 
+    S_ORA_ABS, S_ASL_ABS, S_SLO_ABS,
     // 0x10-0x1F
     S_BPL, S_ORA_INDY, S_JAM, S_SLO_INDY, EMPTY, S_ORA_ZPX, S_ASL_ZPX, S_SLO_ZPX, S_CLC, S_ORA_ABSY, EMPTY, S_SLO_ABSY,
-    EMPTY, S_ORA_ABSX, S_ASL_ABSX, S_SLO_ABSX, 
+    EMPTY, S_ORA_ABSX, S_ASL_ABSX, S_SLO_ABSX,
     // 0x20-0x2F
     S_JSR, S_AND_INDX, S_JAM, S_RLA_INDX, S_BIT_ZP, S_AND_ZP, S_ROL_ZP, S_RLA_ZP, S_PLP, S_AND_IMM, S_ROL_A, EMPTY,
     S_BIT_ABS, S_AND_ABS, S_ROL_ABS, S_RLA_ABS, 
