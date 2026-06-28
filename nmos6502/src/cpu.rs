@@ -665,8 +665,11 @@ impl CPU6502 {
 
     // ── Control flow ──
 
-    pub(crate) fn op_jam_halt(&mut self, _memory: &mut dyn Addressable) {
-        self.halted = true;
+    pub(crate) fn op_jam_set_addr_ffff(&mut self, _memory: &mut dyn Addressable) {
+        self.addr = 0xFFFF;
+    }
+    pub(crate) fn op_jam_set_addr_fffe(&mut self, _memory: &mut dyn Addressable) {
+        self.addr = 0xFFFE;
     }
 
     pub(crate) fn op_branch_cc(&mut self, _memory: &mut dyn Addressable) {
