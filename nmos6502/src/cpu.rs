@@ -153,6 +153,28 @@ impl CPU6502 {
                 let val = self.registers.a & self.registers.x & ((self.addr >> 8) as u8).wrapping_add(1);
                 memory.write_byte((hi as u16) << 8 | lo as u16, val);
             }
+            BusOp::WriteAddrSHY => {
+                let lo = self.addr as u8;
+                let base_hi = self.operands[1];
+                let hi = if self.page_crossed {
+                    self.registers.y & base_hi.wrapping_add(1)
+                } else {
+                    (self.addr >> 8) as u8
+                };
+                let val = self.registers.y & ((self.addr >> 8) as u8).wrapping_add(1);
+                memory.write_byte((hi as u16) << 8 | lo as u16, val);
+            }
+            BusOp::WriteAddrSHX => {
+                let lo = self.addr as u8;
+                let base_hi = self.operands[1];
+                let hi = if self.page_crossed {
+                    self.registers.x & base_hi.wrapping_add(1)
+                } else {
+                    (self.addr >> 8) as u8
+                };
+                let val = self.registers.x & ((self.addr >> 8) as u8).wrapping_add(1);
+                memory.write_byte((hi as u16) << 8 | lo as u16, val);
+            }
             BusOp::WriteAddrDL => memory.write_byte(self.addr, self.data_latch),
             BusOp::WriteDummy => memory.write_byte(self.addr, self.data_latch),
 
@@ -351,6 +373,48 @@ impl CPU6502 {
                                // C5 dummy-read address: base page + low byte of (base + Y)
         self.addr = (hi as u16) << 8 | (lo.wrapping_add(self.registers.y)) as u16;
     }
+    /// AHX/SHA (abs,Y) setup: like `op_shx_setup_addr` but used for AHX abs,Y.
+    /// Same page-wrapped address computation, reuses WriteAddrAHX for the write.
+    pub(crate) fn op_ahx_absy_setup_addr(&mut self, _memory: &mut dyn Addressable) {
+        let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
+        let final_addr = base.wrapping_add(self.registers.y as u16);
+        self.page_crossed = (base & 0xFF00) != (final_addr & 0xFF00);
+        // operands[1] already holds base_hi from ReadPC2
+        self.addr = (self.operands[1] as u16) << 8 | (self.operands[0].wrapping_add(self.registers.y)) as u16;
+    }
+    /// TAS/SHS (abs,Y) setup: sets SP = A & X, then computes page-wrapped address
+    /// for C4 ReadDummy (like AHX but abs,Y). Reuses WriteAddrAHX for the write.
+    pub(crate) fn op_tas_setup_addr(&mut self, _memory: &mut dyn Addressable) {
+        self.registers.sp = self.registers.a & self.registers.x;
+        let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
+        let final_addr = base.wrapping_add(self.registers.y as u16);
+        self.page_crossed = (base & 0xFF00) != (final_addr & 0xFF00);
+        // operands[1] already holds base_hi from ReadPC2
+        // Set addr to page-wrapped address for C4 ReadDummy
+        self.addr = (self.operands[1] as u16) << 8 | (self.operands[0].wrapping_add(self.registers.y)) as u16;
+    }
+    /// SHY (abs,X) setup: like `op_set_addr_absx` but stores the page-wrapped
+    /// address (C4 dummy-read target) in `self.addr` and does NOT skip the
+    /// ReadDummy cycle (always 5 cycles for SHY, unlike LDA abs,X).
+    pub(crate) fn op_shy_setup_addr(&mut self, _memory: &mut dyn Addressable) {
+        let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
+        let final_addr = base.wrapping_add(self.registers.x as u16);
+        self.page_crossed = (base & 0xFF00) != (final_addr & 0xFF00);
+        // operands[1] already holds base_hi from ReadPC2
+        // Set addr to page-wrapped address for C4 ReadDummy
+        self.addr = (self.operands[1] as u16) << 8 | (self.operands[0].wrapping_add(self.registers.x)) as u16;
+    }
+    /// SHX (abs,Y) setup: like `op_set_addr_absy` but stores the page-wrapped
+    /// address (C4 dummy-read target) in `self.addr` and does NOT skip the
+    /// ReadDummy cycle (always 5 cycles for SHX, unlike LDA abs,Y).
+    pub(crate) fn op_shx_setup_addr(&mut self, _memory: &mut dyn Addressable) {
+        let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
+        let final_addr = base.wrapping_add(self.registers.y as u16);
+        self.page_crossed = (base & 0xFF00) != (final_addr & 0xFF00);
+        // operands[1] already holds base_hi from ReadPC2
+        // Set addr to page-wrapped address for C4 ReadDummy
+        self.addr = (self.operands[1] as u16) << 8 | (self.operands[0].wrapping_add(self.registers.y)) as u16;
+    }
 
     // ── Register operations ──
 
@@ -520,6 +584,15 @@ impl CPU6502 {
         self.registers.set_accumulator(result);
     }
 
+    // ── Undocumented load/store ──
+
+    pub(crate) fn op_las(&mut self, _memory: &mut dyn Addressable) {
+        let val = self.registers.sp & self.data_latch;
+        self.registers.set_accumulator(val);
+        self.registers.set_x(val);
+        self.registers.sp = val;
+    }
+
     // ── Unofficial opcodes ──
 
     pub(crate) fn op_lax(&mut self, _memory: &mut dyn Addressable) {
@@ -527,7 +600,7 @@ impl CPU6502 {
         self.registers.set_x(self.data_latch);
     }
     pub(crate) fn op_lax_imm(&mut self, _memory: &mut dyn Addressable) {
-        let result = self.registers.a & self.data_latch;
+        let result = self.data_latch & (self.registers.a | 0xEE);
         self.registers.set_accumulator(result);
         self.registers.set_x(result);
     }
@@ -622,6 +695,17 @@ impl CPU6502 {
             self.registers
                 .update_overflow_flag(((result >> 6) ^ (result >> 5)) & 1 != 0);
         }
+    }
+    pub(crate) fn op_xaa(&mut self, _memory: &mut dyn Addressable) {
+        let val = (self.registers.a | 0xEE) & self.registers.x & self.data_latch;
+        self.registers.set_accumulator(val);
+    }
+    pub(crate) fn op_sbx(&mut self, _memory: &mut dyn Addressable) {
+        let ax = self.registers.a & self.registers.x;
+        let result = ax.wrapping_sub(self.data_latch);
+        self.registers.update_carry_flag(ax >= self.data_latch);
+        self.registers.update_zero_and_negative(result);
+        self.registers.set_x(result);
     }
 
     // ── Control flow ──

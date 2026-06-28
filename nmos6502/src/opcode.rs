@@ -280,7 +280,7 @@ static OPCODES: [InstructionInfo; 256] = [
     info(0x88, Mnemonic::Dey, AddressingMode::Implied, 1, 2),
     info(0x89, Mnemonic::Nop, AddressingMode::Immediate, 2, 2),
     info(0x8A, Mnemonic::Txa, AddressingMode::Implied, 1, 2),
-    info(0x8B, Mnemonic::Illegal, AddressingMode::Implied, 1, 1),  // EMPTY
+    info(0x8B, Mnemonic::Illegal, AddressingMode::Immediate, 2, 2),  // XAA/ANE
     info(0x8C, Mnemonic::Sty, AddressingMode::Absolute, 3, 4),
     info(0x8D, Mnemonic::Sta, AddressingMode::Absolute, 3, 4),
     info(0x8E, Mnemonic::Stx, AddressingMode::Absolute, 3, 4),
@@ -297,11 +297,11 @@ static OPCODES: [InstructionInfo; 256] = [
     info(0x98, Mnemonic::Tya, AddressingMode::Implied, 1, 2),
     info(0x99, Mnemonic::Sta, AddressingMode::AbsoluteY, 3, 5),
     info(0x9A, Mnemonic::Txs, AddressingMode::Implied, 1, 2),
-    info(0x9B, Mnemonic::Illegal, AddressingMode::Implied, 1, 1),  // EMPTY
-    info(0x9C, Mnemonic::Nop, AddressingMode::AbsoluteX, 3, 4),   // NOP abs,X (SHY not implemented)
+    info(0x9B, Mnemonic::Illegal, AddressingMode::AbsoluteY, 3, 5),  // TAS/SHS
+    info(0x9C, Mnemonic::Illegal, AddressingMode::AbsoluteX, 3, 5),  // SHY/SYA
     info(0x9D, Mnemonic::Sta, AddressingMode::AbsoluteX, 3, 5),
-    info(0x9E, Mnemonic::Nop, AddressingMode::AbsoluteX, 3, 4),   // NOP abs,X (SHX not implemented)
-    info(0x9F, Mnemonic::Illegal, AddressingMode::Implied, 1, 1),  // EMPTY
+    info(0x9E, Mnemonic::Illegal, AddressingMode::AbsoluteY, 3, 5),  // SHX/SXA
+    info(0x9F, Mnemonic::Illegal, AddressingMode::AbsoluteY, 3, 5),  // AHX/SHA abs,Y
     // 0xA0-0xAF
     info(0xA0, Mnemonic::Ldy, AddressingMode::Immediate, 2, 2),
     info(0xA1, Mnemonic::Lda, AddressingMode::IndexedIndirect, 2, 6),
@@ -331,7 +331,7 @@ static OPCODES: [InstructionInfo; 256] = [
     info(0xB8, Mnemonic::Clv, AddressingMode::Implied, 1, 2),
     info(0xB9, Mnemonic::Lda, AddressingMode::AbsoluteY, 3, 4),
     info(0xBA, Mnemonic::Tsx, AddressingMode::Implied, 1, 2),
-    info(0xBB, Mnemonic::Illegal, AddressingMode::Implied, 1, 1),  // EMPTY
+    info(0xBB, Mnemonic::Illegal, AddressingMode::AbsoluteY, 3, 4),  // LAS/LAE
     info(0xBC, Mnemonic::Ldy, AddressingMode::AbsoluteX, 3, 4),
     info(0xBD, Mnemonic::Lda, AddressingMode::AbsoluteX, 3, 4),
     info(0xBE, Mnemonic::Ldx, AddressingMode::AbsoluteY, 3, 4),
@@ -348,7 +348,7 @@ static OPCODES: [InstructionInfo; 256] = [
     info(0xC8, Mnemonic::Iny, AddressingMode::Implied, 1, 2),
     info(0xC9, Mnemonic::Cmp, AddressingMode::Immediate, 2, 2),
     info(0xCA, Mnemonic::Dex, AddressingMode::Implied, 1, 2),
-    info(0xCB, Mnemonic::Illegal, AddressingMode::Implied, 1, 1),  // EMPTY
+    info(0xCB, Mnemonic::Illegal, AddressingMode::Immediate, 2, 2),  // SBX/AXS
     info(0xCC, Mnemonic::Cpy, AddressingMode::Absolute, 3, 4),
     info(0xCD, Mnemonic::Cmp, AddressingMode::Absolute, 3, 4),
     info(0xCE, Mnemonic::Dec, AddressingMode::Absolute, 3, 6),

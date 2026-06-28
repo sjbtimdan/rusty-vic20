@@ -46,6 +46,10 @@ pub enum BusOp {
     WriteAddrAX,
     /// Write A & X & ((addr >> 8) + 1) to memory[addr] (AHX/SHA unofficial opcode).
     WriteAddrAHX,
+    /// Write Y & ((addr >> 8) + 1) to memory[addr] (SHY unofficial opcode).
+    WriteAddrSHY,
+    /// Write X & ((addr >> 8) + 1) to memory[addr] (SHX unofficial opcode).
+    WriteAddrSHX,
     /// Write data_latch to memory[addr].
     WriteAddrDL,
     /// Write data_latch to memory[addr] — RMW dummy write of original value.

@@ -715,6 +715,55 @@ static S_AHX_INDY: &[MicroOp] = &[
     m(B::WriteAddrAHX, N),
 ];
 
+// SHY/SYA (abs,X) — store Y & (base_hi + 1) at abs,X with page-cross masking
+// C_ABSX but with SHY setup: reads PC2 for high byte, computes page-wrapped addr
+static S_SHY_ABSX: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_shy_setup_addr)),
+    X_DUMMY,
+    m(B::WriteAddrSHY, N),
+];
+
+// SHX/SXA (abs,Y) — store X & (base_hi + 1) at abs,Y with page-cross masking
+// C_ABSY but with SHX setup: reads PC2 for high byte, computes page-wrapped addr
+static S_SHX_ABSY: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_shx_setup_addr)),
+    X_DUMMY,
+    m(B::WriteAddrSHX, N),
+];
+
+// XAA/ANE (imm) — A = (A | $EE) & X & operand
+static S_XAA_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Fn(CPU6502::op_xaa))];
+
+// TAS/SHS (abs,Y) — SP = A & X, then store A & X & (base_hi + 1) at abs,Y
+// Reuses WriteAddrAHX (same value/write-address formula as AHX but abs,Y).
+static S_TAS_ABSY: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_tas_setup_addr)),
+    X_DUMMY,
+    m(B::WriteAddrAHX, N),
+];
+
+// AHX/SHA (abs,Y) — store A & X & (base_hi + 1) at abs,Y (same write as (indirect),Y)
+static S_AHX_ABSY: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_ahx_absy_setup_addr)),
+    X_DUMMY,
+    m(B::WriteAddrAHX, N),
+];
+
+// LAS/LAE (abs,Y) — A = X = SP & memory[abs,Y]
+static S_LAS_ABSY: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    C_ABSY,
+    X_DUMMY,
+    m(B::ReadAddr, I::Fn(CPU6502::op_las)),
+];
+
+// SBX/AXS (imm) — X = (A & X) - operand; C = no_borrow; N, Z from result
+static S_SBX_IMM: &[MicroOp] = &[m(B::ReadPC1, I::Fn(CPU6502::op_sbx))];
+
 // ── Unofficial opcodes ──
 
 // RMW+ALU helpers (read-modify-write then combine with A)
@@ -902,8 +951,6 @@ static S_SAX_INDX: &[MicroOp] = &[
 
 // ── Full opcode table ──
 
-const EMPTY: &[MicroOp] = &[];
-
 #[rustfmt::skip]
 pub static OPCODE_SEQUENCES: [&[MicroOp]; 256] = [
     // 0x00-0x0F
@@ -931,19 +978,19 @@ pub static OPCODE_SEQUENCES: [&[MicroOp]; 256] = [
     S_BVS, S_ADC_INDY, S_JAM, S_RRA_INDY, S_NOP_ZPX, S_ADC_ZPX, S_ROR_ZPX, S_RRA_ZPX, S_SEI, S_ADC_ABSY, S_NOP, S_RRA_ABSY,
     S_NOP_ABSX, S_ADC_ABSX, S_ROR_ABSX, S_RRA_ABSX,
     // 0x80-0x8F
-    S_NOP_IMM, S_STA_INDX, S_NOP_IMM, S_SAX_INDX, S_STY_ZP, S_STA_ZP, S_STX_ZP, S_SAX_ZP, S_DEY, S_NOP_IMM, S_TXA, EMPTY,
+    S_NOP_IMM, S_STA_INDX, S_NOP_IMM, S_SAX_INDX, S_STY_ZP, S_STA_ZP, S_STX_ZP, S_SAX_ZP, S_DEY, S_NOP_IMM, S_TXA, S_XAA_IMM,
     S_STY_ABS, S_STA_ABS, S_STX_ABS, S_SAX_ABS,
     // 0x90-0x9F
-    S_BCC, S_STA_INDY, S_JAM, S_AHX_INDY, S_STY_ZPX, S_STA_ZPX, S_STX_ZPY, S_SAX_ZPY, S_TYA, S_STA_ABSY, S_TXS, EMPTY,
-    EMPTY, S_STA_ABSX, EMPTY, EMPTY,
+    S_BCC, S_STA_INDY, S_JAM, S_AHX_INDY, S_STY_ZPX, S_STA_ZPX, S_STX_ZPY, S_SAX_ZPY, S_TYA, S_STA_ABSY, S_TXS, S_TAS_ABSY,
+    S_SHY_ABSX, S_STA_ABSX, S_SHX_ABSY, S_AHX_ABSY,
     // 0xA0-0xAF
     S_LDY_IMM, S_LDA_INDX, S_LDX_IMM, S_LAX_INDX, S_LDY_ZP, S_LDA_ZP, S_LDX_ZP, S_LAX_ZP, S_TAY, S_LDA_IMM, S_TAX,
     S_LAX_IMM, S_LDY_ABS, S_LDA_ABS, S_LDX_ABS, S_LAX_ABS,
     // 0xB0-0xBF
-    S_BCS, S_LDA_INDY, S_JAM, S_LAX_INDY, S_LDY_ZPX, S_LDA_ZPX, S_LDX_ZPY, S_LAX_ZPY, S_CLV, S_LDA_ABSY, S_TSX, EMPTY,
+    S_BCS, S_LDA_INDY, S_JAM, S_LAX_INDY, S_LDY_ZPX, S_LDA_ZPX, S_LDX_ZPY, S_LAX_ZPY, S_CLV, S_LDA_ABSY, S_TSX, S_LAS_ABSY,
     S_LDY_ABSX, S_LDA_ABSX, S_LDX_ABSY, S_LAX_ABSY,
     // 0xC0-0xCF
-    S_CPY_IMM, S_CMP_INDX, S_NOP_IMM, S_DCP_INDX, S_CPY_ZP, S_CMP_ZP, S_DEC_ZP, S_DCP_ZP, S_INY, S_CMP_IMM, S_DEX, EMPTY,
+    S_CPY_IMM, S_CMP_INDX, S_NOP_IMM, S_DCP_INDX, S_CPY_ZP, S_CMP_ZP, S_DEC_ZP, S_DCP_ZP, S_INY, S_CMP_IMM, S_DEX, S_SBX_IMM,
     S_CPY_ABS, S_CMP_ABS, S_DEC_ABS, S_DCP_ABS,
     // 0xD0-0xDF
     S_BNE, S_CMP_INDY, S_JAM, S_DCP_INDY, S_NOP_ZPX, S_CMP_ZPX, S_DEC_ZPX, S_DCP_ZPX, S_CLD, S_CMP_ABSY, S_NOP, S_DCP_ABSY,
