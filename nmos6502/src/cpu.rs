@@ -134,6 +134,13 @@ impl CPU6502 {
                 let _ = memory.read_zp_byte(zp);
                 self.addr = (zp.wrapping_add(self.registers.y) & 0xFF) as u16;
             }
+            BusOp::ReadAddrZp1 => {
+                let addr = (self.addr as u8).wrapping_add(1) as u16;
+                self.data_latch = memory.read_byte(addr);
+            }
+            BusOp::ReadDummyNext => {
+                let _ = memory.read_byte(self.registers.pc.wrapping_add(1));
+            }
 
             BusOp::WriteAddrA => memory.write_byte(self.addr, self.registers.a),
             BusOp::WriteAddrX => memory.write_byte(self.addr, self.registers.x),
@@ -314,11 +321,15 @@ impl CPU6502 {
             self.sequence_index += 1;
         }
     }
-    pub(crate) fn op_set_addr_indx(&mut self, memory: &mut dyn Addressable) {
-        let ptr = self.operands[0].wrapping_add(self.registers.x) & 0xFF;
-        let lo = memory.read_zp_byte(ptr);
-        let hi = memory.read_zp_byte(ptr.wrapping_add(1));
-        self.addr = (hi as u16) << 8 | lo as u16;
+    /// Save `data_latch` → `operands[1]` (stores lo byte for later addr compute).
+    pub(crate) fn op_save_lo(&mut self, _memory: &mut dyn Addressable) {
+        self.operands[1] = self.data_latch;
+    }
+    /// Combine `operands[1]` (lo) with `data_latch` (hi) → `self.addr`.
+    pub(crate) fn op_compute_ind_addr(&mut self, _memory: &mut dyn Addressable) {
+        let lo = self.operands[1] as u16;
+        let hi = self.data_latch as u16;
+        self.addr = (hi << 8) | lo;
     }
     pub(crate) fn op_set_addr_indy(&mut self, memory: &mut dyn Addressable) {
         let ptr = self.operands[0];

@@ -35,6 +35,10 @@ pub enum BusOp {
     ReadDummyZpX,
     /// Read memory[zp_base] — dummy, then addr = (zp_base + Y) & 0xFF.
     ReadDummyZpY,
+    /// Read memory[addr + 1] with zero-page wrap (for INDX hi-byte read).
+    ReadAddrZp1,
+    /// Read next instruction byte (PC+1) as dummy read (for 2-cycle implied ops).
+    ReadDummyNext,
 
     /// Write A to memory[addr].
     WriteAddrA,
