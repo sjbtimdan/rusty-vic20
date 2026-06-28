@@ -166,42 +166,12 @@ static S_STA_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::WriteA
 static S_STA_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::WriteAddrA, N)];
 
 // RMW zero page
-static S_ASL_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, N), m(BN, I::Asl), m(B::WriteAddrDL, N)];
-static S_LSR_ZP: &[MicroOp] = &[
-    R_ZP,
-    m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
-    m(BN, I::Lsr),
-    m(B::WriteAddrDL, N),
-];
-static S_ROL_ZP: &[MicroOp] = &[
-    R_ZP,
-    m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
-    m(BN, I::Rol),
-    m(B::WriteAddrDL, N),
-];
-static S_ROR_ZP: &[MicroOp] = &[
-    R_ZP,
-    m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
-    m(BN, I::Ror),
-    m(B::WriteAddrDL, N),
-];
-static S_INC_ZP: &[MicroOp] = &[
-    R_ZP,
-    m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
-    m(BN, I::Inc),
-    m(B::WriteAddrDL, N),
-];
-static S_DEC_ZP: &[MicroOp] = &[
-    R_ZP,
-    m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
-    m(BN, I::Dec),
-    m(B::WriteAddrDL, N),
-];
+static S_ASL_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, N), m(B::WriteDummy, I::Asl), m(B::WriteAddrDL, N)];
+static S_LSR_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, N), m(B::WriteDummy, I::Lsr), m(B::WriteAddrDL, N)];
+static S_ROL_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, N), m(B::WriteDummy, I::Rol), m(B::WriteAddrDL, N)];
+static S_ROR_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, N), m(B::WriteDummy, I::Ror), m(B::WriteAddrDL, N)];
+static S_INC_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, N), m(B::WriteDummy, I::Inc), m(B::WriteAddrDL, N)];
+static S_DEC_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, N), m(B::WriteDummy, I::Dec), m(B::WriteAddrDL, N)];
 
 // RMW accumulator
 static S_ASL_A: &[MicroOp] = &[i(I::AslA)];
@@ -214,47 +184,42 @@ static S_ASL_ABS: &[MicroOp] = &[
     m(B::ReadPC1, N),
     m(B::ReadPC2, I::SetAddrAbs),
     m(B::ReadAddr, N),
-    m(BN, I::Asl),
+    m(B::WriteDummy, I::Asl),
     m(B::WriteAddrDL, N),
 ];
 static S_LSR_ABS: &[MicroOp] = &[
     m(B::ReadPC1, N),
     m(B::ReadPC2, I::SetAddrAbs),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
-    m(BN, I::Lsr),
+    m(B::WriteDummy, I::Lsr),
     m(B::WriteAddrDL, N),
 ];
 static S_ROL_ABS: &[MicroOp] = &[
     m(B::ReadPC1, N),
     m(B::ReadPC2, I::SetAddrAbs),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
-    m(BN, I::Rol),
+    m(B::WriteDummy, I::Rol),
     m(B::WriteAddrDL, N),
 ];
 static S_ROR_ABS: &[MicroOp] = &[
     m(B::ReadPC1, N),
     m(B::ReadPC2, I::SetAddrAbs),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
-    m(BN, I::Ror),
+    m(B::WriteDummy, I::Ror),
     m(B::WriteAddrDL, N),
 ];
 static S_INC_ABS: &[MicroOp] = &[
     m(B::ReadPC1, N),
     m(B::ReadPC2, I::SetAddrAbs),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
-    m(BN, I::Inc),
+    m(B::WriteDummy, I::Inc),
     m(B::WriteAddrDL, N),
 ];
 static S_DEC_ABS: &[MicroOp] = &[
     m(B::ReadPC1, N),
     m(B::ReadPC2, I::SetAddrAbs),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
-    m(BN, I::Dec),
+    m(B::WriteDummy, I::Dec),
     m(B::WriteAddrDL, N),
 ];
 
@@ -264,7 +229,7 @@ static S_ASL_ABSX: &[MicroOp] = &[
     C_ABSX,
     m(B::ReadAddr, N),
     m(B::ReadAddr, N),
-    m(BN, I::Asl),
+    m(B::WriteDummy, I::Asl),
     m(B::WriteAddrDL, N),
 ];
 static S_LSR_ABSX: &[MicroOp] = &[
@@ -272,8 +237,7 @@ static S_LSR_ABSX: &[MicroOp] = &[
     C_ABSX,
     m(B::ReadAddr, N),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
-    m(BN, I::Lsr),
+    m(B::WriteDummy, I::Lsr),
     m(B::WriteAddrDL, N),
 ];
 static S_ROL_ABSX: &[MicroOp] = &[
@@ -281,8 +245,7 @@ static S_ROL_ABSX: &[MicroOp] = &[
     C_ABSX,
     m(B::ReadAddr, N),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
-    m(BN, I::Rol),
+    m(B::WriteDummy, I::Rol),
     m(B::WriteAddrDL, N),
 ];
 static S_ROR_ABSX: &[MicroOp] = &[
@@ -290,8 +253,7 @@ static S_ROR_ABSX: &[MicroOp] = &[
     C_ABSX,
     m(B::ReadAddr, N),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
-    m(BN, I::Ror),
+    m(B::WriteDummy, I::Ror),
     m(B::WriteAddrDL, N),
 ];
 static S_INC_ABSX: &[MicroOp] = &[
@@ -299,8 +261,7 @@ static S_INC_ABSX: &[MicroOp] = &[
     C_ABSX,
     m(B::ReadAddr, N),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
-    m(BN, I::Inc),
+    m(B::WriteDummy, I::Inc),
     m(B::WriteAddrDL, N),
 ];
 static S_DEC_ABSX: &[MicroOp] = &[
@@ -308,8 +269,7 @@ static S_DEC_ABSX: &[MicroOp] = &[
     C_ABSX,
     m(B::ReadAddr, N),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
-    m(BN, I::Dec),
+    m(B::WriteDummy, I::Dec),
     m(B::WriteAddrDL, N),
 ];
 
@@ -318,47 +278,42 @@ static S_ASL_ZPX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
     m(B::ReadAddr, N),
-    m(BN, I::Asl),
+    m(B::WriteDummy, I::Asl),
     m(B::WriteAddrDL, N),
 ];
 static S_LSR_ZPX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
-    m(BN, I::Lsr),
+    m(B::WriteDummy, I::Lsr),
     m(B::WriteAddrDL, N),
 ];
 static S_ROL_ZPX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
-    m(BN, I::Rol),
+    m(B::WriteDummy, I::Rol),
     m(B::WriteAddrDL, N),
 ];
 static S_ROR_ZPX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
-    m(BN, I::Ror),
+    m(B::WriteDummy, I::Ror),
     m(B::WriteAddrDL, N),
 ];
 static S_INC_ZPX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
-    m(BN, I::Inc),
+    m(B::WriteDummy, I::Inc),
     m(B::WriteAddrDL, N),
 ];
 static S_DEC_ZPX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
     m(B::ReadAddr, N),
-    m(B::WriteDummy, N),
-    m(BN, I::Dec),
+    m(B::WriteDummy, I::Dec),
     m(B::WriteAddrDL, N),
 ];
 
@@ -525,13 +480,7 @@ static S_STA_INDY: &[MicroOp] = &[m(B::ReadPC1, N), m(BN, I::SetAddrIndY), X_DUM
 // RMW+ALU helpers (read-modify-write then combine with A)
 macro_rules! rmw_zp {
     ($alu:ident) => {
-        &[
-            R_ZP,
-            m(B::ReadAddr, N),
-            m(B::WriteDummy, N),
-            m(BN, I::$alu),
-            m(B::WriteAddrDL, N),
-        ]
+        &[R_ZP, m(B::ReadAddr, N), m(B::WriteDummy, I::$alu), m(B::WriteAddrDL, N)]
     };
 }
 macro_rules! rmw_zpx {
@@ -540,8 +489,7 @@ macro_rules! rmw_zpx {
             m(B::ReadPC1, N),
             b(B::ReadDummyZpX),
             m(B::ReadAddr, N),
-            m(B::WriteDummy, N),
-            m(BN, I::$alu),
+            m(B::WriteDummy, I::$alu),
             m(B::WriteAddrDL, N),
         ]
     };
@@ -552,8 +500,7 @@ macro_rules! rmw_abs {
             m(B::ReadPC1, N),
             m(B::ReadPC2, I::SetAddrAbs),
             m(B::ReadAddr, N),
-            m(B::WriteDummy, N),
-            m(BN, I::$alu),
+            m(B::WriteDummy, I::$alu),
             m(B::WriteAddrDL, N),
         ]
     };
@@ -565,8 +512,7 @@ macro_rules! rmw_absx {
             C_ABSX,
             m(B::ReadAddr, N),
             m(B::ReadAddr, N),
-            m(B::WriteDummy, N),
-            m(BN, I::$alu),
+            m(B::WriteDummy, I::$alu),
             m(B::WriteAddrDL, N),
         ]
     };
@@ -578,8 +524,7 @@ macro_rules! rmw_absy {
             C_ABSY,
             m(B::ReadAddr, N),
             m(B::ReadAddr, N),
-            m(B::WriteDummy, N),
-            m(BN, I::$alu),
+            m(B::WriteDummy, I::$alu),
             m(B::WriteAddrDL, N),
         ]
     };
@@ -591,8 +536,7 @@ macro_rules! rmw_indx {
             b(B::ReadDummyZpX),
             m(BN, I::SetAddrIndX),
             m(B::ReadAddr, N),
-            m(B::WriteDummy, N),
-            m(BN, I::$alu),
+            m(B::WriteDummy, I::$alu),
             m(B::WriteAddrDL, N),
         ]
     };
@@ -604,8 +548,7 @@ macro_rules! rmw_indy {
             m(BN, I::SetAddrIndY),
             m(B::ReadAddr, N),
             m(B::ReadAddr, N),
-            m(B::WriteDummy, N),
-            m(BN, I::$alu),
+            m(B::WriteDummy, I::$alu),
             m(B::WriteAddrDL, N),
         ]
     };
@@ -711,43 +654,43 @@ pub static OPCODE_SEQUENCES: [&[MicroOp]; 256] = [
     EMPTY, S_ORA_ABSX, S_ASL_ABSX, S_SLO_ABSX,
     // 0x20-0x2F
     S_JSR, S_AND_INDX, S_JAM, S_RLA_INDX, S_BIT_ZP, S_AND_ZP, S_ROL_ZP, S_RLA_ZP, S_PLP, S_AND_IMM, S_ROL_A, EMPTY,
-    S_BIT_ABS, S_AND_ABS, S_ROL_ABS, S_RLA_ABS, 
+    S_BIT_ABS, S_AND_ABS, S_ROL_ABS, S_RLA_ABS,
     // 0x30-0x3F
     S_BMI, S_AND_INDY, S_JAM, S_RLA_INDY, EMPTY, S_AND_ZPX, S_ROL_ZPX, S_RLA_ZPX, S_SEC, S_AND_ABSY, EMPTY, S_RLA_ABSY,
-    EMPTY, S_AND_ABSX, S_ROL_ABSX, S_RLA_ABSX, 
+    EMPTY, S_AND_ABSX, S_ROL_ABSX, S_RLA_ABSX,
     // 0x40-0x4F
     S_RTI, S_EOR_INDX, S_JAM, S_SRE_INDX, S_NOP_ZP, S_EOR_ZP, S_LSR_ZP, S_SRE_ZP, S_PHA, S_EOR_IMM, S_LSR_A, EMPTY,
-    S_JMP_ABS, S_EOR_ABS, S_LSR_ABS, S_SRE_ABS, 
+    S_JMP_ABS, S_EOR_ABS, S_LSR_ABS, S_SRE_ABS,
     // 0x50-0x5F
     S_BVC, S_EOR_INDY, S_JAM, S_SRE_INDY, EMPTY, S_EOR_ZPX, S_LSR_ZPX, S_SRE_ZPX, S_CLI, S_EOR_ABSY, EMPTY, S_SRE_ABSY,
-    EMPTY, S_EOR_ABSX, S_LSR_ABSX, S_SRE_ABSX, 
+    EMPTY, S_EOR_ABSX, S_LSR_ABSX, S_SRE_ABSX,
     // 0x60-0x6F
     S_RTS, S_ADC_INDX, S_JAM, S_RRA_INDX, S_NOP_ZP, S_ADC_ZP, S_ROR_ZP, S_RRA_ZP, S_PLA, S_ADC_IMM, S_ROR_A, EMPTY,
-    S_JMP_IND, S_ADC_ABS, S_ROR_ABS, S_RRA_ABS, 
+    S_JMP_IND, S_ADC_ABS, S_ROR_ABS, S_RRA_ABS,
     // 0x70-0x7F
     S_BVS, S_ADC_INDY, S_JAM, S_RRA_INDY, EMPTY, S_ADC_ZPX, S_ROR_ZPX, S_RRA_ZPX, S_SEI, S_ADC_ABSY, EMPTY, S_RRA_ABSY,
-    EMPTY, S_ADC_ABSX, S_ROR_ABSX, S_RRA_ABSX, 
+    EMPTY, S_ADC_ABSX, S_ROR_ABSX, S_RRA_ABSX,
     // 0x80-0x8F
     EMPTY, S_STA_INDX, EMPTY, S_SAX_INDX, S_STY_ZP, S_STA_ZP, S_STX_ZP, S_SAX_ZP, S_DEY, EMPTY, S_TXA, EMPTY,
-    S_STY_ABS, S_STA_ABS, S_STX_ABS, S_SAX_ABS, 
+    S_STY_ABS, S_STA_ABS, S_STX_ABS, S_SAX_ABS,
     // 0x90-0x9F
     S_BCC, S_STA_INDY, S_JAM, EMPTY, S_STY_ZPX, S_STA_ZPX, S_STX_ZPY, S_SAX_ZPY, S_TYA, S_STA_ABSY, S_TXS, EMPTY,
-    EMPTY, S_STA_ABSX, EMPTY, EMPTY, 
+    EMPTY, S_STA_ABSX, EMPTY, EMPTY,
     // 0xA0-0xAF
     S_LDY_IMM, S_LDA_INDX, S_LDX_IMM, S_LAX_INDX, S_LDY_ZP, S_LDA_ZP, S_LDX_ZP, S_LAX_ZP, S_TAY, S_LDA_IMM, S_TAX,
-    EMPTY, S_LDY_ABS, S_LDA_ABS, S_LDX_ABS, S_LAX_ABS, 
+    EMPTY, S_LDY_ABS, S_LDA_ABS, S_LDX_ABS, S_LAX_ABS,
     // 0xB0-0xBF
     S_BCS, S_LDA_INDY, S_JAM, S_LAX_INDY, S_LDY_ZPX, S_LDA_ZPX, S_LDX_ZPY, S_LAX_ZPY, S_CLV, S_LDA_ABSY, S_TSX, EMPTY,
-    S_LDY_ABSX, S_LDA_ABSX, S_LDX_ABSY, S_LAX_ABSY, 
+    S_LDY_ABSX, S_LDA_ABSX, S_LDX_ABSY, S_LAX_ABSY,
     // 0xC0-0xCF
     S_CPY_IMM, S_CMP_INDX, EMPTY, S_DCP_INDX, S_CPY_ZP, S_CMP_ZP, S_DEC_ZP, S_DCP_ZP, S_INY, S_CMP_IMM, S_DEX, EMPTY,
-    S_CPY_ABS, S_CMP_ABS, S_DEC_ABS, S_DCP_ABS, 
+    S_CPY_ABS, S_CMP_ABS, S_DEC_ABS, S_DCP_ABS,
     // 0xD0-0xDF
     S_BNE, S_CMP_INDY, S_JAM, S_DCP_INDY, EMPTY, S_CMP_ZPX, S_DEC_ZPX, S_DCP_ZPX, S_CLD, S_CMP_ABSY, EMPTY, S_DCP_ABSY,
-    EMPTY, S_CMP_ABSX, S_DEC_ABSX, S_DCP_ABSX, 
+    EMPTY, S_CMP_ABSX, S_DEC_ABSX, S_DCP_ABSX,
     // 0xE0-0xEF
     S_CPX_IMM, S_SBC_INDX, EMPTY, S_ISC_INDX, S_CPX_ZP, S_SBC_ZP, S_INC_ZP, S_ISC_ZP, S_INX, S_SBC_IMM, S_NOP, EMPTY,
-    S_CPX_ABS, S_SBC_ABS, S_INC_ABS, S_ISC_ABS, 
+    S_CPX_ABS, S_SBC_ABS, S_INC_ABS, S_ISC_ABS,
     // 0xF0-0xFF
     S_BEQ, S_SBC_INDY, S_JAM, S_ISC_INDY, EMPTY, S_SBC_ZPX, S_INC_ZPX, S_ISC_ZPX, S_SED, S_SBC_ABSY, EMPTY, S_ISC_ABSY,
     EMPTY, S_SBC_ABSX, S_INC_ABSX, S_ISC_ABSX,
