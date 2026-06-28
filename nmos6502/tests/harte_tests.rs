@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn test_one() {
-        let path = PathBuf::from("external/6502/v1/04.json");
+        let path = PathBuf::from("external/6502/v1/08.json");
         run_single_opcode(path, true);
     }
 }

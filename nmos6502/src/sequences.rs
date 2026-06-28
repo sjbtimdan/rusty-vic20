@@ -210,8 +210,8 @@ static S_SEI: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_set_i));
 static S_CLV: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_clr_v));
 
 // Stack
-static S_PHA: &[MicroOp] = &[NONE, m(B::PushA, N)];
-static S_PHP: &[MicroOp] = &[NONE, m(B::PushStatusB, N)];
+static S_PHA: &[MicroOp] = &[b(B::ReadPC1), m(B::PushA, N)];
+static S_PHP: &[MicroOp] = &[b(B::ReadPC1), m(B::PushStatusB, N)];
 static S_PLA: &[MicroOp] = &[NONE, m(B::PopDummy, N), m(B::Pop, I::Fn(CPU6502::op_set_a))];
 static S_PLP: &[MicroOp] = &[NONE, m(B::PopDummy, N), m(B::Pop, I::Fn(CPU6502::op_set_status))];
 
