@@ -273,16 +273,25 @@ impl CPU6502 {
     }
     pub(crate) fn op_set_addr_absx(&mut self, _memory: &mut dyn Addressable) {
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
-        (self.addr, self.page_crossed) = page_cross(base, self.registers.x);
+        let full = base.wrapping_add(self.registers.x as u16);
+        self.page_crossed = (base & 0xFF00) != (full & 0xFF00);
+        self.addr = (base & 0xFF00) | (full as u8 as u16);
         if !self.page_crossed {
             self.sequence_index += 1;
         }
     }
     pub(crate) fn op_set_addr_absy(&mut self, _memory: &mut dyn Addressable) {
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
-        (self.addr, self.page_crossed) = page_cross(base, self.registers.y);
+        let full = base.wrapping_add(self.registers.y as u16);
+        self.page_crossed = (base & 0xFF00) != (full & 0xFF00);
+        self.addr = (base & 0xFF00) | (full as u8 as u16);
         if !self.page_crossed {
             self.sequence_index += 1;
+        }
+    }
+    pub(crate) fn op_fix_addr_cross(&mut self, _memory: &mut dyn Addressable) {
+        if self.page_crossed {
+            self.addr = self.addr.wrapping_add(0x100);
         }
     }
     /// Save `data_latch` → `operands[1]` (stores lo byte for later addr compute).

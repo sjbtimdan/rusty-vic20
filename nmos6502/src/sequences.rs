@@ -38,7 +38,7 @@ const R_ZP: MicroOp = m(B::ReadPC1, I::Fn(CPU6502::op_set_addr_zp));
 const C_ABSX: MicroOp = m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_absx));
 const C_ABSY: MicroOp = m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_absy));
 
-const X_DUMMY: MicroOp = m(B::ReadDummy, N);
+const X_DUMMY: MicroOp = m(B::ReadDummy, I::Fn(CPU6502::op_fix_addr_cross));
 const S_NC1: MicroOp = m(BN, I::SkipIfNotCrossed(1));
 
 // ── Addressing-mode family macros ──
@@ -235,7 +235,7 @@ static S_LDY_ZP: &[MicroOp] = &seq_zp(I::Fn(CPU6502::op_set_y));
 static S_ADC_ZP: &[MicroOp] = &seq_zp(I::Fn(CPU6502::op_adc));
 static S_SBC_ZP: &[MicroOp] = &seq_zp(I::Fn(CPU6502::op_sbc));
 static S_AND_ZP: &[MicroOp] = &seq_zp(I::Fn(CPU6502::op_and));
-static S_NOP_ZP: &[MicroOp] = &[R_ZP, NONE];
+static S_NOP_ZP: &[MicroOp] = &[R_ZP, b(B::ReadDummy)];
 static S_ORA_ZP: &[MicroOp] = &seq_zp(I::Fn(CPU6502::op_ora));
 static S_EOR_ZP: &[MicroOp] = &seq_zp(I::Fn(CPU6502::op_eor));
 static S_CMP_ZP: &[MicroOp] = &seq_zp(I::Fn(CPU6502::op_cmp_a));
@@ -279,7 +279,11 @@ static S_CMP_ABS: &[MicroOp] = &seq_abs(I::Fn(CPU6502::op_cmp_a));
 static S_CPX_ABS: &[MicroOp] = &seq_abs(I::Fn(CPU6502::op_cmp_x));
 static S_CPY_ABS: &[MicroOp] = &seq_abs(I::Fn(CPU6502::op_cmp_y));
 static S_BIT_ABS: &[MicroOp] = &seq_abs(I::Fn(CPU6502::op_bit));
-static S_NOP_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)), NONE];
+static S_NOP_ABS: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
+    b(B::ReadDummy),
+];
 
 // Absolute write
 static S_STA_ABS: &[MicroOp] = &[
@@ -603,13 +607,13 @@ pub static OPCODE_SEQUENCES: [&[MicroOp]; 256] = [
     S_BRK, S_ORA_INDX, S_JAM, S_SLO_INDX, S_NOP_ZP, S_ORA_ZP, S_ASL_ZP, S_SLO_ZP, S_PHP, S_ORA_IMM, S_ASL_A, S_ANC_A, S_NOP_ABS,
     S_ORA_ABS, S_ASL_ABS, S_SLO_ABS,
     // 0x10-0x1F
-    S_BPL, S_ORA_INDY, S_JAM, S_SLO_INDY, S_NOP_ZP, S_ORA_ZPX, S_ASL_ZPX, S_SLO_ZPX, S_CLC, S_ORA_ABSY, S_NOP, S_SLO_ABSY,
+    S_BPL, S_ORA_INDY, S_JAM, S_SLO_INDY, S_NOP_ZPX, S_ORA_ZPX, S_ASL_ZPX, S_SLO_ZPX, S_CLC, S_ORA_ABSY, S_NOP, S_SLO_ABSY,
     S_NOP_ABSX, S_ORA_ABSX, S_ASL_ABSX, S_SLO_ABSX,
     // 0x20-0x2F
     S_JSR, S_AND_INDX, S_JAM, S_RLA_INDX, S_BIT_ZP, S_AND_ZP, S_ROL_ZP, S_RLA_ZP, S_PLP, S_AND_IMM, S_ROL_A, S_ANC_A,
     S_BIT_ABS, S_AND_ABS, S_ROL_ABS, S_RLA_ABS,
     // 0x30-0x3F
-    S_BMI, S_AND_INDY, S_JAM, S_RLA_INDY, S_NOP_ZP, S_AND_ZPX, S_ROL_ZPX, S_RLA_ZPX, S_SEC, S_AND_ABSY, S_NOP, S_RLA_ABSY,
+    S_BMI, S_AND_INDY, S_JAM, S_RLA_INDY, S_NOP_ZPX, S_AND_ZPX, S_ROL_ZPX, S_RLA_ZPX, S_SEC, S_AND_ABSY, S_NOP, S_RLA_ABSY,
     S_NOP_ABSX, S_AND_ABSX, S_ROL_ABSX, S_RLA_ABSX,
     // 0x40-0x4F
     S_RTI, S_EOR_INDX, S_JAM, S_SRE_INDX, S_NOP_ZP, S_EOR_ZP, S_LSR_ZP, S_SRE_ZP, S_PHA, S_EOR_IMM, S_LSR_A, S_ALR_IMM,
