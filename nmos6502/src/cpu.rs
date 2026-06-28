@@ -65,20 +65,8 @@ impl CPU6502 {
     }
 
     pub fn reset(&mut self, memory: &mut impl Addressable) {
-        self.registers = Registers::default();
-        self.sequence = &[];
-        self.sequence_index = 0;
-        self.operands = [0; 2];
-        self.addr = 0;
-        self.data_latch = 0;
-        self.instruction_length = 0;
-        self.branch_taken = false;
-        self.page_crossed = false;
-        self.irq_line_low = false;
-        self.nmi_latch.reset();
+        *self = Self::new();
         self.nmi_latch.set_level(true);
-        self.total_cycles = 0;
-        self.halted = false;
         self.enter_interrupt(Interrupt::Reset, memory);
     }
 

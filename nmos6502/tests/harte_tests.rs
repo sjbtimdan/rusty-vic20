@@ -238,7 +238,7 @@ mod tests {
 
     #[rstest]
     fn run_opcode(#[files("external/6502/v1/[0-9a-f][0-9a-f].json")] path: PathBuf) {
-        run_single_opcode(path, true);
+        run_single_opcode(path, false);
     }
 
     #[test]
