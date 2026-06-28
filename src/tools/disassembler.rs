@@ -105,6 +105,9 @@ fn mnemonic_str(mnemonic: nmos6502::opcode::Mnemonic) -> &'static str {
         Sax => "SAX",
         Slo => "SLO",
         Sre => "SRE",
+        Alr => "ALR",
+        Anc => "ANC",
+        Arr => "ARR",
         Illegal => "???",
     }
 }
