@@ -197,6 +197,7 @@ impl CPU6502 {
             BusOp::ReadVecHi(addr) => {
                 let hi = memory.read_byte(addr);
                 self.registers.pc = (hi as u16) << 8 | self.operands[0] as u16;
+                self.instruction_length = 0;
             }
 
             BusOp::None => {} // internal-only cycle
