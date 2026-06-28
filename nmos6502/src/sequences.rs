@@ -746,9 +746,10 @@ static S_TAS_ABSY: &[MicroOp] = &[
 ];
 
 // AHX/SHA (abs,Y) — store A & X & (base_hi + 1) at abs,Y (same write as (indirect),Y)
+// Reuses SHX's abs,Y setup — same page-wrapped address computation.
 static S_AHX_ABSY: &[MicroOp] = &[
     m(B::ReadPC1, N),
-    m(B::ReadPC2, I::Fn(CPU6502::op_ahx_absy_setup_addr)),
+    m(B::ReadPC2, I::Fn(CPU6502::op_shx_setup_addr)),
     X_DUMMY,
     m(B::WriteAddrAHX, N),
 ];

@@ -140,41 +140,10 @@ impl CPU6502 {
             BusOp::WriteAddrY => memory.write_byte(self.addr, self.registers.y),
             BusOp::WriteAddrAX => memory.write_byte(self.addr, self.registers.a & self.registers.x),
             BusOp::WriteAddrAHX => {
-                // Low byte is always (base_lo + Y) & 0xFF
-                let lo = self.addr as u8;
-                let base_hi = self.operands[1];
-                // High byte depends on page cross
-                let hi = if self.page_crossed {
-                    self.registers.a & self.registers.x & base_hi.wrapping_add(1)
-                } else {
-                    (self.addr >> 8) as u8
-                };
-                // Value = A & X & (C5_addr_hi + 1), where C5_addr = self.addr
-                let val = self.registers.a & self.registers.x & ((self.addr >> 8) as u8).wrapping_add(1);
-                memory.write_byte((hi as u16) << 8 | lo as u16, val);
+                self.masked_write(memory, self.registers.a & self.registers.x);
             }
-            BusOp::WriteAddrSHY => {
-                let lo = self.addr as u8;
-                let base_hi = self.operands[1];
-                let hi = if self.page_crossed {
-                    self.registers.y & base_hi.wrapping_add(1)
-                } else {
-                    (self.addr >> 8) as u8
-                };
-                let val = self.registers.y & ((self.addr >> 8) as u8).wrapping_add(1);
-                memory.write_byte((hi as u16) << 8 | lo as u16, val);
-            }
-            BusOp::WriteAddrSHX => {
-                let lo = self.addr as u8;
-                let base_hi = self.operands[1];
-                let hi = if self.page_crossed {
-                    self.registers.x & base_hi.wrapping_add(1)
-                } else {
-                    (self.addr >> 8) as u8
-                };
-                let val = self.registers.x & ((self.addr >> 8) as u8).wrapping_add(1);
-                memory.write_byte((hi as u16) << 8 | lo as u16, val);
-            }
+            BusOp::WriteAddrSHY => self.masked_write(memory, self.registers.y),
+            BusOp::WriteAddrSHX => self.masked_write(memory, self.registers.x),
             BusOp::WriteAddrDL => memory.write_byte(self.addr, self.data_latch),
             BusOp::WriteDummy => memory.write_byte(self.addr, self.data_latch),
 
@@ -372,15 +341,6 @@ impl CPU6502 {
         self.operands[1] = hi; // save base_hi for the write-address computation
                                // C5 dummy-read address: base page + low byte of (base + Y)
         self.addr = (hi as u16) << 8 | (lo.wrapping_add(self.registers.y)) as u16;
-    }
-    /// AHX/SHA (abs,Y) setup: like `op_shx_setup_addr` but used for AHX abs,Y.
-    /// Same page-wrapped address computation, reuses WriteAddrAHX for the write.
-    pub(crate) fn op_ahx_absy_setup_addr(&mut self, _memory: &mut dyn Addressable) {
-        let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
-        let final_addr = base.wrapping_add(self.registers.y as u16);
-        self.page_crossed = (base & 0xFF00) != (final_addr & 0xFF00);
-        // operands[1] already holds base_hi from ReadPC2
-        self.addr = (self.operands[1] as u16) << 8 | (self.operands[0].wrapping_add(self.registers.y)) as u16;
     }
     /// TAS/SHS (abs,Y) setup: sets SP = A & X, then computes page-wrapped address
     /// for C4 ReadDummy (like AHX but abs,Y). Reuses WriteAddrAHX for the write.
@@ -706,6 +666,22 @@ impl CPU6502 {
         self.registers.update_carry_flag(ax >= self.data_latch);
         self.registers.update_zero_and_negative(result);
         self.registers.set_x(result);
+    }
+
+    /// Shared write helper for AHX/SHY/SHX: write `reg_val` masked by
+    /// `(base_hi + 1)` at a page-cross-conditional address.  `self.addr`
+    /// must be set to the C4 page-wrapped address and `operands[1]` must
+    /// hold `base_hi`.
+    fn masked_write(&mut self, memory: &mut dyn Addressable, reg_val: u8) {
+        let lo = self.addr as u8;
+        let base_hi = self.operands[1];
+        let hi = if self.page_crossed {
+            reg_val & base_hi.wrapping_add(1)
+        } else {
+            (self.addr >> 8) as u8
+        };
+        let val = reg_val & ((self.addr >> 8) as u8).wrapping_add(1);
+        memory.write_byte((hi as u16) << 8 | lo as u16, val);
     }
 
     // ── Control flow ──
