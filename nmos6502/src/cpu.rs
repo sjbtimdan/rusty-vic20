@@ -40,6 +40,11 @@ pub struct CPU6502 {
     pub total_cycles: u64,
 }
 
+fn page_cross(base: u16, index: u8) -> (u16, bool) {
+    let addr = base.wrapping_add(index as u16);
+    (addr, (base & 0xFF00) != (addr & 0xFF00))
+}
+
 impl CPU6502 {
     pub fn new() -> Self {
         Self {
@@ -295,16 +300,14 @@ impl CPU6502 {
     }
     pub(crate) fn op_set_addr_absx(&mut self, _memory: &mut dyn Addressable) {
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
-        self.addr = base.wrapping_add(self.registers.x as u16);
-        self.page_crossed = (base & 0xFF00) != (self.addr & 0xFF00);
+        (self.addr, self.page_crossed) = page_cross(base, self.registers.x);
         if !self.page_crossed {
             self.sequence_index += 1;
         }
     }
     pub(crate) fn op_set_addr_absy(&mut self, _memory: &mut dyn Addressable) {
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
-        self.addr = base.wrapping_add(self.registers.y as u16);
-        self.page_crossed = (base & 0xFF00) != (self.addr & 0xFF00);
+        (self.addr, self.page_crossed) = page_cross(base, self.registers.y);
         if !self.page_crossed {
             self.sequence_index += 1;
         }
@@ -323,9 +326,7 @@ impl CPU6502 {
         let ptr = self.operands[0];
         let lo = memory.read_zp_byte(ptr);
         let hi = memory.read_zp_byte(ptr.wrapping_add(1));
-        let base = (hi as u16) << 8 | lo as u16;
-        self.addr = base.wrapping_add(self.registers.y as u16);
-        self.page_crossed = (base & 0xFF00) != (self.addr & 0xFF00);
+        (self.addr, self.page_crossed) = page_cross((hi as u16) << 8 | lo as u16, self.registers.y);
     }
     /// AHX/SHA (indirect),Y setup: like `op_set_addr_indy` but stores the
     /// page-wrapped address (C5 dummy-read target) in `self.addr` and saves
@@ -334,11 +335,8 @@ impl CPU6502 {
         let ptr = self.operands[0];
         let lo = memory.read_zp_byte(ptr);
         let hi = memory.read_zp_byte(ptr.wrapping_add(1));
-        let base = (hi as u16) << 8 | lo as u16;
-        let final_addr = base.wrapping_add(self.registers.y as u16);
-        self.page_crossed = (base & 0xFF00) != (final_addr & 0xFF00);
-        self.operands[1] = hi; // save base_hi for the write-address computation
-                               // C5 dummy-read address: base page + low byte of (base + Y)
+        self.operands[1] = hi;
+        (self.addr, self.page_crossed) = page_cross((hi as u16) << 8 | lo as u16, self.registers.y);
         self.addr = (hi as u16) << 8 | (lo.wrapping_add(self.registers.y)) as u16;
     }
     /// TAS/SHS (abs,Y) setup: sets SP = A & X, then computes page-wrapped address
@@ -346,10 +344,7 @@ impl CPU6502 {
     pub(crate) fn op_tas_setup_addr(&mut self, _memory: &mut dyn Addressable) {
         self.registers.sp = self.registers.a & self.registers.x;
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
-        let final_addr = base.wrapping_add(self.registers.y as u16);
-        self.page_crossed = (base & 0xFF00) != (final_addr & 0xFF00);
-        // operands[1] already holds base_hi from ReadPC2
-        // Set addr to page-wrapped address for C4 ReadDummy
+        (self.addr, self.page_crossed) = page_cross(base, self.registers.y);
         self.addr = (self.operands[1] as u16) << 8 | (self.operands[0].wrapping_add(self.registers.y)) as u16;
     }
     /// SHY (abs,X) setup: like `op_set_addr_absx` but stores the page-wrapped
@@ -357,10 +352,7 @@ impl CPU6502 {
     /// ReadDummy cycle (always 5 cycles for SHY, unlike LDA abs,X).
     pub(crate) fn op_shy_setup_addr(&mut self, _memory: &mut dyn Addressable) {
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
-        let final_addr = base.wrapping_add(self.registers.x as u16);
-        self.page_crossed = (base & 0xFF00) != (final_addr & 0xFF00);
-        // operands[1] already holds base_hi from ReadPC2
-        // Set addr to page-wrapped address for C4 ReadDummy
+        (self.addr, self.page_crossed) = page_cross(base, self.registers.x);
         self.addr = (self.operands[1] as u16) << 8 | (self.operands[0].wrapping_add(self.registers.x)) as u16;
     }
     /// SHX (abs,Y) setup: like `op_set_addr_absy` but stores the page-wrapped
@@ -368,10 +360,7 @@ impl CPU6502 {
     /// ReadDummy cycle (always 5 cycles for SHX, unlike LDA abs,Y).
     pub(crate) fn op_shx_setup_addr(&mut self, _memory: &mut dyn Addressable) {
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
-        let final_addr = base.wrapping_add(self.registers.y as u16);
-        self.page_crossed = (base & 0xFF00) != (final_addr & 0xFF00);
-        // operands[1] already holds base_hi from ReadPC2
-        // Set addr to page-wrapped address for C4 ReadDummy
+        (self.addr, self.page_crossed) = page_cross(base, self.registers.y);
         self.addr = (self.operands[1] as u16) << 8 | (self.operands[0].wrapping_add(self.registers.y)) as u16;
     }
 
