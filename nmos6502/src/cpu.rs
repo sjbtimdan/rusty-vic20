@@ -120,12 +120,12 @@ impl CPU6502 {
             BusOp::ReadDummyZpX => {
                 let zp = self.operands[0];
                 let _ = memory.read_zp_byte(zp);
-                self.addr = (zp.wrapping_add(self.registers.x) & 0xFF) as u16;
+                self.addr = (zp.wrapping_add(self.registers.x)) as u16;
             }
             BusOp::ReadDummyZpY => {
                 let zp = self.operands[0];
                 let _ = memory.read_zp_byte(zp);
-                self.addr = (zp.wrapping_add(self.registers.y) & 0xFF) as u16;
+                self.addr = (zp.wrapping_add(self.registers.y)) as u16;
             }
             BusOp::ReadAddrZp1 => {
                 let addr = (self.addr as u8).wrapping_add(1) as u16;
@@ -226,11 +226,7 @@ impl CPU6502 {
 
         self.sequence = OPCODE_SEQUENCES[opcode as usize];
         self.sequence_index = 0;
-        self.operands = [0; 2];
-        self.addr = 0;
-        self.data_latch = 0;
-        self.branch_taken = false;
-        self.page_crossed = false;
+        self.reset_instruction_state();
 
         // Determine instruction length from opcode
         self.instruction_length = crate::opcode::decode(opcode).bytes;
@@ -659,6 +655,14 @@ impl CPU6502 {
         memory.read_byte(0x0100 + self.registers.sp as u16)
     }
 
+    fn reset_instruction_state(&mut self) {
+        self.operands = [0; 2];
+        self.addr = 0;
+        self.data_latch = 0;
+        self.branch_taken = false;
+        self.page_crossed = false;
+    }
+
     // ── Control flow ──
 
     pub(crate) fn op_jam_halt(&mut self, _memory: &mut dyn Addressable) {
@@ -750,16 +754,8 @@ impl CPU6502 {
         };
         self.sequence = seq;
         self.sequence_index = 0;
-        self.operands = [0; 2];
-        self.addr = 0;
-        self.data_latch = 0;
-        self.branch_taken = false;
-        self.page_crossed = false;
-        match interrupt {
-            Interrupt::NMI | Interrupt::IRQ => self.instruction_length = 0,
-            Interrupt::Reset => self.instruction_length = 0,
-            Interrupt::BRK => self.instruction_length = 0,
-        }
+        self.reset_instruction_state();
+        self.instruction_length = 0;
     }
 }
 

@@ -104,6 +104,10 @@ macro_rules! seq_indy {
     };
 }
 
+const fn seq_implied(op: InternalOp) -> [MicroOp; 1] {
+    [m(B::ReadDummyNext, op)]
+}
+
 macro_rules! interrupt_seq {
     ($n:ident, $lo:expr, $hi:expr) => {
         pub static $n: &[MicroOp] = &[
@@ -208,25 +212,25 @@ macro_rules! branch_seq {
 // ── Sequences ──
 
 // Implied/register
-static S_NOP: &[MicroOp] = &[m(B::ReadDummyNext, N)];
 static S_JAM: &[MicroOp] = &[m(B::ReadPC1, I::Fn(CPU6502::op_jam_halt))];
-static S_INX: &[MicroOp] = &[m(B::ReadDummyNext, I::Fn(CPU6502::op_inc_x))];
-static S_INY: &[MicroOp] = &[m(B::ReadDummyNext, I::Fn(CPU6502::op_inc_y))];
-static S_DEX: &[MicroOp] = &[m(B::ReadDummyNext, I::Fn(CPU6502::op_dec_x))];
-static S_DEY: &[MicroOp] = &[m(B::ReadDummyNext, I::Fn(CPU6502::op_dec_y))];
-static S_TXA: &[MicroOp] = &[m(B::ReadDummyNext, I::Fn(CPU6502::op_txa))];
-static S_TYA: &[MicroOp] = &[m(B::ReadDummyNext, I::Fn(CPU6502::op_tya))];
-static S_TAX: &[MicroOp] = &[m(B::ReadDummyNext, I::Fn(CPU6502::op_tax))];
-static S_TAY: &[MicroOp] = &[m(B::ReadDummyNext, I::Fn(CPU6502::op_tay))];
-static S_TSX: &[MicroOp] = &[m(B::ReadDummyNext, I::Fn(CPU6502::op_tsx))];
-static S_TXS: &[MicroOp] = &[m(B::ReadDummyNext, I::Fn(CPU6502::op_txs))];
-static S_CLC: &[MicroOp] = &[m(B::ReadDummyNext, I::Fn(CPU6502::op_clr_c))];
-static S_SEC: &[MicroOp] = &[m(B::ReadDummyNext, I::Fn(CPU6502::op_set_c))];
-static S_CLD: &[MicroOp] = &[m(B::ReadDummyNext, I::Fn(CPU6502::op_clr_d))];
-static S_SED: &[MicroOp] = &[m(B::ReadDummyNext, I::Fn(CPU6502::op_set_d))];
-static S_CLI: &[MicroOp] = &[m(B::ReadDummyNext, I::Fn(CPU6502::op_clr_i))];
-static S_SEI: &[MicroOp] = &[m(B::ReadDummyNext, I::Fn(CPU6502::op_set_i))];
-static S_CLV: &[MicroOp] = &[m(B::ReadDummyNext, I::Fn(CPU6502::op_clr_v))];
+static S_NOP: &[MicroOp] = &seq_implied(N);
+static S_INX: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_inc_x));
+static S_INY: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_inc_y));
+static S_DEX: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_dec_x));
+static S_DEY: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_dec_y));
+static S_TXA: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_txa));
+static S_TYA: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_tya));
+static S_TAX: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_tax));
+static S_TAY: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_tay));
+static S_TSX: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_tsx));
+static S_TXS: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_txs));
+static S_CLC: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_clr_c));
+static S_SEC: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_set_c));
+static S_CLD: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_clr_d));
+static S_SED: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_set_d));
+static S_CLI: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_clr_i));
+static S_SEI: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_set_i));
+static S_CLV: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_clr_v));
 
 // Stack
 static S_PHA: &[MicroOp] = &[NONE, m(B::PushA, N)];
@@ -359,10 +363,10 @@ static S_INC_ZP: &[MicroOp] = rmw_zp!(I::Fn(CPU6502::op_inc));
 static S_DEC_ZP: &[MicroOp] = rmw_zp!(I::Fn(CPU6502::op_dec));
 
 // RMW accumulator
-static S_ASL_A: &[MicroOp] = &[m(B::ReadDummyNext, I::Fn(CPU6502::op_asl_a))];
-static S_LSR_A: &[MicroOp] = &[m(B::ReadDummyNext, I::Fn(CPU6502::op_lsr_a))];
-static S_ROL_A: &[MicroOp] = &[m(B::ReadDummyNext, I::Fn(CPU6502::op_rol_a))];
-static S_ROR_A: &[MicroOp] = &[m(B::ReadDummyNext, I::Fn(CPU6502::op_ror_a))];
+static S_ASL_A: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_asl_a));
+static S_LSR_A: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_lsr_a));
+static S_ROL_A: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_rol_a));
+static S_ROR_A: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_ror_a));
 
 seq_absx!(S_NOP_ABSX, N);
 

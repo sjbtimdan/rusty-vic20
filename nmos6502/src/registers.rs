@@ -94,7 +94,7 @@ impl fmt::Display for Registers {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "A:{:02X} X:{:02X} Y:{:02X} SP:{:02X} PC:{:04X} SR:{:02X}[{}{}{}{}{}{}{}{}]",
+            "A:{:02X} X:{:02X} Y:{:02X} SP:{:02X} PC:{:04X} SR:{:02X}[{}{}-{}{}{}{}{}]",
             self.a,
             self.x,
             self.y,
@@ -103,7 +103,6 @@ impl fmt::Display for Registers {
             self.status,
             if self.is_flag_set(NEGATIVE) { 'N' } else { '-' },
             if self.is_flag_set(OVERFLOW) { 'V' } else { '-' },
-            '-',
             if self.is_flag_set(BREAK) { 'B' } else { '-' },
             if self.is_flag_set(DECIMAL) { 'D' } else { '-' },
             if self.is_flag_set(INTERRUPT) { 'I' } else { '-' },
