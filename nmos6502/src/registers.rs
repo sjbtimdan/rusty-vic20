@@ -33,14 +33,6 @@ impl Default for Registers {
 }
 
 impl Registers {
-    pub fn set_flag(&mut self, flag: u8, on: bool) {
-        if on {
-            self.status |= flag;
-        } else {
-            self.status &= !flag;
-        }
-    }
-
     pub fn is_flag_set(&self, flag: u8) -> bool {
         self.status & flag != 0
     }
@@ -88,6 +80,14 @@ impl Registers {
         self.y = value;
         self.update_zero_and_negative(value);
     }
+
+    fn set_flag(&mut self, flag: u8, on: bool) {
+        if on {
+            self.status |= flag;
+        } else {
+            self.status &= !flag;
+        }
+    }
 }
 
 impl fmt::Display for Registers {
@@ -116,28 +116,94 @@ impl fmt::Display for Registers {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::{fixture, rstest};
 
-    #[test]
-    fn test_default_registers() {
-        let r = Registers::default();
-        assert_eq!(r.sp, 0xFD);
-        assert_eq!(r.status, UNUSED);
-        assert!(r.is_flag_set(UNUSED));
+    #[fixture]
+    fn registers() -> Registers {
+        Registers::default()
     }
 
-    #[test]
-    fn test_set_accumulator_updates_flags() {
-        let mut r = Registers::default();
-        r.set_accumulator(0x00);
-        assert!(r.is_flag_set(ZERO));
-        assert!(!r.is_flag_set(NEGATIVE));
+    #[rstest]
+    fn test_default_registers(registers: Registers) {
+        assert_eq!(registers.sp, 0xFD);
+        assert_eq!(registers.status, UNUSED);
+        assert!(registers.is_flag_set(UNUSED));
+    }
 
-        r.set_accumulator(0x80);
-        assert!(!r.is_flag_set(ZERO));
-        assert!(r.is_flag_set(NEGATIVE));
+    #[rstest]
+    fn test_set_accumulator_updates_flags(registers: Registers) {
+        test_updates_flags(registers, |r, v| r.set_accumulator(v))
+    }
 
-        r.set_accumulator(0x42);
-        assert!(!r.is_flag_set(ZERO));
-        assert!(!r.is_flag_set(NEGATIVE));
+    #[rstest]
+    fn test_set_x_updates_flags(registers: Registers) {
+        test_updates_flags(registers, |r, v| r.set_x(v))
+    }
+
+    #[rstest]
+    fn test_set_y_updates_flags(registers: Registers) {
+        test_updates_flags(registers, |r, v| r.set_y(v))
+    }
+
+    #[rstest]
+    fn test_carry_flag(mut registers: Registers) {
+        registers.update_carry_flag(true);
+        assert!(registers.is_flag_set(CARRY));
+        registers.update_carry_flag(false);
+        assert!(!registers.is_flag_set(CARRY));
+    }
+
+    #[rstest]
+    fn test_zero_flag(mut registers: Registers) {
+        registers.update_zero_flag(true);
+        assert!(registers.is_flag_set(ZERO));
+        registers.update_zero_flag(false);
+        assert!(!registers.is_flag_set(ZERO));
+    }
+
+    #[rstest]
+    fn test_decimal_flag(mut registers: Registers) {
+        registers.update_decimal_flag(true);
+        assert!(registers.is_flag_set(DECIMAL));
+        registers.update_decimal_flag(false);
+        assert!(!registers.is_flag_set(DECIMAL));
+    }
+
+    #[rstest]
+    fn test_interrupt_flag(mut registers: Registers) {
+        registers.update_interrupt_flag(true);
+        assert!(registers.is_flag_set(INTERRUPT));
+        registers.update_interrupt_flag(false);
+        assert!(!registers.is_flag_set(INTERRUPT));
+    }
+
+    #[rstest]
+    fn test_negative_flag(mut registers: Registers) {
+        registers.update_negative_flag(true);
+        assert!(registers.is_flag_set(NEGATIVE));
+        registers.update_negative_flag(false);
+        assert!(!registers.is_flag_set(NEGATIVE));
+    }
+
+    #[rstest]
+    fn test_overflow_flag(mut registers: Registers) {
+        registers.update_overflow_flag(true);
+        assert!(registers.is_flag_set(OVERFLOW));
+        registers.update_overflow_flag(false);
+        assert!(!registers.is_flag_set(OVERFLOW));
+    }
+
+    fn test_updates_flags(mut registers: Registers, set_register: fn(&mut Registers, u8)) {
+        set_register(&mut registers, 0x00);
+        assert!(registers.is_flag_set(ZERO));
+        assert!(!registers.is_flag_set(NEGATIVE));
+
+        set_register(&mut registers, 0x80);
+        assert!(!registers.is_flag_set(ZERO));
+        assert!(registers.is_flag_set(NEGATIVE));
+
+        set_register(&mut registers, 0x42);
+        assert!(!registers.is_flag_set(ZERO));
+        assert!(!registers.is_flag_set(NEGATIVE));
     }
 }
