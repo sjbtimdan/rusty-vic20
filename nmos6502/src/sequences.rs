@@ -131,6 +131,7 @@ static S_CMP_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs),
 static S_CPX_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::ReadAddr, I::CmpX)];
 static S_CPY_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::ReadAddr, I::CmpY)];
 static S_BIT_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::ReadAddr, I::Bit)];
+static S_NOP_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), NONE];
 
 // Absolute write
 static S_STA_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::WriteAddrA, N)];
@@ -142,24 +143,24 @@ static S_JMP_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs),
 static S_JMP_IND: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), i(I::JumpInd), NONE];
 
 // Absolute indexed X read (with page-cross handling)
-static S_LDA_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, S_NC1, X_DUMMY, m(B::ReadAddr, I::SetA)];
-static S_LDY_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, S_NC1, X_DUMMY, m(B::ReadAddr, I::SetY)];
-static S_ADC_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, S_NC1, X_DUMMY, m(B::ReadAddr, I::Adc)];
-static S_SBC_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, S_NC1, X_DUMMY, m(B::ReadAddr, I::Sbc)];
-static S_AND_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, S_NC1, X_DUMMY, m(B::ReadAddr, I::And)];
-static S_ORA_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, S_NC1, X_DUMMY, m(B::ReadAddr, I::Ora)];
-static S_EOR_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, S_NC1, X_DUMMY, m(B::ReadAddr, I::Eor)];
-static S_CMP_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, S_NC1, X_DUMMY, m(B::ReadAddr, I::CmpA)];
+static S_LDA_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::ReadAddr, I::SetA)];
+static S_LDY_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::ReadAddr, I::SetY)];
+static S_ADC_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::ReadAddr, I::Adc)];
+static S_SBC_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::ReadAddr, I::Sbc)];
+static S_AND_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::ReadAddr, I::And)];
+static S_ORA_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::ReadAddr, I::Ora)];
+static S_EOR_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::ReadAddr, I::Eor)];
+static S_CMP_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::ReadAddr, I::CmpA)];
 
 // Absolute indexed Y read
-static S_LDA_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, S_NC1, X_DUMMY, m(B::ReadAddr, I::SetA)];
-static S_LDX_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, S_NC1, X_DUMMY, m(B::ReadAddr, I::SetX)];
-static S_ADC_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, S_NC1, X_DUMMY, m(B::ReadAddr, I::Adc)];
-static S_SBC_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, S_NC1, X_DUMMY, m(B::ReadAddr, I::Sbc)];
-static S_AND_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, S_NC1, X_DUMMY, m(B::ReadAddr, I::And)];
-static S_ORA_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, S_NC1, X_DUMMY, m(B::ReadAddr, I::Ora)];
-static S_EOR_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, S_NC1, X_DUMMY, m(B::ReadAddr, I::Eor)];
-static S_CMP_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, S_NC1, X_DUMMY, m(B::ReadAddr, I::CmpA)];
+static S_LDA_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::ReadAddr, I::SetA)];
+static S_LDX_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::ReadAddr, I::SetX)];
+static S_ADC_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::ReadAddr, I::Adc)];
+static S_SBC_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::ReadAddr, I::Sbc)];
+static S_AND_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::ReadAddr, I::And)];
+static S_ORA_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::ReadAddr, I::Ora)];
+static S_EOR_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::ReadAddr, I::Eor)];
+static S_CMP_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::ReadAddr, I::CmpA)];
 
 // Absolute indexed write (always 5 cycles)
 static S_STA_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::WriteAddrA, N)];
@@ -178,6 +179,8 @@ static S_ASL_A: &[MicroOp] = &[i(I::AslA)];
 static S_LSR_A: &[MicroOp] = &[i(I::LsrA)];
 static S_ROL_A: &[MicroOp] = &[i(I::RolA)];
 static S_ROR_A: &[MicroOp] = &[i(I::RorA)];
+
+static S_NOP_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::ReadAddr, N)];
 
 static S_ANC_A: &[MicroOp] = &[m(B::ReadPC1, I::Anc)];
 
@@ -424,52 +427,20 @@ static S_BRK: &[MicroOp] = &[
 
 // Indirect indexed (zp),Y read — 5 cycles, +1 if page cross
 // Note: SetAddrIndY performs both zp pointer reads internally (simplification).
-static S_ORA_INDY: &[MicroOp] = &[
-    m(B::ReadPC1, N),
-    m(BN, I::SetAddrIndY),
-    S_NC1,
-    X_DUMMY,
-    m(B::ReadAddr, I::Ora),
-];
-static S_AND_INDY: &[MicroOp] = &[
-    m(B::ReadPC1, N),
-    m(BN, I::SetAddrIndY),
-    S_NC1,
-    X_DUMMY,
-    m(B::ReadAddr, I::And),
-];
-static S_EOR_INDY: &[MicroOp] = &[
-    m(B::ReadPC1, N),
-    m(BN, I::SetAddrIndY),
-    S_NC1,
-    X_DUMMY,
-    m(B::ReadAddr, I::Eor),
-];
-static S_ADC_INDY: &[MicroOp] = &[
-    m(B::ReadPC1, N),
-    m(BN, I::SetAddrIndY),
-    S_NC1,
-    X_DUMMY,
-    m(B::ReadAddr, I::Adc),
-];
-static S_SBC_INDY: &[MicroOp] = &[
-    m(B::ReadPC1, N),
-    m(BN, I::SetAddrIndY),
-    S_NC1,
-    X_DUMMY,
-    m(B::ReadAddr, I::Sbc),
-];
+static S_ORA_INDY: &[MicroOp] = &[m(B::ReadPC1, N), m(BN, I::SetAddrIndY), X_DUMMY, m(B::ReadAddr, I::Ora)];
+static S_AND_INDY: &[MicroOp] = &[m(B::ReadPC1, N), m(BN, I::SetAddrIndY), X_DUMMY, m(B::ReadAddr, I::And)];
+static S_EOR_INDY: &[MicroOp] = &[m(B::ReadPC1, N), m(BN, I::SetAddrIndY), X_DUMMY, m(B::ReadAddr, I::Eor)];
+static S_ADC_INDY: &[MicroOp] = &[m(B::ReadPC1, N), m(BN, I::SetAddrIndY), X_DUMMY, m(B::ReadAddr, I::Adc)];
+static S_SBC_INDY: &[MicroOp] = &[m(B::ReadPC1, N), m(BN, I::SetAddrIndY), X_DUMMY, m(B::ReadAddr, I::Sbc)];
 static S_CMP_INDY: &[MicroOp] = &[
     m(B::ReadPC1, N),
     m(BN, I::SetAddrIndY),
-    S_NC1,
     X_DUMMY,
     m(B::ReadAddr, I::CmpA),
 ];
 static S_LDA_INDY: &[MicroOp] = &[
     m(B::ReadPC1, N),
     m(BN, I::SetAddrIndY),
-    S_NC1,
     X_DUMMY,
     m(B::ReadAddr, I::SetA),
 ];
@@ -614,7 +585,7 @@ static S_ISC_INDY: &[MicroOp] = rmw_indy!(Isc);
 static S_LAX_ZP: &[MicroOp] = &[R_ZP, m(B::ReadAddr, I::Lax)];
 static S_LAX_ZPY: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadDummyZpY, N), m(B::ReadAddr, I::Lax)];
 static S_LAX_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::SetAddrAbs), m(B::ReadAddr, I::Lax)];
-static S_LAX_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, S_NC1, X_DUMMY, m(B::ReadAddr, I::Lax)];
+static S_LAX_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::ReadAddr, I::Lax)];
 static S_LAX_INDX: &[MicroOp] = &[
     m(B::ReadPC1, N),
     b(B::ReadDummyZpX),
@@ -649,29 +620,29 @@ const EMPTY: &[MicroOp] = &[];
 #[rustfmt::skip]
 pub static OPCODE_SEQUENCES: [&[MicroOp]; 256] = [
     // 0x00-0x0F
-    S_BRK, S_ORA_INDX, S_JAM, S_SLO_INDX, S_NOP_ZP, S_ORA_ZP, S_ASL_ZP, S_SLO_ZP, S_PHP, S_ORA_IMM, S_ASL_A, S_ANC_A, EMPTY,
+    S_BRK, S_ORA_INDX, S_JAM, S_SLO_INDX, S_NOP_ZP, S_ORA_ZP, S_ASL_ZP, S_SLO_ZP, S_PHP, S_ORA_IMM, S_ASL_A, S_ANC_A, S_NOP_ABS,
     S_ORA_ABS, S_ASL_ABS, S_SLO_ABS,
     // 0x10-0x1F
-    S_BPL, S_ORA_INDY, S_JAM, S_SLO_INDY, EMPTY, S_ORA_ZPX, S_ASL_ZPX, S_SLO_ZPX, S_CLC, S_ORA_ABSY, EMPTY, S_SLO_ABSY,
-    EMPTY, S_ORA_ABSX, S_ASL_ABSX, S_SLO_ABSX,
+    S_BPL, S_ORA_INDY, S_JAM, S_SLO_INDY, S_NOP_ZP, S_ORA_ZPX, S_ASL_ZPX, S_SLO_ZPX, S_CLC, S_ORA_ABSY, S_NOP, S_SLO_ABSY,
+    S_NOP_ABSX, S_ORA_ABSX, S_ASL_ABSX, S_SLO_ABSX,
     // 0x20-0x2F
     S_JSR, S_AND_INDX, S_JAM, S_RLA_INDX, S_BIT_ZP, S_AND_ZP, S_ROL_ZP, S_RLA_ZP, S_PLP, S_AND_IMM, S_ROL_A, S_ANC_A,
     S_BIT_ABS, S_AND_ABS, S_ROL_ABS, S_RLA_ABS,
     // 0x30-0x3F
-    S_BMI, S_AND_INDY, S_JAM, S_RLA_INDY, EMPTY, S_AND_ZPX, S_ROL_ZPX, S_RLA_ZPX, S_SEC, S_AND_ABSY, EMPTY, S_RLA_ABSY,
-    EMPTY, S_AND_ABSX, S_ROL_ABSX, S_RLA_ABSX,
+    S_BMI, S_AND_INDY, S_JAM, S_RLA_INDY, S_NOP_ZP, S_AND_ZPX, S_ROL_ZPX, S_RLA_ZPX, S_SEC, S_AND_ABSY, S_NOP, S_RLA_ABSY,
+    S_NOP_ABSX, S_AND_ABSX, S_ROL_ABSX, S_RLA_ABSX,
     // 0x40-0x4F
     S_RTI, S_EOR_INDX, S_JAM, S_SRE_INDX, S_NOP_ZP, S_EOR_ZP, S_LSR_ZP, S_SRE_ZP, S_PHA, S_EOR_IMM, S_LSR_A, EMPTY,
     S_JMP_ABS, S_EOR_ABS, S_LSR_ABS, S_SRE_ABS,
     // 0x50-0x5F
-    S_BVC, S_EOR_INDY, S_JAM, S_SRE_INDY, EMPTY, S_EOR_ZPX, S_LSR_ZPX, S_SRE_ZPX, S_CLI, S_EOR_ABSY, EMPTY, S_SRE_ABSY,
-    EMPTY, S_EOR_ABSX, S_LSR_ABSX, S_SRE_ABSX,
+    S_BVC, S_EOR_INDY, S_JAM, S_SRE_INDY, EMPTY, S_EOR_ZPX, S_LSR_ZPX, S_SRE_ZPX, S_CLI, S_EOR_ABSY, S_NOP, S_SRE_ABSY,
+    S_NOP_ABSX, S_EOR_ABSX, S_LSR_ABSX, S_SRE_ABSX,
     // 0x60-0x6F
     S_RTS, S_ADC_INDX, S_JAM, S_RRA_INDX, S_NOP_ZP, S_ADC_ZP, S_ROR_ZP, S_RRA_ZP, S_PLA, S_ADC_IMM, S_ROR_A, EMPTY,
     S_JMP_IND, S_ADC_ABS, S_ROR_ABS, S_RRA_ABS,
     // 0x70-0x7F
-    S_BVS, S_ADC_INDY, S_JAM, S_RRA_INDY, EMPTY, S_ADC_ZPX, S_ROR_ZPX, S_RRA_ZPX, S_SEI, S_ADC_ABSY, EMPTY, S_RRA_ABSY,
-    EMPTY, S_ADC_ABSX, S_ROR_ABSX, S_RRA_ABSX,
+    S_BVS, S_ADC_INDY, S_JAM, S_RRA_INDY, EMPTY, S_ADC_ZPX, S_ROR_ZPX, S_RRA_ZPX, S_SEI, S_ADC_ABSY, S_NOP, S_RRA_ABSY,
+    S_NOP_ABSX, S_ADC_ABSX, S_ROR_ABSX, S_RRA_ABSX,
     // 0x80-0x8F
     EMPTY, S_STA_INDX, EMPTY, S_SAX_INDX, S_STY_ZP, S_STA_ZP, S_STX_ZP, S_SAX_ZP, S_DEY, EMPTY, S_TXA, EMPTY,
     S_STY_ABS, S_STA_ABS, S_STX_ABS, S_SAX_ABS,
@@ -688,14 +659,14 @@ pub static OPCODE_SEQUENCES: [&[MicroOp]; 256] = [
     S_CPY_IMM, S_CMP_INDX, EMPTY, S_DCP_INDX, S_CPY_ZP, S_CMP_ZP, S_DEC_ZP, S_DCP_ZP, S_INY, S_CMP_IMM, S_DEX, EMPTY,
     S_CPY_ABS, S_CMP_ABS, S_DEC_ABS, S_DCP_ABS,
     // 0xD0-0xDF
-    S_BNE, S_CMP_INDY, S_JAM, S_DCP_INDY, EMPTY, S_CMP_ZPX, S_DEC_ZPX, S_DCP_ZPX, S_CLD, S_CMP_ABSY, EMPTY, S_DCP_ABSY,
-    EMPTY, S_CMP_ABSX, S_DEC_ABSX, S_DCP_ABSX,
+    S_BNE, S_CMP_INDY, S_JAM, S_DCP_INDY, EMPTY, S_CMP_ZPX, S_DEC_ZPX, S_DCP_ZPX, S_CLD, S_CMP_ABSY, S_NOP, S_DCP_ABSY,
+    S_NOP_ABSX, S_CMP_ABSX, S_DEC_ABSX, S_DCP_ABSX,
     // 0xE0-0xEF
     S_CPX_IMM, S_SBC_INDX, EMPTY, S_ISC_INDX, S_CPX_ZP, S_SBC_ZP, S_INC_ZP, S_ISC_ZP, S_INX, S_SBC_IMM, S_NOP, EMPTY,
     S_CPX_ABS, S_SBC_ABS, S_INC_ABS, S_ISC_ABS,
     // 0xF0-0xFF
-    S_BEQ, S_SBC_INDY, S_JAM, S_ISC_INDY, EMPTY, S_SBC_ZPX, S_INC_ZPX, S_ISC_ZPX, S_SED, S_SBC_ABSY, EMPTY, S_ISC_ABSY,
-    EMPTY, S_SBC_ABSX, S_INC_ABSX, S_ISC_ABSX,
+    S_BEQ, S_SBC_INDY, S_JAM, S_ISC_INDY, EMPTY, S_SBC_ZPX, S_INC_ZPX, S_ISC_ZPX, S_SED, S_SBC_ABSY, S_NOP, S_ISC_ABSY,
+    S_NOP_ABSX, S_SBC_ABSX, S_INC_ABSX, S_ISC_ABSX,
 ];
 
 // ── Interrupt sequences ──

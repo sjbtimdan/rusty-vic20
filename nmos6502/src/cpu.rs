@@ -287,11 +287,17 @@ impl CPU6502 {
                 let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
                 self.addr = base.wrapping_add(self.registers.x as u16);
                 self.page_crossed = (base & 0xFF00) != (self.addr & 0xFF00);
+                if !self.page_crossed {
+                    self.sequence_index += 1;
+                }
             }
             InternalOp::SetAddrAbsY => {
                 let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
                 self.addr = base.wrapping_add(self.registers.y as u16);
                 self.page_crossed = (base & 0xFF00) != (self.addr & 0xFF00);
+                if !self.page_crossed {
+                    self.sequence_index += 1;
+                }
             }
             InternalOp::SetAddrIndX => {
                 let ptr = self.operands[0].wrapping_add(self.registers.x) & 0xFF;
@@ -306,6 +312,9 @@ impl CPU6502 {
                 let base = (hi as u16) << 8 | lo as u16;
                 self.addr = base.wrapping_add(self.registers.y as u16);
                 self.page_crossed = (base & 0xFF00) != (self.addr & 0xFF00);
+                if !self.page_crossed {
+                    self.sequence_index += 1;
+                }
             }
 
             // ── Register operations ──
