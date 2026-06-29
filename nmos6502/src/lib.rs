@@ -1,6 +1,7 @@
 pub mod alu;
 pub mod breakpoint;
 pub mod cpu;
+pub mod disassembler;
 pub mod edge_latch;
 pub mod memory;
 pub mod micro_op;

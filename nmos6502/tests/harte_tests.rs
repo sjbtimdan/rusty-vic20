@@ -261,10 +261,4 @@ mod tests {
     fn run_opcode(#[files("external/6502/v1/[0-9a-f][0-9a-f].json")] path: PathBuf) {
         run_single_opcode(path, true);
     }
-
-    #[test]
-    fn test_one() {
-        let path = PathBuf::from("external/6502/v1/10.json");
-        run_single_opcode(path, true);
-    }
 }

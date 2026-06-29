@@ -1,4 +1,4 @@
-use rusty_vic20::tools::disassembler::{DefaultDisassembler, disassemble_bytes};
+use nmos6502::disassembler::{DefaultDisassembler, disassemble_bytes};
 use std::env::args;
 
 // Example: cargo run --bin disassembler ./data/kernal.901486-07.bin E000 FF72 | head -10

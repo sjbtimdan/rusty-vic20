@@ -1,6 +1,5 @@
-use nmos6502::opcode::{AddressingMode, InstructionInfo, decode};
+use crate::opcode::{decode, AddressingMode, InstructionInfo};
 
-#[cfg_attr(test, unimock::unimock(api=DisassemblerMock))]
 pub trait Disassembler {
     fn parse_instruction(&self, data: &[u8]) -> (usize, InstructionInfo);
     fn disassemble_instruction(
@@ -38,8 +37,8 @@ impl Disassembler for DefaultDisassembler {
     }
 }
 
-fn mnemonic_str(mnemonic: nmos6502::opcode::Mnemonic) -> &'static str {
-    use nmos6502::opcode::Mnemonic::*;
+fn mnemonic_str(mnemonic: crate::opcode::Mnemonic) -> &'static str {
+    use crate::opcode::Mnemonic::*;
     match mnemonic {
         Adc => "ADC",
         And => "AND",
