@@ -27,29 +27,43 @@ mod tests {
         ram: Vec<(u16, u8)>,
     }
 
-    /// Wraps a `Ram` and records the last bus operation (address, value, is_write).
+    /// Wraps a `Ram` and records bus operations per cycle.
     ///
-    /// `last_bus` persists across cycles: when a cycle produces no bus op (e.g. a
-    /// halted CPU), the previous cycle's value is retained.
+    /// `last_bus` holds the most recent bus op in the current cycle.
+    /// `bus_count` counts total bus ops in the current cycle — used to detect
+    /// extra reads/writes from internal operations (e.g. `op_jsr_c6`).
+    /// Reset both fields via `reset_for_new_cycle()` before each `cpu.cycle()`.
     struct BusRecorder<'a> {
         inner: &'a mut Ram,
         last_bus: Option<(u16, u8, bool)>,
+        bus_count: u32,
     }
 
     impl<'a> BusRecorder<'a> {
         fn new(inner: &'a mut Ram) -> Self {
-            Self { inner, last_bus: None }
+            Self {
+                inner,
+                last_bus: None,
+                bus_count: 0,
+            }
+        }
+
+        fn reset_for_new_cycle(&mut self) {
+            self.last_bus = None;
+            self.bus_count = 0;
         }
     }
 
     impl Addressable for BusRecorder<'_> {
         fn read_byte(&mut self, address: u16) -> u8 {
             let val = self.inner.read_byte(address);
+            self.bus_count += 1;
             self.last_bus = Some((address, val, false));
             val
         }
         fn write_byte(&mut self, address: u16, value: u8) {
             self.inner.write_byte(address, value);
+            self.bus_count += 1;
             self.last_bus = Some((address, value, true));
         }
     }
@@ -189,8 +203,15 @@ mod tests {
 
         let mut recorder = BusRecorder::new(&mut mem);
         for (cycle_index, expected) in case.cycles.iter().enumerate() {
+            recorder.reset_for_new_cycle();
             cpu.cycle(&mut recorder);
             if validate_bus {
+                if recorder.bus_count != 1 {
+                    errors.push(format!(
+                        "{} cycle {cycle_index}: expected exactly 1 bus operation, got {}",
+                        label, recorder.bus_count,
+                    ));
+                }
                 check_bus_cycle(&mut errors, &label, cycle_index, recorder.last_bus, expected);
             }
         }

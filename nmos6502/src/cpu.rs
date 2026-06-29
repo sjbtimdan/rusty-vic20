@@ -760,8 +760,7 @@ impl CPU6502 {
         self.registers.pc = (hi as u16) << 8 | lo as u16;
         self.instruction_length = 0;
     }
-    pub(crate) fn op_jsr_c6(&mut self, memory: &mut dyn Addressable) {
-        self.operands[1] = memory.read_byte(self.registers.pc.wrapping_add(2));
+    pub(crate) fn op_jsr_c6(&mut self, _memory: &mut dyn Addressable) {
         self.addr = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
         self.registers.pc = self.addr;
         self.instruction_length = 0;
