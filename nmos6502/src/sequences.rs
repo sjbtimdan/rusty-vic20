@@ -170,8 +170,8 @@ const fn rmw_indy(op: InternalOp) -> [MicroOp; 7] {
 const fn branch_seq(op: InternalOp) -> [MicroOp; 3] {
     [
         m(B::ReadPC1, op),
-        m(B::ReadDummy, I::SkipIfNotCrossed(1)),
-        m(B::ReadDummy, N),
+        m(B::ReadDummy, I::Fn(CPU6502::op_branch_dummy)),
+        b(B::ReadDummy),
     ]
 }
 

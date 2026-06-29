@@ -747,13 +747,21 @@ impl CPU6502 {
             let target = base.wrapping_add(offset as i16 as u16);
             self.branch_taken = true;
             self.page_crossed = (base & 0xFF00) != (target & 0xFF00);
-            self.addr = target;
+            self.addr = base;
             self.registers.pc = target;
             self.instruction_length = 0;
         } else {
             self.branch_taken = false;
             self.page_crossed = false;
             self.sequence_index += 2;
+        }
+    }
+
+    pub(crate) fn op_branch_dummy(&mut self, _memory: &mut dyn Addressable) {
+        if !self.page_crossed {
+            self.sequence_index += 1;
+        } else {
+            self.addr = (self.addr & 0xFF00) | (self.registers.pc as u8 as u16);
         }
     }
 
