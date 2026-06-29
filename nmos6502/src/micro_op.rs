@@ -39,6 +39,8 @@ pub enum BusOp {
     ReadAddrZp1,
     /// Read next instruction byte (PC+1) as dummy read (for 2-cycle implied ops).
     ReadDummyNext,
+    /// Read return address (PC - 1) for RTS final dummy cycle.
+    ReadRTS,
 
     /// Write A to memory[addr].
     WriteAddrA,

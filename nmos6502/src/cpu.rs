@@ -134,6 +134,9 @@ impl CPU6502 {
             BusOp::ReadDummyNext => {
                 let _ = memory.read_byte(self.registers.pc.wrapping_add(1));
             }
+            BusOp::ReadRTS => {
+                let _ = memory.read_byte(self.registers.pc.wrapping_sub(1));
+            }
 
             BusOp::WriteAddrA => memory.write_byte(self.addr, self.registers.a),
             BusOp::WriteAddrX => memory.write_byte(self.addr, self.registers.x),
@@ -289,6 +292,20 @@ impl CPU6502 {
             self.sequence_index += 1;
         }
     }
+    /// Like `op_set_addr_absx` but never skips the next micro‑op (for writes/RMW).
+    pub(crate) fn op_set_addr_absx_full(&mut self, _memory: &mut dyn Addressable) {
+        let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
+        let full = base.wrapping_add(self.registers.x as u16);
+        self.page_crossed = (base & 0xFF00) != (full & 0xFF00);
+        self.addr = (base & 0xFF00) | (full as u8 as u16);
+    }
+    /// Like `op_set_addr_absy` but never skips the next micro‑op (for writes/RMW).
+    pub(crate) fn op_set_addr_absy_full(&mut self, _memory: &mut dyn Addressable) {
+        let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
+        let full = base.wrapping_add(self.registers.y as u16);
+        self.page_crossed = (base & 0xFF00) != (full & 0xFF00);
+        self.addr = (base & 0xFF00) | (full as u8 as u16);
+    }
     pub(crate) fn op_fix_addr_cross(&mut self, _memory: &mut dyn Addressable) {
         if self.page_crossed {
             self.addr = self.addr.wrapping_add(0x100);
@@ -304,23 +321,41 @@ impl CPU6502 {
         let hi = self.data_latch as u16;
         self.addr = (hi << 8) | lo;
     }
-    pub(crate) fn op_set_addr_indy(&mut self, memory: &mut dyn Addressable) {
-        let ptr = self.operands[0];
-        let lo = memory.read_zp_byte(ptr);
-        let hi = memory.read_zp_byte(ptr.wrapping_add(1));
-        (self.addr, self.page_crossed) = page_cross((hi as u16) << 8 | lo as u16, self.registers.y);
+    /// (Indirect),Y combine: like `op_compute_ind_addr` but also adds Y and
+    /// sets `self.addr` to the page-wrapped address (for dummy read on page
+    /// cross).  Skips the dummy micro-op when the page doesn't cross.
+    pub(crate) fn op_compute_indy_addr(&mut self, _memory: &mut dyn Addressable) {
+        let lo = self.operands[1] as u16;
+        let hi = self.data_latch as u16;
+        let ptr = (hi << 8) | lo;
+        let full = ptr.wrapping_add(self.registers.y as u16);
+        self.page_crossed = (ptr & 0xFF00) != (full & 0xFF00);
+        self.addr = (ptr & 0xFF00) | (full as u8 as u16);
+        if !self.page_crossed {
+            self.sequence_index += 1;
+        }
     }
-    /// AHX/SHA (indirect),Y setup: like `op_set_addr_indy` but stores the
-    /// page-wrapped address (C5 dummy-read target) in `self.addr` and saves
-    /// `base_hi` in `operands[1]` for later use by `WriteAddrAHX`.
-    pub(crate) fn op_ahx_setup_addr(&mut self, memory: &mut dyn Addressable) {
-        let ptr = self.operands[0];
-        let lo = memory.read_zp_byte(ptr);
-        let hi = memory.read_zp_byte(ptr.wrapping_add(1));
-        self.operands[1] = hi;
-        (self.addr, self.page_crossed) = page_cross((hi as u16) << 8 | lo as u16, self.registers.y);
-        self.addr = (hi as u16) << 8 | (lo.wrapping_add(self.registers.y)) as u16;
+    /// (Indirect),Y combine for RMW (no skip — RMW always has the dummy cycle).
+    pub(crate) fn op_compute_indy_addr_rmw(&mut self, _memory: &mut dyn Addressable) {
+        let lo = self.operands[1] as u16;
+        let hi = self.data_latch as u16;
+        let ptr = (hi << 8) | lo;
+        let full = ptr.wrapping_add(self.registers.y as u16);
+        self.page_crossed = (ptr & 0xFF00) != (full & 0xFF00);
+        self.addr = (ptr & 0xFF00) | (full as u8 as u16);
     }
+    /// AHX (indirect),Y setup: like `op_compute_indy_addr_rmw` but also saves
+    /// `base_hi` in `operands[1]` for the subsequent masked write.
+    pub(crate) fn op_compute_ahx_addr(&mut self, _memory: &mut dyn Addressable) {
+        let lo = self.operands[1] as u16;
+        let hi = self.data_latch as u16;
+        let ptr = (hi << 8) | lo;
+        let full = ptr.wrapping_add(self.registers.y as u16);
+        self.page_crossed = (ptr & 0xFF00) != (full & 0xFF00);
+        self.addr = (ptr & 0xFF00) | (full as u8 as u16);
+        self.operands[1] = hi as u8;
+    }
+
     /// TAS/SHS (abs,Y) setup: sets SP = A & X, then computes page-wrapped address
     /// for C4 ReadDummy (like AHX but abs,Y). Reuses WriteAddrAHX for the write.
     pub(crate) fn op_tas_setup_addr(&mut self, _memory: &mut dyn Addressable) {
@@ -650,7 +685,11 @@ impl CPU6502 {
         } else {
             (self.addr >> 8) as u8
         };
-        let val = reg_val & ((self.addr >> 8) as u8).wrapping_add(1);
+        let val = if self.page_crossed {
+            hi
+        } else {
+            reg_val & ((self.addr >> 8) as u8).wrapping_add(1)
+        };
         memory.write_byte((hi as u16) << 8 | lo as u16, val);
     }
 
@@ -711,11 +750,13 @@ impl CPU6502 {
         self.registers.pc = self.addr;
         self.instruction_length = 0;
     }
-    pub(crate) fn op_jump_ind(&mut self, memory: &mut dyn Addressable) {
-        let lo = memory.read_byte(self.addr);
-        // NMOS 6502 bug: page wrap on indirect JMP
-        let hi_addr = (self.addr & 0xFF00) | ((self.addr as u8).wrapping_add(1) as u16);
-        let hi = memory.read_byte(hi_addr);
+    pub(crate) fn op_jump_ind_save_lo(&mut self, _memory: &mut dyn Addressable) {
+        self.operands[1] = self.data_latch;
+        self.addr = (self.addr & 0xFF00) | ((self.addr as u8).wrapping_add(1) as u16);
+    }
+    pub(crate) fn op_jump_ind_hi(&mut self, _memory: &mut dyn Addressable) {
+        let lo = self.operands[1];
+        let hi = self.data_latch;
         self.registers.pc = (hi as u16) << 8 | lo as u16;
         self.instruction_length = 0;
     }

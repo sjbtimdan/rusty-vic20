@@ -18,10 +18,6 @@ const fn m(bus: B, internal: I) -> MicroOp {
     MicroOp { bus, internal }
 }
 
-const fn i(internal: I) -> MicroOp {
-    MicroOp { bus: BN, internal }
-}
-
 const fn b(bus: B) -> MicroOp {
     MicroOp { bus, internal: N }
 }
@@ -39,7 +35,6 @@ const C_ABSX: MicroOp = m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_absx));
 const C_ABSY: MicroOp = m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_absy));
 
 const X_DUMMY: MicroOp = m(B::ReadDummy, I::Fn(CPU6502::op_fix_addr_cross));
-const S_NC1: MicroOp = m(BN, I::SkipIfNotCrossed(1));
 
 // ── Addressing-mode family macros ──
 
@@ -77,10 +72,11 @@ const fn seq_indx(op: InternalOp) -> [MicroOp; 5] {
         m(B::ReadAddr, op),
     ]
 }
-const fn seq_indy(op: InternalOp) -> [MicroOp; 4] {
+const fn seq_indy(op: InternalOp) -> [MicroOp; 5] {
     [
-        m(B::ReadPC1, N),
-        m(BN, I::Fn(CPU6502::op_set_addr_indy)),
+        m(B::ReadPC1, I::Fn(CPU6502::op_set_addr_zp)),
+        m(B::ReadAddr, I::Fn(CPU6502::op_save_lo)),
+        m(B::ReadAddrZp1, I::Fn(CPU6502::op_compute_indy_addr)),
         X_DUMMY,
         m(B::ReadAddr, op),
     ]
@@ -128,8 +124,8 @@ const fn rmw_abs(op: InternalOp) -> [MicroOp; 5] {
 const fn rmw_absx(op: InternalOp) -> [MicroOp; 6] {
     [
         m(B::ReadPC1, N),
-        C_ABSX,
-        m(B::ReadAddr, N),
+        m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_absx_full)),
+        X_DUMMY,
         m(B::ReadAddr, N),
         m(B::WriteDummy, op),
         m(B::WriteAddrDL, N),
@@ -138,8 +134,8 @@ const fn rmw_absx(op: InternalOp) -> [MicroOp; 6] {
 const fn rmw_absy(op: InternalOp) -> [MicroOp; 6] {
     [
         m(B::ReadPC1, N),
-        C_ABSY,
-        m(B::ReadAddr, N),
+        m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_absy_full)),
+        X_DUMMY,
         m(B::ReadAddr, N),
         m(B::WriteDummy, op),
         m(B::WriteAddrDL, N),
@@ -158,10 +154,10 @@ const fn rmw_indx(op: InternalOp) -> [MicroOp; 7] {
 }
 const fn rmw_indy(op: InternalOp) -> [MicroOp; 7] {
     [
-        m(B::ReadPC1, N),
-        NONE,
-        m(BN, I::Fn(CPU6502::op_set_addr_indy)),
-        m(B::ReadAddr, N),
+        m(B::ReadPC1, I::Fn(CPU6502::op_set_addr_zp)),
+        m(B::ReadAddr, I::Fn(CPU6502::op_save_lo)),
+        m(B::ReadAddrZp1, I::Fn(CPU6502::op_compute_indy_addr_rmw)),
+        X_DUMMY,
         m(B::ReadAddr, N),
         m(B::WriteDummy, op),
         m(B::WriteAddrDL, N),
@@ -212,8 +208,16 @@ static S_CLV: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_clr_v));
 // Stack
 static S_PHA: &[MicroOp] = &[b(B::ReadPC1), m(B::PushA, N)];
 static S_PHP: &[MicroOp] = &[b(B::ReadPC1), m(B::PushStatusB, N)];
-static S_PLA: &[MicroOp] = &[NONE, m(B::PopDummy, N), m(B::Pop, I::Fn(CPU6502::op_set_a))];
-static S_PLP: &[MicroOp] = &[NONE, m(B::PopDummy, N), m(B::Pop, I::Fn(CPU6502::op_set_status))];
+static S_PLA: &[MicroOp] = &[
+    m(B::ReadDummyNext, N),
+    m(B::PopDummy, N),
+    m(B::Pop, I::Fn(CPU6502::op_set_a)),
+];
+static S_PLP: &[MicroOp] = &[
+    m(B::ReadDummyNext, N),
+    m(B::PopDummy, N),
+    m(B::Pop, I::Fn(CPU6502::op_set_status)),
+];
 
 // Immediate
 static S_LDA_IMM: &[MicroOp] = &seq_imm(I::Fn(CPU6502::op_set_a));
@@ -307,8 +311,8 @@ static S_JMP_ABS: &[MicroOp] = &[m(B::ReadPC1, N), m(B::ReadPC2, I::Fn(CPU6502::
 static S_JMP_IND: &[MicroOp] = &[
     m(B::ReadPC1, N),
     m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_abs)),
-    i(I::Fn(CPU6502::op_jump_ind)),
-    NONE,
+    m(B::ReadAddr, I::Fn(CPU6502::op_jump_ind_save_lo)),
+    m(B::ReadAddr, I::Fn(CPU6502::op_jump_ind_hi)),
 ];
 
 // Absolute indexed X read (with page-cross handling)
@@ -332,9 +336,19 @@ static S_EOR_ABSY: &[MicroOp] = &seq_absy(I::Fn(CPU6502::op_eor));
 static S_CMP_ABSY: &[MicroOp] = &seq_absy(I::Fn(CPU6502::op_cmp_a));
 
 // Absolute indexed write (always 5 cycles)
-static S_STA_ABSX: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSX, X_DUMMY, m(B::WriteAddrA, N)];
-static S_STA_ABSY: &[MicroOp] = &[m(B::ReadPC1, N), C_ABSY, X_DUMMY, m(B::WriteAddrA, N)];
+static S_STA_ABSX: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_absx_full)),
+    X_DUMMY,
+    m(B::WriteAddrA, N),
+];
 
+static S_STA_ABSY: &[MicroOp] = &[
+    m(B::ReadPC1, N),
+    m(B::ReadPC2, I::Fn(CPU6502::op_set_addr_absy_full)),
+    X_DUMMY,
+    m(B::WriteAddrA, N),
+];
 // RMW zero page
 static S_ASL_ZP: &[MicroOp] = &rmw_zp(I::Fn(CPU6502::op_asl));
 static S_LSR_ZP: &[MicroOp] = &rmw_zp(I::Fn(CPU6502::op_lsr));
@@ -411,19 +425,20 @@ static S_BVS: &[MicroOp] = &branch_seq(I::Fn(CPU6502::op_branch_vs));
 // JSR / RTS / RTI / BRK
 static S_JSR: &[MicroOp] = &[
     m(B::ReadPC1, N),
-    NONE,
+    m(B::PopDummy, N),
     m(B::PushReturnHi, N),
     m(B::PushReturnLo, N),
     m(B::ReadPC2, I::Fn(CPU6502::op_jsr_c6)),
 ];
 static S_RTS: &[MicroOp] = &[
-    NONE,
+    m(B::ReadDummyNext, N),
     m(B::PopDummy, N),
     m(B::PopPCL, N),
     m(B::PopPCH, I::Fn(CPU6502::op_rts_finish)),
+    m(B::ReadRTS, N),
 ];
 static S_RTI: &[MicroOp] = &[
-    NONE,
+    m(B::ReadDummyNext, N),
     m(B::PopDummy, N),
     m(B::Pop, I::Fn(CPU6502::op_set_status)),
     m(B::PopPCL, N),
@@ -450,19 +465,17 @@ static S_LDA_INDY: &[MicroOp] = &seq_indy(I::Fn(CPU6502::op_set_a));
 
 // Indirect indexed (zp),Y write — 6 cycles (always, extra dummy read)
 static S_STA_INDY: &[MicroOp] = &[
-    m(B::ReadPC1, N),
-    m(BN, I::Fn(CPU6502::op_set_addr_indy)),
+    m(B::ReadPC1, I::Fn(CPU6502::op_set_addr_zp)),
+    m(B::ReadAddr, I::Fn(CPU6502::op_save_lo)),
+    m(B::ReadAddrZp1, I::Fn(CPU6502::op_compute_indy_addr_rmw)),
     X_DUMMY,
     m(B::WriteAddrA, N),
 ];
 
-// AHX/SHA (indirect),Y — uses page-wrapped dummy-read address and conditional
-// write address.  `op_ahx_setup_addr` stores base_hi in operands[1] and sets
-// `addr` to the C5 dummy-read address (page-wrapped).  `WriteAddrAHX` computes
-// the final write address and value based on page-cross status.
 static S_AHX_INDY: &[MicroOp] = &[
-    m(B::ReadPC1, N),
-    m(BN, I::Fn(CPU6502::op_ahx_setup_addr)),
+    m(B::ReadPC1, I::Fn(CPU6502::op_set_addr_zp)),
+    m(B::ReadAddr, I::Fn(CPU6502::op_save_lo)),
+    m(B::ReadAddrZp1, I::Fn(CPU6502::op_compute_ahx_addr)),
     X_DUMMY,
     m(B::WriteAddrAHX, N),
 ];
@@ -576,9 +589,9 @@ static S_LAX_ABSY: &[MicroOp] = &seq_absy(I::Fn(CPU6502::op_lax));
 static S_LAX_IMM: &[MicroOp] = &seq_imm(I::Fn(CPU6502::op_lax_imm));
 static S_LAX_INDX: &[MicroOp] = &seq_indx(I::Fn(CPU6502::op_lax));
 static S_LAX_INDY: &[MicroOp] = &[
-    m(B::ReadPC1, N),
-    m(BN, I::Fn(CPU6502::op_set_addr_indy)),
-    S_NC1,
+    m(B::ReadPC1, I::Fn(CPU6502::op_set_addr_zp)),
+    m(B::ReadAddr, I::Fn(CPU6502::op_save_lo)),
+    m(B::ReadAddrZp1, I::Fn(CPU6502::op_compute_indy_addr)),
     X_DUMMY,
     m(B::ReadAddr, I::Fn(CPU6502::op_lax)),
 ];
