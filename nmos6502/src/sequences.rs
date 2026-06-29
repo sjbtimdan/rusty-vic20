@@ -175,7 +175,7 @@ const fn branch_seq(op: InternalOp) -> [MicroOp; 3] {
 
 // Implied/register
 static S_JAM: &[MicroOp] = &[
-    m(B::ReadPC1, I::Fn(CPU6502::op_jam_set_addr_ffff)),
+    m(B::ReadDummyNext, I::Fn(CPU6502::op_jam_set_addr_ffff)),
     m(B::ReadDummy, I::Fn(CPU6502::op_jam_set_addr_fffe)),
     b(B::ReadDummy),
     m(B::ReadDummy, I::Fn(CPU6502::op_jam_set_addr_ffff)),
@@ -206,8 +206,8 @@ static S_SEI: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_set_i));
 static S_CLV: &[MicroOp] = &seq_implied(I::Fn(CPU6502::op_clr_v));
 
 // Stack
-static S_PHA: &[MicroOp] = &[b(B::ReadPC1), m(B::PushA, N)];
-static S_PHP: &[MicroOp] = &[b(B::ReadPC1), m(B::PushStatusB, N)];
+static S_PHA: &[MicroOp] = &[m(B::ReadDummyNext, N), m(B::PushA, N)];
+static S_PHP: &[MicroOp] = &[m(B::ReadDummyNext, N), m(B::PushStatusB, N)];
 static S_PLA: &[MicroOp] = &[
     m(B::ReadDummyNext, N),
     m(B::PopDummy, N),

@@ -25,7 +25,6 @@ pub struct CPU6502 {
     operands: [u8; 2],
     addr: u16,
     data_latch: u8,
-    instruction_length: u8,
 
     branch_taken: bool,
     page_crossed: bool,
@@ -54,7 +53,6 @@ impl CPU6502 {
             operands: [0; 2],
             addr: 0,
             data_latch: 0,
-            instruction_length: 0,
             branch_taken: false,
             page_crossed: false,
             irq_line_low: false,
@@ -103,12 +101,14 @@ impl CPU6502 {
             }
 
             BusOp::ReadPC1 => {
-                let val = memory.read_byte(self.registers.pc.wrapping_add(1));
+                let val = memory.read_byte(self.registers.pc);
                 self.operands[0] = val;
                 self.data_latch = val;
+                self.registers.pc = self.registers.pc.wrapping_add(1);
             }
             BusOp::ReadPC2 => {
-                self.operands[1] = memory.read_byte(self.registers.pc.wrapping_add(2));
+                self.operands[1] = memory.read_byte(self.registers.pc);
+                self.registers.pc = self.registers.pc.wrapping_add(1);
             }
 
             BusOp::ReadAddr => {
@@ -132,7 +132,7 @@ impl CPU6502 {
                 self.data_latch = memory.read_byte(addr);
             }
             BusOp::ReadDummyNext => {
-                let _ = memory.read_byte(self.registers.pc.wrapping_add(1));
+                let _ = memory.read_byte(self.registers.pc);
             }
             BusOp::ReadRTS => {
                 let _ = memory.read_byte(self.registers.pc.wrapping_sub(1));
@@ -153,10 +153,10 @@ impl CPU6502 {
             BusOp::PushPCH => self.push_byte(memory, (self.registers.pc >> 8) as u8),
             BusOp::PushPCL => self.push_byte(memory, self.registers.pc as u8),
             BusOp::PushReturnHi => {
-                self.push_byte(memory, (self.registers.pc.wrapping_add(2) >> 8) as u8);
+                self.push_byte(memory, (self.registers.pc >> 8) as u8);
             }
             BusOp::PushReturnLo => {
-                self.push_byte(memory, self.registers.pc.wrapping_add(2) as u8);
+                self.push_byte(memory, self.registers.pc as u8);
             }
             BusOp::PushA => self.push_byte(memory, self.registers.a),
             BusOp::PushStatusB => {
@@ -182,7 +182,6 @@ impl CPU6502 {
             BusOp::ReadVecHi(addr) => {
                 let hi = memory.read_byte(addr);
                 self.registers.pc = (hi as u16) << 8 | self.operands[0] as u16;
-                self.instruction_length = 0;
             }
 
             BusOp::None => {} // internal-only cycle
@@ -200,11 +199,9 @@ impl CPU6502 {
     }
 
     fn end_instruction(&mut self, _memory: &mut impl Addressable) {
-        // instruction_length == 0 means PC was set explicitly by a control-flow
-        // op (JMP, branch taken, interrupt vector). Do NOT advance PC.
-        if self.instruction_length > 0 {
-            self.registers.pc = self.registers.pc.wrapping_add(self.instruction_length as u16);
-        }
+        // PC was already incremented during fetches. Control-flow ops set PC
+        // explicitly, overwriting any fetch-based increments. Either way,
+        // PC is correct — just clear the sequence.
         self.sequence = &[];
         self.sequence_index = 0;
     }
@@ -222,17 +219,17 @@ impl CPU6502 {
 
         let opcode = memory.read_byte(self.registers.pc);
 
-        // Fire breakpoints
+        // Fire breakpoints (at current PC before increment)
         for bp in &self.breakpoints {
             bp.on_hit(self.registers.pc);
         }
 
+        // PC increments after the opcode fetch (like real 6502)
+        self.registers.pc = self.registers.pc.wrapping_add(1);
+
         self.sequence = OPCODE_SEQUENCES[opcode as usize];
         self.sequence_index = 0;
         self.reset_instruction_state();
-
-        // Determine instruction length from opcode
-        self.instruction_length = crate::opcode::decode(opcode).bytes;
     }
 
     /// Dispatch an `InternalOp` to its implementation.
@@ -748,7 +745,6 @@ impl CPU6502 {
     pub(crate) fn op_jmp_abs(&mut self, _memory: &mut dyn Addressable) {
         self.addr = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
         self.registers.pc = self.addr;
-        self.instruction_length = 0;
     }
     pub(crate) fn op_jump_ind_save_lo(&mut self, _memory: &mut dyn Addressable) {
         self.operands[1] = self.data_latch;
@@ -758,22 +754,18 @@ impl CPU6502 {
         let lo = self.operands[1];
         let hi = self.data_latch;
         self.registers.pc = (hi as u16) << 8 | lo as u16;
-        self.instruction_length = 0;
     }
     pub(crate) fn op_jsr_c6(&mut self, _memory: &mut dyn Addressable) {
         self.addr = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
         self.registers.pc = self.addr;
-        self.instruction_length = 0;
     }
     pub(crate) fn op_rts_finish(&mut self, _memory: &mut dyn Addressable) {
         let pc = ((self.data_latch as u16) << 8 | self.operands[0] as u16).wrapping_add(1);
         self.registers.pc = pc;
-        self.instruction_length = 0;
     }
     pub(crate) fn op_rti_finish(&mut self, _memory: &mut dyn Addressable) {
         let pc = (self.data_latch as u16) << 8 | self.operands[0] as u16;
         self.registers.pc = pc;
-        self.instruction_length = 0;
     }
     pub(crate) fn op_set_status(&mut self, _memory: &mut dyn Addressable) {
         self.registers.status = (self.data_latch | crate::registers::UNUSED) & !crate::registers::BREAK;
@@ -783,13 +775,12 @@ impl CPU6502 {
         let offset = self.data_latch as i8;
 
         if condition(&self.registers) {
-            let base = self.registers.pc.wrapping_add(2);
+            let base = self.registers.pc;
             let target = base.wrapping_add(offset as i16 as u16);
             self.branch_taken = true;
             self.page_crossed = (base & 0xFF00) != (target & 0xFF00);
             self.addr = base;
             self.registers.pc = target;
-            self.instruction_length = 0;
         } else {
             self.branch_taken = false;
             self.page_crossed = false;
@@ -815,7 +806,6 @@ impl CPU6502 {
         self.sequence = seq;
         self.sequence_index = 0;
         self.reset_instruction_state();
-        self.instruction_length = 0;
     }
 }
 
