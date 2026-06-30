@@ -28,9 +28,9 @@
 //! assert_eq!(bytes, vec![0xA9, 0x42, 0x8D, 0x00, 0x20, 0x00]);
 //! ```
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::opcode::{AddressingMode, Mnemonic};
+use crate::opcode::{AddressingMode, Mnemonic, OPCODES};
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -98,6 +98,7 @@ enum Token<'a> {
     BitAnd,
     BitOr,
     BitNot,
+    BitXor,
     Star, // current PC
     LParen,
     RParen,
@@ -105,6 +106,13 @@ enum Token<'a> {
     Ident(&'a str),
     Hi,
     Lo,
+    // Comparison operators (used in `if` conditions)
+    Eq,
+    Ne,
+    Lt,
+    Gt,
+    Le,
+    Ge,
     Eof,
 }
 
@@ -120,7 +128,7 @@ struct ParsedLine {
     operand: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum LineKind {
     Org,
     Equ,
@@ -129,6 +137,9 @@ enum LineKind {
     Dw,
     Instruction(Mnemonic),
     End,
+    If(String),
+    Else,
+    Endif,
     Skip,
 }
 
@@ -141,12 +152,18 @@ struct Assembler {
     star_pc: u16, // PC at the start of the current instruction/data (for `*`)
     default_origin: u16,
     symbols: HashMap<String, u16>,
+    /// Set of symbol names that came from the predefined table (user source
+    /// may override them without triggering a duplicate-label error).
+    predefined_syms: std::collections::HashSet<String>,
     opcode_map: HashMap<(Mnemonic, AddressingMode), u8>,
     output: Vec<u8>,
     origin_seen: bool,
     /// Cache of (line_number → AddressingMode) from pass1, so pass2 reuses
     /// the same mode (preventing size mismatches for forward references).
     mode_cache: HashMap<usize, AddressingMode>,
+    /// Nesting stack for `if`/`else`/`endif` — each entry is `true` when
+    /// we are inside an active (taken) branch.
+    if_stack: Vec<bool>,
 }
 
 impl Assembler {
@@ -163,15 +180,19 @@ impl Assembler {
         symbols.entry("overfl".into()).or_insert(0x40);
         symbols.entry("minus".into()).or_insert(0x80);
 
+        let predefined_names: std::collections::HashSet<String> = symbols.keys().cloned().collect();
+
         Self {
             pc: default_origin,
             star_pc: default_origin,
             default_origin,
             symbols,
+            predefined_syms: predefined_names,
             opcode_map: build_opcode_map(),
             output: Vec::new(),
             origin_seen: false,
             mode_cache: HashMap::new(),
+            if_stack: Vec::new(),
         }
     }
 
@@ -189,11 +210,41 @@ impl Assembler {
     // Pass 1 — build symbol table, compute instruction sizes
     // ------------------------------------------------------------------
 
+    /// True when we are not inside a skipped `if`/`else`/`endif` block.
+    fn is_active(&self) -> bool {
+        self.if_stack.iter().all(|&active| active)
+    }
+
     fn pass1(&mut self, lines: &[ParsedLine]) -> Result<(), AssemblerError> {
         self.pc = self.default_origin;
         self.origin_seen = false;
+        self.if_stack.clear();
 
         for line in lines {
+            // Handle conditional directives even when inactive.
+            match &line.kind {
+                LineKind::If(cond) => {
+                    let val = self.eval_cond(cond, line.line);
+                    self.if_stack.push(val != 0);
+                    continue; // no bytes, no label
+                }
+                LineKind::Else => {
+                    if let Some(top) = self.if_stack.last_mut() {
+                        *top = !*top;
+                    }
+                    continue;
+                }
+                LineKind::Endif => {
+                    self.if_stack.pop();
+                    continue;
+                }
+                _ => {}
+            }
+
+            if !self.is_active() {
+                continue;
+            }
+
             // Resolve instruction size BEFORE registering the label
             // (so the label address is correct).
             match line.kind {
@@ -205,7 +256,8 @@ impl Assembler {
                     let val = self.eval(&line.operand, line.line)?;
                     if let Some(ref label) = line.label {
                         let key = label.to_ascii_lowercase();
-                        if self.symbols.contains_key(&key) {
+                        // Predefined symbols may be overridden by the source.
+                        if self.symbols.contains_key(&key) && !self.predefined_syms.contains(&key) {
                             return Err(AssemblerError::DuplicateLabel(label.clone(), line.line));
                         }
                         self.symbols.insert(key, val);
@@ -231,22 +283,23 @@ impl Assembler {
                     self.pc = self.pc.wrapping_add(mode_size(mode) as u16);
                 }
                 LineKind::End => break,
-                LineKind::Skip => {}
+                _ => {}
             }
 
             // Register label with the PC address BEFORE this line's content.
-            if let Some(ref label) = line.label {
-                let key = label.to_ascii_lowercase();
-                if line.kind != LineKind::Equ {
-                    // For equ the label value was already set above.
-                    // For other directives the label gets the address before
-                    // the data/instruction.
-                    if self.symbols.contains_key(&key) {
-                        return Err(AssemblerError::DuplicateLabel(label.clone(), line.line));
+            // Equ labels are already registered above; skip non-active branches.
+            if self.is_active() {
+                if let Some(ref label) = line.label {
+                    let key = label.to_ascii_lowercase();
+                    if line.kind != LineKind::Equ {
+                        // Predefined symbols may be overridden by the source.
+                        if self.symbols.contains_key(&key) && !self.predefined_syms.contains(&key) {
+                            return Err(AssemblerError::DuplicateLabel(label.clone(), line.line));
+                        }
+                        // Label points to the address *before* this line consumed space.
+                        let addr = self.pc - line_size(line, self).unwrap_or(0);
+                        self.symbols.insert(key, addr);
                     }
-                    // Label points to the address *before* this line consumed space.
-                    let addr = self.pc - line_size(line, self).unwrap_or(0);
-                    self.symbols.insert(key, addr);
                 }
             }
         }
@@ -262,9 +315,34 @@ impl Assembler {
         self.pc = self.default_origin;
         self.output.clear();
         self.origin_seen = false;
+        self.if_stack.clear();
 
         for line in lines {
-            match line.kind {
+            // Handle conditional directives even when inactive.
+            match &line.kind {
+                LineKind::If(cond) => {
+                    let val = self.eval_cond(cond, line.line);
+                    self.if_stack.push(val != 0);
+                    continue;
+                }
+                LineKind::Else => {
+                    if let Some(top) = self.if_stack.last_mut() {
+                        *top = !*top;
+                    }
+                    continue;
+                }
+                LineKind::Endif => {
+                    self.if_stack.pop();
+                    continue;
+                }
+                _ => {}
+            }
+
+            if !self.is_active() {
+                continue;
+            }
+
+            match &line.kind {
                 LineKind::Org => {
                     let addr = self.eval(&line.operand, line.line)?;
                     if addr < self.pc && self.origin_seen {
@@ -306,10 +384,10 @@ impl Assembler {
                     }
                 }
                 LineKind::Instruction(mnemonic) => {
-                    self.emit_instruction(mnemonic, &line.operand, line.line)?;
+                    self.emit_instruction(*mnemonic, &line.operand, line.line)?;
                 }
                 LineKind::End => break,
-                LineKind::Skip => {}
+                _ => {}
             }
         }
 
@@ -384,8 +462,8 @@ impl Assembler {
     ) -> Result<AddressingMode, AssemblerError> {
         let op = operand.trim();
 
-        // --- No operand ---
-        if op.is_empty() {
+        // --- No operand or accumulator shorthand ---
+        if op.is_empty() || op.eq_ignore_ascii_case("a") {
             return match mnemonic {
                 Mnemonic::Asl | Mnemonic::Lsr | Mnemonic::Rol | Mnemonic::Ror => Ok(AddressingMode::Accumulator),
                 _ => Ok(AddressingMode::Implied),
@@ -422,18 +500,29 @@ impl Assembler {
             };
             let inner = stripped.trim();
 
-            if emit && self.value_fits_zp(inner, line)? {
-                return Ok(if has_x {
-                    AddressingMode::ZeroPageX
-                } else {
-                    AddressingMode::ZeroPageY
-                });
-            }
-            return Ok(if has_x {
+            let zp_mode = if has_x {
+                AddressingMode::ZeroPageX
+            } else {
+                AddressingMode::ZeroPageY
+            };
+            let abs_mode = if has_x {
                 AddressingMode::AbsoluteX
             } else {
                 AddressingMode::AbsoluteY
-            });
+            };
+
+            // Prefer zero-page when address fits AND opcode exists.
+            let fits = emit && self.value_fits_zp(inner, line)?;
+            if fits && opcode_exists(mnemonic, zp_mode) {
+                return Ok(zp_mode);
+            }
+            // Fall back to absolute indexed if opcode exists there.
+            if opcode_exists(mnemonic, abs_mode) {
+                return Ok(abs_mode);
+            }
+            // Last resort — return zero-page mode (will error at lookup
+            // if the byte doesn't fit, which is correct for invalid code).
+            return Ok(zp_mode);
         }
 
         // --- Bare expression ---
@@ -535,6 +624,11 @@ impl Assembler {
         Ok(val)
     }
 
+    /// Evaluate an `if` condition, treating unknown labels as 0 (false-y).
+    fn eval_cond(&self, expr: &str, line: usize) -> u16 {
+        self.eval(expr, line).unwrap_or(0)
+    }
+
     /// Tokenize an expression string into a token vec.
     fn tokenize<'a>(&self, s: &'a str, line: usize) -> Result<Vec<Token<'a>>, AssemblerError> {
         let mut tokens = Vec::new();
@@ -566,9 +660,46 @@ impl Assembler {
                     tokens.push(Token::BitNot);
                     i += 1;
                 }
+                '^' => {
+                    tokens.push(Token::BitXor);
+                    i += 1;
+                }
                 '*' => {
                     tokens.push(Token::Star);
                     i += 1;
+                }
+                '!' => {
+                    if i + 1 < len && bytes[i + 1] == b'=' {
+                        tokens.push(Token::Ne);
+                        i += 2;
+                    } else {
+                        return Err(AssemblerError::ExpressionError(
+                            "unexpected '!' — use '~' for bitwise not".into(),
+                            line,
+                        ));
+                    }
+                }
+                '=' => {
+                    tokens.push(Token::Eq);
+                    i += 1;
+                }
+                '<' => {
+                    if i + 1 < len && bytes[i + 1] == b'=' {
+                        tokens.push(Token::Le);
+                        i += 2;
+                    } else {
+                        tokens.push(Token::Lt);
+                        i += 1;
+                    }
+                }
+                '>' => {
+                    if i + 1 < len && bytes[i + 1] == b'=' {
+                        tokens.push(Token::Ge);
+                        i += 2;
+                    } else {
+                        tokens.push(Token::Gt);
+                        i += 1;
+                    }
                 }
                 '(' => {
                     tokens.push(Token::LParen);
@@ -682,19 +813,61 @@ impl Assembler {
 
     // -- Recursive-descent parser ---------------------------------------
 
-    // expr    = term (('+' | '-') term)*
+    // expr       = comparison (('+' | '-') comparison)*
+    // comparison = term (('=' | '!=' | '<' | '>' | '<=' | '>=') term)*
+    // term       = unary (('*' | '&' | '|') unary)*
     fn parse_expr(&self, toks: &[Token], pos: usize, line: usize) -> Result<(u16, usize), AssemblerError> {
-        let (mut left, mut p) = self.parse_term(toks, pos, line)?;
+        let (mut left, mut p) = self.parse_comparison(toks, pos, line)?;
         while p < toks.len() {
             match toks[p] {
                 Token::Plus => {
-                    let (r, q) = self.parse_term(toks, p + 1, line)?;
+                    let (r, q) = self.parse_comparison(toks, p + 1, line)?;
                     left = left.wrapping_add(r);
                     p = q;
                 }
                 Token::Minus => {
-                    let (r, q) = self.parse_term(toks, p + 1, line)?;
+                    let (r, q) = self.parse_comparison(toks, p + 1, line)?;
                     left = left.wrapping_sub(r);
+                    p = q;
+                }
+                _ => break,
+            }
+        }
+        Ok((left, p))
+    }
+
+    fn parse_comparison(&self, toks: &[Token], pos: usize, line: usize) -> Result<(u16, usize), AssemblerError> {
+        let (mut left, mut p) = self.parse_term(toks, pos, line)?;
+        while p < toks.len() {
+            match toks[p] {
+                Token::Eq => {
+                    let (r, q) = self.parse_term(toks, p + 1, line)?;
+                    left = if left == r { 1 } else { 0 };
+                    p = q;
+                }
+                Token::Ne => {
+                    let (r, q) = self.parse_term(toks, p + 1, line)?;
+                    left = if left != r { 1 } else { 0 };
+                    p = q;
+                }
+                Token::Lt => {
+                    let (r, q) = self.parse_term(toks, p + 1, line)?;
+                    left = if left < r { 1 } else { 0 };
+                    p = q;
+                }
+                Token::Gt => {
+                    let (r, q) = self.parse_term(toks, p + 1, line)?;
+                    left = if left > r { 1 } else { 0 };
+                    p = q;
+                }
+                Token::Le => {
+                    let (r, q) = self.parse_term(toks, p + 1, line)?;
+                    left = if left <= r { 1 } else { 0 };
+                    p = q;
+                }
+                Token::Ge => {
+                    let (r, q) = self.parse_term(toks, p + 1, line)?;
+                    left = if left >= r { 1 } else { 0 };
                     p = q;
                 }
                 _ => break,
@@ -722,6 +895,11 @@ impl Assembler {
                 Token::BitOr => {
                     let (r, q) = self.parse_unary(toks, p + 1, line)?;
                     left |= r;
+                    p = q;
+                }
+                Token::BitXor => {
+                    let (r, q) = self.parse_unary(toks, p + 1, line)?;
+                    left ^= r;
                     p = q;
                 }
                 _ => break,
@@ -765,24 +943,30 @@ impl Assembler {
                 Ok((v, p + 1))
             }
             Token::Hi => {
-                if pos + 1 >= toks.len() || toks[pos + 1] != Token::LParen {
-                    return Err(AssemblerError::ExpressionError("expected '(' after hi".into(), line));
+                // Support both `hi(expr)` and `hi expr` (space-separated).
+                if pos + 1 < toks.len() && toks[pos + 1] == Token::LParen {
+                    let (v, p) = self.parse_expr(toks, pos + 2, line)?;
+                    if p >= toks.len() || toks[p] != Token::RParen {
+                        return Err(AssemblerError::ExpressionError("expected ')' after hi()".into(), line));
+                    }
+                    Ok(((v >> 8) & 0xFF, p + 1))
+                } else {
+                    let (v, p) = self.parse_expr(toks, pos + 1, line)?;
+                    Ok(((v >> 8) & 0xFF, p))
                 }
-                let (v, p) = self.parse_expr(toks, pos + 2, line)?;
-                if p >= toks.len() || toks[p] != Token::RParen {
-                    return Err(AssemblerError::ExpressionError("expected ')' after hi()".into(), line));
-                }
-                Ok(((v >> 8) & 0xFF, p + 1))
             }
             Token::Lo => {
-                if pos + 1 >= toks.len() || toks[pos + 1] != Token::LParen {
-                    return Err(AssemblerError::ExpressionError("expected '(' after lo".into(), line));
+                // Support both `lo(expr)` and `lo expr` (space-separated).
+                if pos + 1 < toks.len() && toks[pos + 1] == Token::LParen {
+                    let (v, p) = self.parse_expr(toks, pos + 2, line)?;
+                    if p >= toks.len() || toks[p] != Token::RParen {
+                        return Err(AssemblerError::ExpressionError("expected ')' after lo()".into(), line));
+                    }
+                    Ok((v & 0xFF, p + 1))
+                } else {
+                    let (v, p) = self.parse_expr(toks, pos + 1, line)?;
+                    Ok((v & 0xFF, p))
                 }
-                let (v, p) = self.parse_expr(toks, pos + 2, line)?;
-                if p >= toks.len() || toks[p] != Token::RParen {
-                    return Err(AssemblerError::ExpressionError("expected ')' after lo()".into(), line));
-                }
-                Ok((v & 0xFF, p + 1))
             }
             Token::Ident(name) => {
                 let key = name.to_ascii_lowercase();
@@ -805,8 +989,33 @@ impl Assembler {
 
 /// Pre-process source into parsed lines (strip comments, classify).
 fn preprocess(source: &str) -> Vec<ParsedLine> {
-    let mut in_macro: u32 = 0; // macro nesting depth
+    let mut macro_names: HashSet<String> = HashSet::new();
 
+    // First pass: collect all macro names by scanning for `name macro` patterns.
+    for line in source.lines() {
+        let trimmed = if let Some(sc) = line.find(';') {
+            &line[..sc]
+        } else {
+            line
+        }
+        .trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let lowered = trimmed.to_ascii_lowercase();
+        let words: Vec<&str> = lowered.split_whitespace().collect();
+        // `name macro` — the first word is the macro name.
+        if words.len() >= 2 && words.last() == Some(&"macro") {
+            macro_names.insert(words[0].to_string());
+        }
+        // `macro name`
+        if words.first() == Some(&"macro") && words.len() >= 2 {
+            macro_names.insert(words[1].to_string());
+        }
+    }
+
+    // Second pass: parse lines, skipping macro bodies and invocations.
+    let mut in_macro_skip: u32 = 0;
     source
         .lines()
         .enumerate()
@@ -827,10 +1036,9 @@ fn preprocess(source: &str) -> Vec<ParsedLine> {
             // Track macro nesting so bodies are skipped.
             let lowered = trimmed.to_ascii_lowercase();
             let words: Vec<&str> = lowered.split_whitespace().collect();
-            // Macro can be defined as `name macro` or `macro name`.
             let is_macro_def = words.first() == Some(&"macro") || words.get(1) == Some(&"macro");
             if is_macro_def {
-                in_macro += 1;
+                in_macro_skip += 1;
                 return Some(ParsedLine {
                     label: None,
                     kind: LineKind::Skip,
@@ -838,10 +1046,10 @@ fn preprocess(source: &str) -> Vec<ParsedLine> {
                     operand: String::new(),
                 });
             }
-            if in_macro > 0 {
+            if in_macro_skip > 0 {
                 let first_word = words.first().copied().unwrap_or("");
                 if first_word == "endm" || first_word == "endmacro" {
-                    in_macro -= 1;
+                    in_macro_skip -= 1;
                 }
                 return Some(ParsedLine {
                     label: None,
@@ -849,6 +1057,18 @@ fn preprocess(source: &str) -> Vec<ParsedLine> {
                     line: line_num,
                     operand: String::new(),
                 });
+            }
+
+            // Macro invocation — the first word names a defined macro.
+            if let Some(first) = words.first() {
+                if macro_names.contains(*first) {
+                    return Some(ParsedLine {
+                        label: None,
+                        kind: LineKind::Skip,
+                        line: line_num,
+                        operand: String::new(),
+                    });
+                }
             }
 
             parse_line(trimmed, line_num)
@@ -880,9 +1100,13 @@ fn parse_line(line: &str, line_num: usize) -> Option<ParsedLine> {
         "db" | ".db" | "byte" | ".byte" => LineKind::Db,
         "dw" | ".dw" | "word" | ".word" => LineKind::Dw,
         "end" => LineKind::End,
+        "if" => LineKind::If(operand.to_string()),
+        "else" => LineKind::Else,
+        "endif" => LineKind::Endif,
         // Assembler directives we skip
-        "code" | "data" | "bss" | "page" | "noopt" | "list" | "nolist" | "macro" | "endm" | "if" | "else" | "endif"
-        | "include" | "error" => LineKind::Skip,
+        "code" | "data" | "bss" | "page" | "noopt" | "list" | "nolist" | "macro" | "endm" | "include" | "error" => {
+            LineKind::Skip
+        }
         mnem => {
             if let Some(m) = parse_mnemonic(mnem) {
                 LineKind::Instruction(m)
@@ -969,7 +1193,6 @@ fn is_directive(s: &str) -> bool {
             | "else"
             | "endif"
             | "include"
-            | "error"
     )
 }
 
@@ -1098,13 +1321,19 @@ fn mode_size(mode: AddressingMode) -> u8 {
 
 /// Compute the byte size of a parsed line (for label offset calculation).
 fn line_size(line: &ParsedLine, asm: &Assembler) -> Option<u16> {
-    match line.kind {
-        LineKind::Org | LineKind::Equ | LineKind::End | LineKind::Skip => Some(0),
+    match &line.kind {
+        LineKind::Org
+        | LineKind::Equ
+        | LineKind::End
+        | LineKind::Skip
+        | LineKind::If(_)
+        | LineKind::Else
+        | LineKind::Endif => Some(0),
         LineKind::Ds => asm.eval(&line.operand, line.line).ok(),
         LineKind::Db => Some(split_values(&line.operand).len() as u16),
         LineKind::Dw => Some((split_values(&line.operand).len() * 2) as u16),
         LineKind::Instruction(m) => {
-            let mode = asm.detect_mode(&line.operand, m, line.line, false).ok()?;
+            let mode = asm.detect_mode(&line.operand, *m, line.line, false).ok()?;
             Some(mode_size(mode) as u16)
         }
     }
@@ -1127,6 +1356,13 @@ fn build_opcode_map() -> HashMap<(Mnemonic, AddressingMode), u8> {
         }
     }
     map
+}
+
+/// True if a (mnemonic, addressing-mode) combo has an encoding in the opcode table.
+fn opcode_exists(mnemonic: Mnemonic, mode: AddressingMode) -> bool {
+    OPCODES
+        .iter()
+        .any(|info| info.mnemonic == mnemonic && info.mode == mode)
 }
 
 // ---------------------------------------------------------------------------
@@ -1488,22 +1724,54 @@ brk";
     }
 
     #[test]
-    fn test_if_skip() {
+    fn test_if_true() {
+        // `if 1` is always true, so the nop is assembled.
+        let bytes = assemble_str("org $1000\nif 1\nnop\nendif\n");
+        assert_eq!(bytes, vec![0xEA]);
+    }
+
+    #[test]
+    fn test_if_false() {
+        // `if 0` is always false, so the nop is skipped.
+        let bytes = assemble_str("org $1000\nif 0\nnop\nendif\n");
+        assert_eq!(bytes, vec![]);
+    }
+
+    #[test]
+    fn test_if_else() {
+        // `if 0` → else branch taken.
         let src = r#"
             org $1000
-            if disable_decimal = 0
+            if 0
             nop
+            else
+            inx
             endif
         "#;
         let bytes = assemble_str(src);
-        // The nop inside if/endif is skipped because "if", "nop", "endif"
-        // are all unrecognised at line level (we skip the directive keyword lines,
-        // and nop inside if would need context tracking — for now it gets
-        // assembled if on its own line).
-        // Actually "nop" after "if" will be parsed as an instruction since
-        // it's on its own line.  So we get the nop.
-        // This is expected behaviour for our simple preprocessor.
-        assert_eq!(bytes, vec![0xEA]);
+        assert_eq!(bytes, vec![0xE8]); // inx
+    }
+
+    #[test]
+    fn test_if_unknown_symbol_false() {
+        // Unknown symbol in condition → eval_cond returns 0 → false.
+        let bytes = assemble_str("org $1000\nif disable_decimal\ndex\nendif\n");
+        // Condition is false, so dex is skipped.
+        assert_eq!(bytes, vec![]);
+    }
+
+    #[test]
+    fn test_if_known_label_true() {
+        // A known label resolves to its value; non-zero → true.
+        let src = r#"
+            org $1000
+            debug = 1
+            if debug
+            inx
+            endif
+        "#;
+        let bytes = assemble_str(src);
+        assert_eq!(bytes, vec![0xE8]);
     }
 
     #[test]
