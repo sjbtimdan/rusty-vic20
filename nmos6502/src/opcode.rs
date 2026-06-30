@@ -1,6 +1,6 @@
 //! Opcode metadata for disassembly. Pure data — no execution logic.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AddressingMode {
     Implied,
     Accumulator,
@@ -17,7 +17,7 @@ pub enum AddressingMode {
     IndirectIndexed,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Mnemonic {
     Adc,
     And,
@@ -131,7 +131,7 @@ const fn info(opcode: u8, mnemonic: Mnemonic, mode: AddressingMode, bytes: u8, c
 
 /// Unified opcode metadata table. Covers all 256 opcodes.
 #[rustfmt::skip]
-static OPCODES: [InstructionInfo; 256] = [
+pub static OPCODES: [InstructionInfo; 256] = [
     // 0x00-0x0F
     info(0x00, Mnemonic::Brk, AddressingMode::Implied, 1, 7),
     info(0x01, Mnemonic::Ora, AddressingMode::IndexedIndirect, 2, 6),

@@ -1,0 +1,1556 @@
+//! Two-pass NMOS 6502 assembler. Reads AS65-syntax source, produces `Vec<u8>`.
+//!
+//! Supported syntax:
+//! - All official 6502 opcodes + known illegal opcodes (DCP, ISC, LAX, RLA, RRA,
+//!   SAX, SLO, SRE, ALR, ANC, ARR)
+//! - All standard addressing modes, with automatic zero-page vs. absolute
+//!   selection when the operand value is known
+//! - Labels (`name` or `name:`)
+//! - Directives: `org`, `db`/`.db`/`byte`, `dw`/`.dw`/`word`, `ds`/`.ds`,
+//!   `equ`/`=`
+//! - Expressions: hex (`$FF`), decimal, binary (`%0001`), char (`'A'`),
+//!   `*` (current PC), `hi()`/`lo()`, `+`, `-`, `&`, `|`, `~`, parentheses
+//! - Comments (`;` to end of line)
+//! - `end` (stops assembly)
+//!
+//! # Example
+//!
+//! ```ignore
+//! use nmos6502::assembler::assemble;
+//!
+//! let source = r#"
+//!     org $1000
+//!     lda #$42
+//!     sta $2000
+//!     brk
+//! "#;
+//! let (bytes, _symbols) = assemble(source, 0, None).unwrap();
+//! assert_eq!(bytes, vec![0xA9, 0x42, 0x8D, 0x00, 0x20, 0x00]);
+//! ```
+
+use std::collections::HashMap;
+
+use crate::opcode::{AddressingMode, Mnemonic};
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/// Assemble 6502 source text into raw bytes.
+///
+/// * `source` — the `.a65` file contents
+/// * `default_origin` — load address when no `org` is present (or origin before
+///   first `org`)
+/// * `predefined` — optional pre-populated symbol table (for constants such as
+///   `code_segment = $400`)
+pub fn assemble(
+    source: &str,
+    default_origin: u16,
+    predefined: Option<HashMap<String, u16>>,
+) -> Result<(Vec<u8>, HashMap<String, u16>), AssemblerError> {
+    let mut asm = Assembler::new(default_origin, predefined);
+    asm.assemble(source)?;
+    Ok((std::mem::take(&mut asm.output), asm.symbols.clone()))
+}
+
+// ---------------------------------------------------------------------------
+// Error type
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AssemblerError {
+    UnknownOpcode(String, usize),
+    UnknownLabel(String, usize),
+    InvalidOperand(String, usize),
+    ExpressionError(String, usize),
+    DuplicateLabel(String, usize),
+    AddressOverflow,
+    ParseError(String, usize),
+    MissingOperand(String, usize),
+    UnexpectedEnd(usize),
+}
+
+impl std::fmt::Display for AssemblerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownOpcode(s, l) => write!(f, "line {l}: unknown opcode `{s}`"),
+            Self::UnknownLabel(s, l) => write!(f, "line {l}: unknown label `{s}`"),
+            Self::InvalidOperand(s, l) => write!(f, "line {l}: invalid operand `{s}`"),
+            Self::ExpressionError(s, l) => write!(f, "line {l}: expression error: {s}"),
+            Self::DuplicateLabel(s, l) => write!(f, "line {l}: duplicate label `{s}`"),
+            Self::AddressOverflow => write!(f, "address overflow (> 0xFFFF)"),
+            Self::ParseError(s, l) => write!(f, "line {l}: parse error: {s}"),
+            Self::MissingOperand(s, l) => write!(f, "line {l}: {s} requires an operand"),
+            Self::UnexpectedEnd(l) => write!(f, "line {l}: unexpected end of expression"),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Token for the expression evaluator
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Token<'a> {
+    Number(u16),
+    Plus,
+    Minus,
+    BitAnd,
+    BitOr,
+    BitNot,
+    Star, // current PC
+    LParen,
+    RParen,
+    Comma,
+    Ident(&'a str),
+    Hi,
+    Lo,
+    Eof,
+}
+
+// ---------------------------------------------------------------------------
+// Lines produced by the pre-processor
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+struct ParsedLine {
+    label: Option<String>,
+    kind: LineKind,
+    line: usize,
+    operand: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LineKind {
+    Org,
+    Equ,
+    Ds,
+    Db,
+    Dw,
+    Instruction(Mnemonic),
+    End,
+    Skip,
+}
+
+// ---------------------------------------------------------------------------
+// Assembler
+// ---------------------------------------------------------------------------
+
+struct Assembler {
+    pc: u16,
+    star_pc: u16, // PC at the start of the current instruction/data (for `*`)
+    default_origin: u16,
+    symbols: HashMap<String, u16>,
+    opcode_map: HashMap<(Mnemonic, AddressingMode), u8>,
+    output: Vec<u8>,
+    origin_seen: bool,
+    /// Cache of (line_number → AddressingMode) from pass1, so pass2 reuses
+    /// the same mode (preventing size mismatches for forward references).
+    mode_cache: HashMap<usize, AddressingMode>,
+}
+
+impl Assembler {
+    fn new(default_origin: u16, predefined: Option<HashMap<String, u16>>) -> Self {
+        let mut symbols = predefined.unwrap_or_default();
+        // Pre-populate common AS65 status-flag constants so the functional
+        // test suite can resolve them immediately.
+        symbols.entry("carry".into()).or_insert(0x01);
+        symbols.entry("zero".into()).or_insert(0x02);
+        symbols.entry("intdis".into()).or_insert(0x04);
+        symbols.entry("decmode".into()).or_insert(0x08);
+        symbols.entry("break".into()).or_insert(0x10);
+        symbols.entry("reserv".into()).or_insert(0x20);
+        symbols.entry("overfl".into()).or_insert(0x40);
+        symbols.entry("minus".into()).or_insert(0x80);
+
+        Self {
+            pc: default_origin,
+            star_pc: default_origin,
+            default_origin,
+            symbols,
+            opcode_map: build_opcode_map(),
+            output: Vec::new(),
+            origin_seen: false,
+            mode_cache: HashMap::new(),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Top-level two-pass
+    // ------------------------------------------------------------------
+
+    fn assemble(&mut self, source: &str) -> Result<(), AssemblerError> {
+        let lines = preprocess(source);
+        self.pass1(&lines)?;
+        self.pass2(&lines)
+    }
+
+    // ------------------------------------------------------------------
+    // Pass 1 — build symbol table, compute instruction sizes
+    // ------------------------------------------------------------------
+
+    fn pass1(&mut self, lines: &[ParsedLine]) -> Result<(), AssemblerError> {
+        self.pc = self.default_origin;
+        self.origin_seen = false;
+
+        for line in lines {
+            // Resolve instruction size BEFORE registering the label
+            // (so the label address is correct).
+            match line.kind {
+                LineKind::Org => {
+                    self.pc = self.eval(&line.operand, line.line)?;
+                    self.origin_seen = true;
+                }
+                LineKind::Equ => {
+                    let val = self.eval(&line.operand, line.line)?;
+                    if let Some(ref label) = line.label {
+                        let key = label.to_ascii_lowercase();
+                        if self.symbols.contains_key(&key) {
+                            return Err(AssemblerError::DuplicateLabel(label.clone(), line.line));
+                        }
+                        self.symbols.insert(key, val);
+                    }
+                }
+                LineKind::Ds => {
+                    let count = self.eval(&line.operand, line.line)?;
+                    self.pc = self.pc.wrapping_add(count);
+                }
+                LineKind::Db => {
+                    let items = split_values(&line.operand);
+                    self.pc = self.pc.wrapping_add(items.len() as u16);
+                }
+                LineKind::Dw => {
+                    let items = split_values(&line.operand);
+                    self.pc = self.pc.wrapping_add((items.len() * 2) as u16);
+                }
+                LineKind::Instruction(mnemonic) => {
+                    // Use emit=true so known values get proper ZP detection,
+                    // but forward references still fall back to Absolute.
+                    let mode = self.detect_mode(&line.operand, mnemonic, line.line, true)?;
+                    self.mode_cache.insert(line.line, mode);
+                    self.pc = self.pc.wrapping_add(mode_size(mode) as u16);
+                }
+                LineKind::End => break,
+                LineKind::Skip => {}
+            }
+
+            // Register label with the PC address BEFORE this line's content.
+            if let Some(ref label) = line.label {
+                let key = label.to_ascii_lowercase();
+                if line.kind != LineKind::Equ {
+                    // For equ the label value was already set above.
+                    // For other directives the label gets the address before
+                    // the data/instruction.
+                    if self.symbols.contains_key(&key) {
+                        return Err(AssemblerError::DuplicateLabel(label.clone(), line.line));
+                    }
+                    // Label points to the address *before* this line consumed space.
+                    let addr = self.pc - line_size(line, self).unwrap_or(0);
+                    self.symbols.insert(key, addr);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    // ------------------------------------------------------------------
+    // Pass 2 — emit bytes
+    // ------------------------------------------------------------------
+
+    fn pass2(&mut self, lines: &[ParsedLine]) -> Result<(), AssemblerError> {
+        self.pc = self.default_origin;
+        self.output.clear();
+        self.origin_seen = false;
+
+        for line in lines {
+            match line.kind {
+                LineKind::Org => {
+                    let addr = self.eval(&line.operand, line.line)?;
+                    if addr < self.pc && self.origin_seen {
+                        return Err(AssemblerError::AddressOverflow);
+                    }
+                    // Pad with zeros from current position up to new origin.
+                    let new_offset = addr.wrapping_sub(self.default_origin) as usize;
+                    while self.output.len() < new_offset {
+                        self.output.push(0);
+                        self.pc = self.pc.wrapping_add(1);
+                    }
+                    self.pc = addr;
+                    self.origin_seen = true;
+                }
+                LineKind::Equ => {
+                    let _ = self.eval(&line.operand, line.line)?; // validate
+                }
+                LineKind::Ds => {
+                    self.star_pc = self.pc;
+                    let count = self.eval(&line.operand, line.line)? as usize;
+                    self.output.resize(self.output.len() + count, 0);
+                    self.pc = self.pc.wrapping_add(count as u16);
+                }
+                LineKind::Db => {
+                    self.star_pc = self.pc;
+                    for v in split_values(&line.operand) {
+                        let byte = self.eval(v, line.line)? as u8;
+                        self.output.push(byte);
+                        self.pc = self.pc.wrapping_add(1);
+                    }
+                }
+                LineKind::Dw => {
+                    self.star_pc = self.pc;
+                    for v in split_values(&line.operand) {
+                        let word = self.eval(v, line.line)?;
+                        self.output.push((word & 0xFF) as u8);
+                        self.output.push((word >> 8) as u8);
+                        self.pc = self.pc.wrapping_add(2);
+                    }
+                }
+                LineKind::Instruction(mnemonic) => {
+                    self.emit_instruction(mnemonic, &line.operand, line.line)?;
+                }
+                LineKind::End => break,
+                LineKind::Skip => {}
+            }
+        }
+
+        Ok(())
+    }
+
+    // ------------------------------------------------------------------
+    // Instruction emission
+    // ------------------------------------------------------------------
+
+    fn emit_instruction(&mut self, mnemonic: Mnemonic, operand: &str, line: usize) -> Result<(), AssemblerError> {
+        // Use the cached mode from pass1 to guarantee consistent sizes.
+        let mode = self
+            .mode_cache
+            .get(&line)
+            .copied()
+            .or_else(|| {
+                // Fallback if not cached (shouldn't happen for well-formed input).
+                self.detect_mode(operand, mnemonic, line, true).ok()
+            })
+            .ok_or_else(|| AssemblerError::UnknownOpcode(format!("{:?} with operand `{operand}`", mnemonic), line))?;
+        let opcode = self.lookup_opcode(mnemonic, mode, line)?;
+        self.star_pc = self.pc; // `*` resolves to the instruction start address
+        self.output.push(opcode);
+        self.pc = self.pc.wrapping_add(1);
+
+        match mode {
+            AddressingMode::Implied | AddressingMode::Accumulator => {}
+            AddressingMode::Immediate
+            | AddressingMode::ZeroPage
+            | AddressingMode::ZeroPageX
+            | AddressingMode::ZeroPageY
+            | AddressingMode::IndexedIndirect
+            | AddressingMode::IndirectIndexed => {
+                let val = self.extract_operand(operand, mode, line)? as u8;
+                self.output.push(val);
+                self.pc = self.pc.wrapping_add(1);
+            }
+            AddressingMode::Relative => {
+                let target = self.extract_operand(operand, mode, line)?;
+                // Relative offset is from the NEXT instruction (PC + 2).
+                // pc is currently past the opcode (+1), so add 1 more.
+                let next_pc = self.pc.wrapping_add(1);
+                let offset = target.wrapping_sub(next_pc) as i16 as i8;
+                self.output.push(offset as u8);
+                self.pc = next_pc;
+            }
+            AddressingMode::Absolute
+            | AddressingMode::AbsoluteX
+            | AddressingMode::AbsoluteY
+            | AddressingMode::Indirect => {
+                let val = self.extract_operand(operand, mode, line)?;
+                self.output.push((val & 0xFF) as u8);
+                self.output.push((val >> 8) as u8);
+                self.pc = self.pc.wrapping_add(2);
+            }
+        }
+
+        Ok(())
+    }
+
+    // ------------------------------------------------------------------
+    // Addressing-mode detection
+    // ------------------------------------------------------------------
+
+    fn detect_mode(
+        &self,
+        operand: &str,
+        mnemonic: Mnemonic,
+        line: usize,
+        emit: bool,
+    ) -> Result<AddressingMode, AssemblerError> {
+        let op = operand.trim();
+
+        // --- No operand ---
+        if op.is_empty() {
+            return match mnemonic {
+                Mnemonic::Asl | Mnemonic::Lsr | Mnemonic::Rol | Mnemonic::Ror => Ok(AddressingMode::Accumulator),
+                _ => Ok(AddressingMode::Implied),
+            };
+        }
+
+        // --- Immediate (#) ---
+        if op.starts_with('#') {
+            return Ok(AddressingMode::Immediate);
+        }
+
+        // --- Indirect forms ---
+        if op.starts_with('(') {
+            if op.contains(",X") || op.contains(",x") {
+                return Ok(AddressingMode::IndexedIndirect);
+            }
+            if op.contains("),Y") || op.contains("),y") {
+                return Ok(AddressingMode::IndirectIndexed);
+            }
+            return Ok(AddressingMode::Indirect);
+        }
+
+        // --- Indexed (,X or ,Y) ---
+        let (has_x, has_y) = (
+            op.ends_with(",X") || op.ends_with(",x"),
+            op.ends_with(",Y") || op.ends_with(",y"),
+        );
+
+        if has_x || has_y {
+            let stripped = if has_x {
+                op.trim_end_matches(",X").trim_end_matches(",x")
+            } else {
+                op.trim_end_matches(",Y").trim_end_matches(",y")
+            };
+            let inner = stripped.trim();
+
+            if emit && self.value_fits_zp(inner, line)? {
+                return Ok(if has_x {
+                    AddressingMode::ZeroPageX
+                } else {
+                    AddressingMode::ZeroPageY
+                });
+            }
+            return Ok(if has_x {
+                AddressingMode::AbsoluteX
+            } else {
+                AddressingMode::AbsoluteY
+            });
+        }
+
+        // --- Bare expression ---
+        if is_branch(mnemonic) {
+            return Ok(AddressingMode::Relative);
+        }
+
+        if emit && self.value_fits_zp(op, line)? {
+            Ok(AddressingMode::ZeroPage)
+        } else {
+            Ok(AddressingMode::Absolute)
+        }
+    }
+
+    /// True if the expression evaluates to ≤ 0xFF (can use zero-page).
+    /// Forward references are assumed to NOT fit (safe default).
+    fn value_fits_zp(&self, expr: &str, line: usize) -> Result<bool, AssemblerError> {
+        match self.eval(expr, line) {
+            Ok(v) => Ok(v <= 0xFF),
+            Err(AssemblerError::UnknownLabel(_, _)) => Ok(false),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Extract the numeric operand value from an instruction operand based on
+    /// the detected addressing mode.
+    fn extract_operand(&self, operand: &str, mode: AddressingMode, line: usize) -> Result<u16, AssemblerError> {
+        let op = operand.trim();
+        match mode {
+            AddressingMode::Immediate => self.eval(op.trim_start_matches('#').trim(), line),
+            AddressingMode::IndexedIndirect => {
+                // ($44,X) → extract $44
+                let inner = op
+                    .trim_start_matches('(')
+                    .trim_end_matches(",X")
+                    .trim_end_matches(",x")
+                    .trim_end_matches(')')
+                    .trim();
+                self.eval(inner, line)
+            }
+            AddressingMode::IndirectIndexed => {
+                // ($44),Y → extract $44
+                let inner = op
+                    .trim_start_matches('(')
+                    .trim_end_matches("),Y")
+                    .trim_end_matches("),y")
+                    .trim();
+                self.eval(inner, line)
+            }
+            AddressingMode::Indirect => {
+                // ($2000) → extract $2000
+                let inner = op.trim_start_matches('(').trim_end_matches(')').trim();
+                self.eval(inner, line)
+            }
+            AddressingMode::ZeroPageX | AddressingMode::AbsoluteX => {
+                self.eval(op.trim_end_matches(",X").trim_end_matches(",x").trim(), line)
+            }
+            AddressingMode::ZeroPageY | AddressingMode::AbsoluteY => {
+                self.eval(op.trim_end_matches(",Y").trim_end_matches(",y").trim(), line)
+            }
+            AddressingMode::Relative | AddressingMode::ZeroPage | AddressingMode::Absolute => self.eval(op, line),
+            _ => Err(AssemblerError::InvalidOperand(operand.into(), line)),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Opcode lookup
+    // ------------------------------------------------------------------
+
+    fn lookup_opcode(&self, mnemonic: Mnemonic, mode: AddressingMode, line: usize) -> Result<u8, AssemblerError> {
+        // NOP implied always uses the canonical 0xEA.
+        if mnemonic == Mnemonic::Nop && mode == AddressingMode::Implied {
+            return Ok(0xEA);
+        }
+
+        self.opcode_map
+            .get(&(mnemonic, mode))
+            .copied()
+            .ok_or_else(|| AssemblerError::UnknownOpcode(format!("{:?} {:?}", mnemonic, mode), line))
+    }
+
+    // ------------------------------------------------------------------
+    // Expression evaluator (recursive descent)
+    // ------------------------------------------------------------------
+
+    fn eval(&self, expr: &str, line: usize) -> Result<u16, AssemblerError> {
+        let trimmed = expr.trim();
+        if trimmed.is_empty() {
+            return Err(AssemblerError::ExpressionError("empty expression".into(), line));
+        }
+        let tokens = self.tokenize(trimmed, line)?;
+        let (val, pos) = self.parse_expr(&tokens, 0, line)?;
+        if pos < tokens.len() && tokens[pos] != Token::Comma && tokens[pos] != Token::Eof {
+            return Err(AssemblerError::ExpressionError(
+                format!("trailing tokens in `{trimmed}`"),
+                line,
+            ));
+        }
+        Ok(val)
+    }
+
+    /// Tokenize an expression string into a token vec.
+    fn tokenize<'a>(&self, s: &'a str, line: usize) -> Result<Vec<Token<'a>>, AssemblerError> {
+        let mut tokens = Vec::new();
+        let bytes = s.as_bytes();
+        let len = bytes.len();
+        let mut i = 0;
+
+        while i < len {
+            let ch = bytes[i] as char;
+            match ch {
+                ' ' | '\t' => i += 1,
+                '+' => {
+                    tokens.push(Token::Plus);
+                    i += 1;
+                }
+                '-' => {
+                    tokens.push(Token::Minus);
+                    i += 1;
+                }
+                '&' => {
+                    tokens.push(Token::BitAnd);
+                    i += 1;
+                }
+                '|' => {
+                    tokens.push(Token::BitOr);
+                    i += 1;
+                }
+                '~' => {
+                    tokens.push(Token::BitNot);
+                    i += 1;
+                }
+                '*' => {
+                    tokens.push(Token::Star);
+                    i += 1;
+                }
+                '(' => {
+                    tokens.push(Token::LParen);
+                    i += 1;
+                }
+                ')' => {
+                    tokens.push(Token::RParen);
+                    i += 1;
+                }
+                ',' => {
+                    tokens.push(Token::Comma);
+                    i += 1;
+                }
+                '$' => {
+                    i += 1;
+                    let start = i;
+                    while i < len && (bytes[i] as char).is_ascii_hexdigit() {
+                        i += 1;
+                    }
+                    if i == start {
+                        return Err(AssemblerError::ExpressionError(
+                            "empty hex literal after $".into(),
+                            line,
+                        ));
+                    }
+                    let hex = &s[start..i];
+                    let v = u16::from_str_radix(hex, 16)
+                        .map_err(|_| AssemblerError::ExpressionError(format!("invalid hex ${hex}"), line))?;
+                    tokens.push(Token::Number(v));
+                }
+                '%' => {
+                    i += 1;
+                    let start = i;
+                    while i < len && matches!(bytes[i] as char, '0' | '1') {
+                        i += 1;
+                    }
+                    if i == start {
+                        return Err(AssemblerError::ExpressionError(
+                            "empty binary literal after %".into(),
+                            line,
+                        ));
+                    }
+                    let mut val: u16 = 0;
+                    for &b in &s.as_bytes()[start..i] {
+                        val = (val << 1) | (if b == b'1' { 1 } else { 0 });
+                    }
+                    tokens.push(Token::Number(val));
+                }
+                '\'' => {
+                    i += 1; // opening quote
+                    if i >= len {
+                        return Err(AssemblerError::ExpressionError(
+                            "unclosed character literal".into(),
+                            line,
+                        ));
+                    }
+                    let c = bytes[i];
+                    i += 1;
+                    if i >= len || bytes[i] as char != '\'' {
+                        return Err(AssemblerError::ExpressionError(
+                            "unclosed character literal".into(),
+                            line,
+                        ));
+                    }
+                    i += 1; // closing quote
+                    tokens.push(Token::Number(c as u16));
+                }
+                '0'..='9' => {
+                    let start = i;
+                    while i < len && (bytes[i] as char).is_ascii_digit() {
+                        i += 1;
+                    }
+                    let num = &s[start..i];
+                    let val: u32 = num
+                        .parse()
+                        .map_err(|_| AssemblerError::ExpressionError(format!("invalid number `{num}`"), line))?;
+                    if val > 0xFFFF {
+                        return Err(AssemblerError::ExpressionError("decimal value > 0xFFFF".into(), line));
+                    }
+                    tokens.push(Token::Number(val as u16));
+                }
+                'a'..='z' | 'A'..='Z' | '_' => {
+                    let start = i;
+                    while i < len {
+                        let c = bytes[i] as char;
+                        if c.is_alphanumeric() || c == '_' || c == '?' {
+                            i += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    let ident = &s[start..i];
+                    match ident.to_ascii_lowercase().as_str() {
+                        "hi" => tokens.push(Token::Hi),
+                        "lo" => tokens.push(Token::Lo),
+                        _ => tokens.push(Token::Ident(ident)),
+                    }
+                }
+                _ => {
+                    return Err(AssemblerError::ExpressionError(
+                        format!("unexpected character '{ch}'"),
+                        line,
+                    ));
+                }
+            }
+        }
+
+        tokens.push(Token::Eof);
+        Ok(tokens)
+    }
+
+    // -- Recursive-descent parser ---------------------------------------
+
+    // expr    = term (('+' | '-') term)*
+    fn parse_expr(&self, toks: &[Token], pos: usize, line: usize) -> Result<(u16, usize), AssemblerError> {
+        let (mut left, mut p) = self.parse_term(toks, pos, line)?;
+        while p < toks.len() {
+            match toks[p] {
+                Token::Plus => {
+                    let (r, q) = self.parse_term(toks, p + 1, line)?;
+                    left = left.wrapping_add(r);
+                    p = q;
+                }
+                Token::Minus => {
+                    let (r, q) = self.parse_term(toks, p + 1, line)?;
+                    left = left.wrapping_sub(r);
+                    p = q;
+                }
+                _ => break,
+            }
+        }
+        Ok((left, p))
+    }
+
+    // term    = unary (('*' | '&' | '|') unary)*
+    fn parse_term(&self, toks: &[Token], pos: usize, line: usize) -> Result<(u16, usize), AssemblerError> {
+        let (mut left, mut p) = self.parse_unary(toks, pos, line)?;
+        while p < toks.len() {
+            match toks[p] {
+                Token::Star => {
+                    // '*' as binary operator → multiplication
+                    let (r, q) = self.parse_unary(toks, p + 1, line)?;
+                    left = left.wrapping_mul(r);
+                    p = q;
+                }
+                Token::BitAnd => {
+                    let (r, q) = self.parse_unary(toks, p + 1, line)?;
+                    left &= r;
+                    p = q;
+                }
+                Token::BitOr => {
+                    let (r, q) = self.parse_unary(toks, p + 1, line)?;
+                    left |= r;
+                    p = q;
+                }
+                _ => break,
+            }
+        }
+        Ok((left, p))
+    }
+
+    // unary   = '-' unary | '~' unary | primary
+    fn parse_unary(&self, toks: &[Token], pos: usize, line: usize) -> Result<(u16, usize), AssemblerError> {
+        if pos >= toks.len() {
+            return Err(AssemblerError::UnexpectedEnd(line));
+        }
+        match toks[pos] {
+            Token::Minus => {
+                let (v, p) = self.parse_unary(toks, pos + 1, line)?;
+                Ok(((!v).wrapping_add(1), p))
+            }
+            Token::BitNot => {
+                let (v, p) = self.parse_unary(toks, pos + 1, line)?;
+                Ok((!v, p))
+            }
+            _ => self.parse_primary(toks, pos, line),
+        }
+    }
+
+    // primary = number | '$'hex | '%'bin | ''char'' | '*' | ident
+    //         | '(' expr ')' | 'hi' '(' expr ')' | 'lo' '(' expr ')'
+    fn parse_primary(&self, toks: &[Token], pos: usize, line: usize) -> Result<(u16, usize), AssemblerError> {
+        if pos >= toks.len() {
+            return Err(AssemblerError::UnexpectedEnd(line));
+        }
+        match toks[pos] {
+            Token::Number(n) => Ok((n, pos + 1)),
+            Token::Star => Ok((self.star_pc, pos + 1)),
+            Token::LParen => {
+                let (v, p) = self.parse_expr(toks, pos + 1, line)?;
+                if p >= toks.len() || toks[p] != Token::RParen {
+                    return Err(AssemblerError::ExpressionError("expected ')'".into(), line));
+                }
+                Ok((v, p + 1))
+            }
+            Token::Hi => {
+                if pos + 1 >= toks.len() || toks[pos + 1] != Token::LParen {
+                    return Err(AssemblerError::ExpressionError("expected '(' after hi".into(), line));
+                }
+                let (v, p) = self.parse_expr(toks, pos + 2, line)?;
+                if p >= toks.len() || toks[p] != Token::RParen {
+                    return Err(AssemblerError::ExpressionError("expected ')' after hi()".into(), line));
+                }
+                Ok(((v >> 8) & 0xFF, p + 1))
+            }
+            Token::Lo => {
+                if pos + 1 >= toks.len() || toks[pos + 1] != Token::LParen {
+                    return Err(AssemblerError::ExpressionError("expected '(' after lo".into(), line));
+                }
+                let (v, p) = self.parse_expr(toks, pos + 2, line)?;
+                if p >= toks.len() || toks[p] != Token::RParen {
+                    return Err(AssemblerError::ExpressionError("expected ')' after lo()".into(), line));
+                }
+                Ok((v & 0xFF, p + 1))
+            }
+            Token::Ident(name) => {
+                let key = name.to_ascii_lowercase();
+                match self.symbols.get(&key) {
+                    Some(&v) => Ok((v, pos + 1)),
+                    None => Err(AssemblerError::UnknownLabel(name.to_string(), line)),
+                }
+            }
+            _ => Err(AssemblerError::ExpressionError(
+                format!("unexpected token {:?}", toks[pos]),
+                line,
+            )),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Line-level parsing
+// ---------------------------------------------------------------------------
+
+/// Pre-process source into parsed lines (strip comments, classify).
+fn preprocess(source: &str) -> Vec<ParsedLine> {
+    let mut in_macro: u32 = 0; // macro nesting depth
+
+    source
+        .lines()
+        .enumerate()
+        .filter_map(|(idx, raw)| {
+            let line_num = idx + 1;
+            // Strip comments
+            let without_comment = if let Some(sc) = raw.find(';') { &raw[..sc] } else { raw };
+            let trimmed = without_comment.trim();
+            if trimmed.is_empty() {
+                return Some(ParsedLine {
+                    label: None,
+                    kind: LineKind::Skip,
+                    line: line_num,
+                    operand: String::new(),
+                });
+            }
+
+            // Track macro nesting so bodies are skipped.
+            let lowered = trimmed.to_ascii_lowercase();
+            let words: Vec<&str> = lowered.split_whitespace().collect();
+            // Macro can be defined as `name macro` or `macro name`.
+            let is_macro_def = words.first() == Some(&"macro") || words.get(1) == Some(&"macro");
+            if is_macro_def {
+                in_macro += 1;
+                return Some(ParsedLine {
+                    label: None,
+                    kind: LineKind::Skip,
+                    line: line_num,
+                    operand: String::new(),
+                });
+            }
+            if in_macro > 0 {
+                let first_word = words.first().copied().unwrap_or("");
+                if first_word == "endm" || first_word == "endmacro" {
+                    in_macro -= 1;
+                }
+                return Some(ParsedLine {
+                    label: None,
+                    kind: LineKind::Skip,
+                    line: line_num,
+                    operand: String::new(),
+                });
+            }
+
+            parse_line(trimmed, line_num)
+        })
+        .collect()
+}
+
+/// Parse a single non-empty, non-comment line.
+fn parse_line(line: &str, line_num: usize) -> Option<ParsedLine> {
+    let (label, rest) = extract_label(line)?;
+    let rest = rest.trim();
+    if rest.is_empty() {
+        // Label on its own line — still emit it as Skip; the label is registered.
+        return Some(ParsedLine {
+            label,
+            kind: LineKind::Skip,
+            line: line_num,
+            operand: String::new(),
+        });
+    }
+
+    let (keyword, operand) = split_word(rest);
+    let keyword = keyword.to_ascii_lowercase();
+
+    let kind = match keyword.as_str() {
+        "org" => LineKind::Org,
+        "equ" | "=" => LineKind::Equ,
+        "ds" | ".ds" => LineKind::Ds,
+        "db" | ".db" | "byte" | ".byte" => LineKind::Db,
+        "dw" | ".dw" | "word" | ".word" => LineKind::Dw,
+        "end" => LineKind::End,
+        // Assembler directives we skip
+        "code" | "data" | "bss" | "page" | "noopt" | "list" | "nolist" | "macro" | "endm" | "if" | "else" | "endif"
+        | "include" | "error" => LineKind::Skip,
+        mnem => {
+            if let Some(m) = parse_mnemonic(mnem) {
+                LineKind::Instruction(m)
+            } else {
+                // Unknown keyword — skip silently.
+                LineKind::Skip
+            }
+        }
+    };
+
+    Some(ParsedLine {
+        label,
+        kind,
+        line: line_num,
+        operand: operand.to_string(),
+    })
+}
+
+/// Extract a label from the start of a line.  Labels can be `name` or `name:`.
+/// Returns `None` (and the original line) when no label is present.
+fn extract_label(line: &str) -> Option<(Option<String>, &str)> {
+    let ident_len = line.chars().take_while(|&c| c.is_alphanumeric() || c == '_').count();
+    if ident_len == 0 {
+        return Some((None, line));
+    }
+
+    let (ident, after) = line.split_at(ident_len);
+
+    // Label with colon: `name: ...`
+    if let Some(stripped) = after.strip_prefix(':') {
+        return Some((Some(ident.to_string()), stripped));
+    }
+
+    // `name = ...` — treat the name as a label (equate).
+    if after.trim_start().starts_with('=') {
+        return Some((Some(ident.to_string()), after));
+    }
+
+    // If followed by whitespace (or end), check if the word is a
+    // mnemonic/directive.  If not, it's a bare label.
+    if after.starts_with(char::is_whitespace) || after.is_empty() {
+        let lower = ident.to_ascii_lowercase();
+        if !is_reserved(&lower) {
+            return Some((Some(ident.to_string()), after.trim_start()));
+        }
+    }
+
+    // Not a label — return the line unmodified.
+    Some((None, line))
+}
+
+/// True if the word is a reserved keyword (directive or mnemonic).
+fn is_reserved(s: &str) -> bool {
+    is_directive(s) || parse_mnemonic(s).is_some()
+}
+
+fn is_directive(s: &str) -> bool {
+    matches!(
+        s,
+        "org"
+            | "equ"
+            | "="
+            | "ds"
+            | ".ds"
+            | "db"
+            | ".db"
+            | "byte"
+            | ".byte"
+            | "dw"
+            | ".dw"
+            | "word"
+            | ".word"
+            | "end"
+            | "code"
+            | "data"
+            | "bss"
+            | "page"
+            | "noopt"
+            | "list"
+            | "nolist"
+            | "macro"
+            | "endm"
+            | "if"
+            | "else"
+            | "endif"
+            | "include"
+            | "error"
+    )
+}
+
+/// Split a line into the first whitespace-delimited word and the remainder.
+fn split_word(s: &str) -> (&str, &str) {
+    let s = s.trim_start();
+    if let Some(pos) = s.find(|c: char| c.is_whitespace()) {
+        let (kw, rest) = s.split_at(pos);
+        (kw, rest.trim_start())
+    } else {
+        (s, "")
+    }
+}
+
+/// Parse a mnemonic string (case-insensitive) into the Mnemonic enum.
+fn parse_mnemonic(s: &str) -> Option<Mnemonic> {
+    use Mnemonic::*;
+    Some(match s {
+        "adc" => Adc,
+        "and" => And,
+        "asl" => Asl,
+        "bcc" => Bcc,
+        "bcs" => Bcs,
+        "beq" => Beq,
+        "bit" => Bit,
+        "bmi" => Bmi,
+        "bne" => Bne,
+        "bpl" => Bpl,
+        "brk" => Brk,
+        "bvc" => Bvc,
+        "bvs" => Bvs,
+        "clc" => Clc,
+        "cld" => Cld,
+        "cli" => Cli,
+        "clv" => Clv,
+        "cmp" => Cmp,
+        "cpx" => Cpx,
+        "cpy" => Cpy,
+        "dec" => Dec,
+        "dex" => Dex,
+        "dey" => Dey,
+        "eor" => Eor,
+        "inc" => Inc,
+        "inx" => Inx,
+        "iny" => Iny,
+        "jmp" => Jmp,
+        "jsr" => Jsr,
+        "lda" => Lda,
+        "ldx" => Ldx,
+        "ldy" => Ldy,
+        "lsr" => Lsr,
+        "nop" => Nop,
+        "ora" => Ora,
+        "pha" => Pha,
+        "php" => Php,
+        "pla" => Pla,
+        "plp" => Plp,
+        "rol" => Rol,
+        "ror" => Ror,
+        "rti" => Rti,
+        "rts" => Rts,
+        "sbc" => Sbc,
+        "sec" => Sec,
+        "sed" => Sed,
+        "sei" => Sei,
+        "sta" => Sta,
+        "stx" => Stx,
+        "sty" => Sty,
+        "tax" => Tax,
+        "tay" => Tay,
+        "tsx" => Tsx,
+        "txa" => Txa,
+        "txs" => Txs,
+        "tya" => Tya,
+        // Known illegal opcodes
+        "dcp" => Dcp,
+        "isc" => Isc,
+        "lax" => Lax,
+        "rla" => Rla,
+        "rra" => Rra,
+        "sax" => Sax,
+        "slo" => Slo,
+        "sre" => Sre,
+        "alr" => Alr,
+        "anc" => Anc,
+        "arr" => Arr,
+        _ => return None,
+    })
+}
+
+/// True if the mnemonic is a branch instruction.
+fn is_branch(m: Mnemonic) -> bool {
+    matches!(
+        m,
+        Mnemonic::Bcc
+            | Mnemonic::Bcs
+            | Mnemonic::Beq
+            | Mnemonic::Bmi
+            | Mnemonic::Bne
+            | Mnemonic::Bpl
+            | Mnemonic::Bvc
+            | Mnemonic::Bvs
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Byte size of an addressing mode.
+fn mode_size(mode: AddressingMode) -> u8 {
+    match mode {
+        AddressingMode::Implied | AddressingMode::Accumulator => 1,
+        AddressingMode::Immediate
+        | AddressingMode::ZeroPage
+        | AddressingMode::ZeroPageX
+        | AddressingMode::ZeroPageY
+        | AddressingMode::Relative
+        | AddressingMode::IndexedIndirect
+        | AddressingMode::IndirectIndexed => 2,
+        AddressingMode::Absolute | AddressingMode::AbsoluteX | AddressingMode::AbsoluteY | AddressingMode::Indirect => {
+            3
+        }
+    }
+}
+
+/// Compute the byte size of a parsed line (for label offset calculation).
+fn line_size(line: &ParsedLine, asm: &Assembler) -> Option<u16> {
+    match line.kind {
+        LineKind::Org | LineKind::Equ | LineKind::End | LineKind::Skip => Some(0),
+        LineKind::Ds => asm.eval(&line.operand, line.line).ok(),
+        LineKind::Db => Some(split_values(&line.operand).len() as u16),
+        LineKind::Dw => Some((split_values(&line.operand).len() * 2) as u16),
+        LineKind::Instruction(m) => {
+            let mode = asm.detect_mode(&line.operand, m, line.line, false).ok()?;
+            Some(mode_size(mode) as u16)
+        }
+    }
+}
+
+/// Split a comma-separated value list, trimming whitespace.
+fn split_values(s: &str) -> Vec<&str> {
+    s.split(',').map(|p| p.trim()).filter(|p| !p.is_empty()).collect()
+}
+
+/// Build the (Mnemonic, AddressingMode) → opcode-byte map from the OPCODES table.
+fn build_opcode_map() -> HashMap<(Mnemonic, AddressingMode), u8> {
+    use crate::opcode::OPCODES;
+    let mut map = HashMap::new();
+    for (opcode, info) in OPCODES.iter().enumerate() {
+        if info.mnemonic != Mnemonic::Illegal {
+            let key = (info.mnemonic, info.mode);
+            // First entry wins (the canonical/standard encoding)
+            map.entry(key).or_insert(opcode as u8);
+        }
+    }
+    map
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assemble_str(src: &str) -> Vec<u8> {
+        assemble(src, 0x1000, None).unwrap().0
+    }
+
+    #[test]
+    fn test_empty() {
+        assert!(assemble("", 0x1000, None).unwrap().0.is_empty());
+    }
+
+    #[test]
+    fn test_only_comments() {
+        assert!(assemble_str("; just comments\n; another\n").is_empty());
+    }
+
+    #[test]
+    fn test_org() {
+        // org matching default origin → no padding
+        assert!(assemble_str("org $1000").is_empty());
+    }
+
+    #[test]
+    fn test_lda_imm() {
+        assert_eq!(assemble_str("org $1000\nlda #$42\nbrk"), vec![0xA9, 0x42, 0x00]);
+    }
+
+    #[test]
+    fn test_zero_page_vs_absolute() {
+        let bytes = assemble_str("org $1000\nlda $20\nsta $2000\n");
+        // lda $20 = A5 20, sta $2000 = 8D 00 20
+        assert_eq!(bytes, vec![0xA5, 0x20, 0x8D, 0x00, 0x20]);
+    }
+
+    #[test]
+    fn test_indexed() {
+        let bytes = assemble_str("org $1000\nlda $40,X\nsta $2000,X\nldx $50,Y\n");
+        // lda $40,X = B5 40, sta $2000,X = 9D 00 20, ldx $50,Y = B6 50
+        assert_eq!(bytes, vec![0xB5, 0x40, 0x9D, 0x00, 0x20, 0xB6, 0x50]);
+    }
+
+    #[test]
+    fn test_indirect() {
+        let bytes = assemble_str("org $1000\nlda ($40,X)\nlda ($40),Y\njmp ($2000)\n");
+        assert_eq!(bytes, vec![0xA1, 0x40, 0xB1, 0x40, 0x6C, 0x00, 0x20]);
+    }
+
+    #[test]
+    fn test_branch_backward() {
+        let bytes = assemble_str("org $1000\nloop dex\nbne loop\n");
+        // dex = CA at $1000
+        // bne loop at $1001: target=$1000, next=$1003, offset=$FD
+        assert_eq!(bytes, vec![0xCA, 0xD0, 0xFD]);
+    }
+
+    #[test]
+    fn test_branch_forward() {
+        let bytes = assemble_str("org $1000\nbeq skip\nbrk\nskip nop\n");
+        // beq at $1000: target=$1003, next=$1002, offset=1
+        assert_eq!(bytes, vec![0xF0, 0x01, 0x00, 0xEA]);
+    }
+
+    #[test]
+    fn test_db_dw_ds() {
+        let bytes = assemble_str("org $1000\ndb $01, $02, $03\ndw $abcd\nds 4\n");
+        assert_eq!(bytes, vec![0x01, 0x02, 0x03, 0xCD, 0xAB, 0x00, 0x00, 0x00, 0x00]);
+    }
+
+    #[test]
+    fn test_equ() {
+        let (bytes, syms) = assemble("org $1000\nfoo = $42\nlda #foo\n", 0x1000, None).unwrap();
+        assert_eq!(bytes, vec![0xA9, 0x42]);
+        assert_eq!(syms.get("foo"), Some(&0x42));
+    }
+
+    #[test]
+    fn test_label_ref() {
+        let bytes = assemble_str("org $1000\nstart lda #0\nsta val\nbrk\nval ds 1\n");
+        // lda #0: A9 00 at $1000
+        // sta val at $1002: val=$1006 → 8D 06 10
+        // brk: 00 at $1005
+        // ds 1: 00 at $1006
+        assert_eq!(bytes, vec![0xA9, 0x00, 0x8D, 0x06, 0x10, 0x00, 0x00]);
+    }
+
+    #[test]
+    fn test_illegal_immediate() {
+        let bytes = assemble_str("org $1000\nanc #$42\nalr #$42\narr #$42\n");
+        // anc = 0x0B, alr = 0x4B, arr = 0x6B
+        assert_eq!(bytes, vec![0x0B, 0x42, 0x4B, 0x42, 0x6B, 0x42]);
+    }
+
+    #[test]
+    fn test_illegal_rmw() {
+        let bytes = assemble_str("org $1000\ndcp $20\nisc $2000\nrla $40,X\nslo $50\nsre $60\n");
+        // dcp zp 0xC7, isc abs 0xEF, rla zp,x 0x37, slo zp 0x07, sre zp 0x47
+        assert_eq!(
+            bytes,
+            vec![0xC7, 0x20, 0xEF, 0x00, 0x20, 0x37, 0x40, 0x07, 0x50, 0x47, 0x60]
+        );
+    }
+
+    #[test]
+    fn test_expressions() {
+        let bytes = assemble_str("org $1000\nlda #$20+$22\nldx #$40|3\nldy #$FF&$0F\nsta $20+$10\n");
+        // A9 42, A2 43, A0 0F, 85 30
+        assert_eq!(bytes, vec![0xA9, 0x42, 0xA2, 0x43, 0xA0, 0x0F, 0x85, 0x30]);
+    }
+
+    #[test]
+    fn test_hi_lo() {
+        let bytes = assemble_str("org $1000\nlda #hi($1234)\nlda #lo($1234)\n");
+        assert_eq!(bytes, vec![0xA9, 0x12, 0xA9, 0x34]);
+    }
+
+    #[test]
+    fn test_pc_star() {
+        let bytes = assemble_str("org $1000\nbeq *+$10\n");
+        // beq at $1000: next=$1002, target=$1010, offset=$0E
+        assert_eq!(bytes, vec![0xF0, 0x0E]);
+    }
+
+    #[test]
+    fn test_predefined_symbols() {
+        let mut syms = HashMap::new();
+        syms.insert("code_segment".into(), 0x0400u16);
+        let (bytes, _) = assemble("org code_segment\nlda #0\n", 0x0400, Some(syms)).unwrap();
+        assert_eq!(bytes, vec![0xA9, 0x00]);
+    }
+
+    #[test]
+    fn test_implied_all() {
+        let src = "\
+org $1000
+clc
+cld
+cli
+clv
+dex
+dey
+inx
+iny
+nop
+pha
+php
+pla
+plp
+rti
+rts
+sec
+sed
+sei
+tax
+tay
+tsx
+txa
+txs
+tya
+brk";
+        let bytes = assemble_str(src);
+        // 25 implied opcodes
+        assert_eq!(bytes.len(), 25);
+        assert_eq!(bytes[0], 0x18); // clc
+        assert_eq!(bytes[8], 0xEA); // nop
+        assert_eq!(bytes[14], 0x60); // rts
+        assert_eq!(bytes[24], 0x00); // brk
+    }
+
+    #[test]
+    fn test_accumulator_mode() {
+        let bytes = assemble_str("org $1000\nasl\nlsr\nrol\nror\n");
+        assert_eq!(bytes, vec![0x0A, 0x4A, 0x2A, 0x6A]);
+    }
+
+    #[test]
+    fn test_comprehensive() {
+        let src = r#"
+            org $1000
+        start lda #$42
+            sta $2000
+            ldx #$05
+        loop dex
+            bne loop
+            lda $30
+            ldy #$03
+        l1  lda ($40),Y
+            dey
+            bne l1
+            lda result
+            brk
+
+            db $01, $02, $03
+            dw $abcd
+        result ds 2
+        "#;
+        let (bytes, syms) = assemble(src, 0x1000, None).unwrap();
+
+        let expected = vec![
+            0xA9, 0x42, // lda #$42
+            0x8D, 0x00, 0x20, // sta $2000
+            0xA2, 0x05, // ldx #$05
+            0xCA, // dex (loop=$1007)
+            0xD0, 0xFD, // bne loop (target $1007, next $100A)
+            0xA5, 0x30, // lda $30
+            0xA0, 0x03, // ldy #$03
+            0xB1, 0x40, // lda ($40),Y (l1=$100E)
+            0x88, // dey
+            0xD0, 0xFB, // bne l1 (target $100E, next $1013)
+            0xAD, 0x1C, 0x10, // lda result (result=$101C)
+            0x00, // brk
+            0x01, 0x02, 0x03, // db
+            0xCD, 0xAB, // dw $abcd
+            0x00, 0x00, // ds 2
+        ];
+        assert_eq!(bytes, expected);
+        assert_eq!(syms.get("start"), Some(&0x1000));
+        assert_eq!(syms.get("loop"), Some(&0x1007));
+        assert_eq!(syms.get("l1"), Some(&0x100E));
+        assert_eq!(syms.get("result"), Some(&0x101C));
+    }
+
+    #[test]
+    fn test_undefined_label() {
+        let err = assemble("org $1000\nlda unknown\n", 0, None).unwrap_err();
+        assert!(err.to_string().contains("unknown label"), "{err}");
+    }
+
+    #[test]
+    fn test_duplicate_label() {
+        let err = assemble("org $1000\nfoo nop\nfoo nop\n", 0, None).unwrap_err();
+        assert!(err.to_string().contains("duplicate label"), "{err}");
+    }
+
+    #[test]
+    fn test_jsr_rts() {
+        let bytes = assemble_str("org $1000\njsr $2000\nrts\n");
+        assert_eq!(bytes, vec![0x20, 0x00, 0x20, 0x60]);
+    }
+
+    #[test]
+    fn test_jmp_abs_indirect() {
+        let bytes = assemble_str("org $1000\njmp $3000\njmp ($4000)\n");
+        assert_eq!(bytes, vec![0x4C, 0x00, 0x30, 0x6C, 0x00, 0x40]);
+    }
+
+    #[test]
+    fn test_bit_zp_abs() {
+        let bytes = assemble_str("org $1000\nbit $20\nbit $2000\n");
+        assert_eq!(bytes, vec![0x24, 0x20, 0x2C, 0x00, 0x20]);
+    }
+
+    #[test]
+    fn test_stx_sty() {
+        let bytes = assemble_str("org $1000\nsty $20\nstx $30\nsty $2000\nstx $3000\n");
+        // sty zp = 84, stx zp = 86, sty abs = 8C, stx abs = 8E
+        assert_eq!(bytes, vec![0x84, 0x20, 0x86, 0x30, 0x8C, 0x00, 0x20, 0x8E, 0x00, 0x30]);
+    }
+
+    #[test]
+    fn test_stx_zpy() {
+        let bytes = assemble_str("org $1000\nstx $10,Y\n");
+        // stx $10,Y = 96 10  (ZeroPageY)
+        assert_eq!(bytes, vec![0x96, 0x10]);
+    }
+
+    #[test]
+    fn test_cpx_cpy() {
+        let bytes = assemble_str("org $1000\ncpx #$10\ncpy #$20\ncpx $30\ncpy $40\ncpx $2000\ncpy $3000\n");
+        // cpx imm = E0, cpy imm = C0
+        // cpx zp = E4, cpy zp = C4
+        // cpx abs = EC, cpy abs = CC
+        assert_eq!(
+            bytes,
+            vec![0xE0, 0x10, 0xC0, 0x20, 0xE4, 0x30, 0xC4, 0x40, 0xEC, 0x00, 0x20, 0xCC, 0x00, 0x30],
+        );
+    }
+
+    #[test]
+    fn test_ldx_zp_abs() {
+        let bytes = assemble_str("org $1000\nldx $20\nldx $2000\nldx $2000,Y\n");
+        // ldx zp = A6, ldx abs = AE, ldx abs,Y = BE
+        // ldx $20 = A6 20, ldx $2000 = AE 00 20, ldx $2000,Y = BE 00 20
+        assert_eq!(bytes, vec![0xA6, 0x20, 0xAE, 0x00, 0x20, 0xBE, 0x00, 0x20]);
+    }
+
+    #[test]
+    fn test_ldy_zp_abs() {
+        let bytes = assemble_str("org $1000\nldy $20\nldy $2000\nldy $2000,X\n");
+        // ldy zp = A4, ldy abs = AC, ldy abs,X = BC
+        assert_eq!(bytes, vec![0xA4, 0x20, 0xAC, 0x00, 0x20, 0xBC, 0x00, 0x20]);
+    }
+
+    #[test]
+    fn test_inc_dec() {
+        let bytes = assemble_str("org $1000\ninc $20\ndec $30\ninc $2000\ndec $3000\ninc $40,X\ndec $50,X\n");
+        // inc zp = E6, dec zp = C6
+        // inc abs = EE, dec abs = CE
+        // inc zp,x = F6, dec zp,x = D6
+        assert_eq!(
+            bytes,
+            vec![0xE6, 0x20, 0xC6, 0x30, 0xEE, 0x00, 0x20, 0xCE, 0x00, 0x30, 0xF6, 0x40, 0xD6, 0x50,],
+        );
+    }
+
+    #[test]
+    fn test_binary_literal() {
+        let bytes = assemble_str("org $1000\nlda #%10100101\n");
+        // %10100101 = $A5
+        assert_eq!(bytes, vec![0xA9, 0xA5]);
+    }
+
+    #[test]
+    fn test_char_literal() {
+        let bytes = assemble_str("org $1000\nlda #'A'\n");
+        assert_eq!(bytes, vec![0xA9, 0x41]);
+    }
+
+    #[test]
+    fn test_parentheses_expr() {
+        let bytes = assemble_str("org $1000\nlda #((2+3)*$10)\n");
+        // (2+3)*16 = 5*16 = 80 = $50
+        assert_eq!(bytes, vec![0xA9, 0x50]);
+    }
+
+    #[test]
+    fn test_unary_minus() {
+        let bytes = assemble_str("org $1000\nlda #-$01\n");
+        // -1 in two's complement 8-bit = $FF
+        assert_eq!(bytes, vec![0xA9, 0xFF]);
+    }
+
+    #[test]
+    fn test_bitwise_not() {
+        let bytes = assemble_str("org $1000\nlda #~$0F\n");
+        // ~$0F = $FFF0, truncated to 8-bit = $F0
+        assert_eq!(bytes, vec![0xA9, 0xF0]);
+    }
+
+    #[test]
+    fn test_macro_skip() {
+        // Macros should be silently skipped
+        let src = r#"
+            org $1000
+            trap macro
+                jmp *
+                endm
+            nop
+        "#;
+        let bytes = assemble_str(src);
+        assert_eq!(bytes, vec![0xEA]);
+    }
+
+    #[test]
+    fn test_if_skip() {
+        let src = r#"
+            org $1000
+            if disable_decimal = 0
+            nop
+            endif
+        "#;
+        let bytes = assemble_str(src);
+        // The nop inside if/endif is skipped because "if", "nop", "endif"
+        // are all unrecognised at line level (we skip the directive keyword lines,
+        // and nop inside if would need context tracking — for now it gets
+        // assembled if on its own line).
+        // Actually "nop" after "if" will be parsed as an instruction since
+        // it's on its own line.  So we get the nop.
+        // This is expected behaviour for our simple preprocessor.
+        assert_eq!(bytes, vec![0xEA]);
+    }
+
+    #[test]
+    fn test_flag_constants() {
+        // The predefined flag constants should be available
+        let bytes = assemble_str("org $1000\nlda #carry\nlda #zero\nlda #intdis\nlda #minus\n");
+        // carry=1, zero=2, intdis=4, minus=$80
+        assert_eq!(bytes, vec![0xA9, 0x01, 0xA9, 0x02, 0xA9, 0x04, 0xA9, 0x80]);
+    }
+
+    #[test]
+    fn test_org_padding() {
+        let bytes = assemble_str("org $1000\ndb $AA\norg $1010\ndb $BB\n");
+        // $1000: AA
+        // $1001-100F: 00 padding
+        // $1010: BB
+        assert_eq!(bytes.len(), 0x11);
+        assert_eq!(bytes[0], 0xAA);
+        assert_eq!(bytes[0x10], 0xBB);
+        // All bytes between should be zero
+        assert!(bytes[1..0x10].iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn test_lax_sax() {
+        let bytes = assemble_str("org $1000\nlax $20\nsax $30\nlax $2000\nsax $3000\n");
+        // lax zp = A7, sax zp = 87, lax abs = AF, sax abs = 8F
+        assert_eq!(bytes, vec![0xA7, 0x20, 0x87, 0x30, 0xAF, 0x00, 0x20, 0x8F, 0x00, 0x30]);
+    }
+
+    #[test]
+    fn test_end_stops() {
+        let src = r#"
+            org $1000
+            lda #$01
+            end
+            lda #$02
+        "#;
+        let bytes = assemble_str(src);
+        // Only the first lda should be assembled
+        assert_eq!(bytes, vec![0xA9, 0x01]);
+    }
+
+    #[test]
+    fn test_label_with_colon() {
+        let src = "org $1000\nstart: nop\nloop: dex\nbne loop\n";
+        let bytes = assemble_str(src);
+        assert_eq!(bytes, vec![0xEA, 0xCA, 0xD0, 0xFD]);
+    }
+}

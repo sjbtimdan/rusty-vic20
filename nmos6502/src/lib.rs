@@ -1,4 +1,5 @@
 pub mod alu;
+pub mod assembler;
 pub mod breakpoint;
 pub mod cpu;
 pub mod disassembler;
