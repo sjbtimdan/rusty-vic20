@@ -34,7 +34,7 @@ pub fn render_vic20_screen(frame: &mut [u8], border_rgba: &[u8; 4], screen_rgba:
         );
     }
 
-    for chunk in frame.chunks_exact_mut(4) {
+    for chunk in frame.as_chunks_mut::<4>().0 {
         chunk.copy_from_slice(border_rgba);
     }
 
