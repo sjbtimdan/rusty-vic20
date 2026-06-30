@@ -63,6 +63,14 @@ impl CPU6502 {
         }
     }
 
+    /// Returns `true` when the CPU has no pending micro-ops and is ready to
+    /// fetch the next instruction. Useful for determining when a given value of
+    /// `registers.pc` is a stable instruction boundary rather than an
+    /// intermediate value during multi-cycle instruction execution.
+    pub fn is_at_instruction_boundary(&self) -> bool {
+        self.sequence_index >= self.sequence.len() || self.sequence.is_empty()
+    }
+
     pub fn add_breakpoint(&mut self, bp: Box<dyn Breakpoint>) {
         self.breakpoints.push(bp);
     }

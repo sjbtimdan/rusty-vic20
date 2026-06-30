@@ -28,7 +28,7 @@
 //! assert_eq!(bytes, vec![0xA9, 0x42, 0x8D, 0x00, 0x20, 0x00]);
 //! ```
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::opcode::{AddressingMode, Mnemonic, OPCODES};
 
@@ -201,7 +201,9 @@ impl Assembler {
     // ------------------------------------------------------------------
 
     fn assemble(&mut self, source: &str) -> Result<(), AssemblerError> {
-        let lines = preprocess(source);
+        // Expand macros at text level before the main two-pass assembly.
+        let expanded = expand_source(source)?;
+        let lines = preprocess(&expanded);
         self.pass1(&lines)?;
         self.pass2(&lines)
     }
@@ -256,10 +258,8 @@ impl Assembler {
                     let val = self.eval(&line.operand, line.line)?;
                     if let Some(ref label) = line.label {
                         let key = label.to_ascii_lowercase();
-                        // Predefined symbols may be overridden by the source.
-                        if self.symbols.contains_key(&key) && !self.predefined_syms.contains(&key) {
-                            return Err(AssemblerError::DuplicateLabel(label.clone(), line.line));
-                        }
+                        // Equ redefinitions are always allowed in AS65
+                        // (e.g. `test_num = test_num + 1`).
                         self.symbols.insert(key, val);
                     }
                 }
@@ -278,6 +278,9 @@ impl Assembler {
                 LineKind::Instruction(mnemonic) => {
                     // Use emit=true so known values get proper ZP detection,
                     // but forward references still fall back to Absolute.
+                    // Set star_pc BEFORE detect_mode so `*` resolves to the
+                    // instruction start address (e.g. `jmp *` → self-trap).
+                    self.star_pc = self.pc;
                     let mode = self.detect_mode(&line.operand, mnemonic, line.line, true)?;
                     self.mode_cache.insert(line.line, mode);
                     self.pc = self.pc.wrapping_add(mode_size(mode) as u16);
@@ -609,377 +612,713 @@ impl Assembler {
     // ------------------------------------------------------------------
 
     fn eval(&self, expr: &str, line: usize) -> Result<u16, AssemblerError> {
-        let trimmed = expr.trim();
-        if trimmed.is_empty() {
-            return Err(AssemblerError::ExpressionError("empty expression".into(), line));
-        }
-        let tokens = self.tokenize(trimmed, line)?;
-        let (val, pos) = self.parse_expr(&tokens, 0, line)?;
-        if pos < tokens.len() && tokens[pos] != Token::Comma && tokens[pos] != Token::Eof {
-            return Err(AssemblerError::ExpressionError(
-                format!("trailing tokens in `{trimmed}`"),
-                line,
-            ));
-        }
-        Ok(val)
+        eval_expr(expr, &self.symbols, self.star_pc, line)
     }
 
     /// Evaluate an `if` condition, treating unknown labels as 0 (false-y).
     fn eval_cond(&self, expr: &str, line: usize) -> u16 {
-        self.eval(expr, line).unwrap_or(0)
+        eval_cond_expr(expr, &self.symbols, line)
     }
+}
 
-    /// Tokenize an expression string into a token vec.
-    fn tokenize<'a>(&self, s: &'a str, line: usize) -> Result<Vec<Token<'a>>, AssemblerError> {
-        let mut tokens = Vec::new();
-        let bytes = s.as_bytes();
-        let len = bytes.len();
-        let mut i = 0;
+// ---------------------------------------------------------------------------
+// Standalone expression evaluator (used by Assembler and MacroExpander)
+// ---------------------------------------------------------------------------
 
-        while i < len {
-            let ch = bytes[i] as char;
-            match ch {
-                ' ' | '\t' => i += 1,
-                '+' => {
-                    tokens.push(Token::Plus);
-                    i += 1;
-                }
-                '-' => {
-                    tokens.push(Token::Minus);
-                    i += 1;
-                }
-                '&' => {
-                    tokens.push(Token::BitAnd);
-                    i += 1;
-                }
-                '|' => {
-                    tokens.push(Token::BitOr);
-                    i += 1;
-                }
-                '~' => {
-                    tokens.push(Token::BitNot);
-                    i += 1;
-                }
-                '^' => {
-                    tokens.push(Token::BitXor);
-                    i += 1;
-                }
-                '*' => {
-                    tokens.push(Token::Star);
-                    i += 1;
-                }
-                '!' => {
-                    if i + 1 < len && bytes[i + 1] == b'=' {
-                        tokens.push(Token::Ne);
-                        i += 2;
-                    } else {
-                        return Err(AssemblerError::ExpressionError(
-                            "unexpected '!' — use '~' for bitwise not".into(),
-                            line,
-                        ));
-                    }
-                }
-                '=' => {
-                    tokens.push(Token::Eq);
-                    i += 1;
-                }
-                '<' => {
-                    if i + 1 < len && bytes[i + 1] == b'=' {
-                        tokens.push(Token::Le);
-                        i += 2;
-                    } else {
-                        tokens.push(Token::Lt);
-                        i += 1;
-                    }
-                }
-                '>' => {
-                    if i + 1 < len && bytes[i + 1] == b'=' {
-                        tokens.push(Token::Ge);
-                        i += 2;
-                    } else {
-                        tokens.push(Token::Gt);
-                        i += 1;
-                    }
-                }
-                '(' => {
-                    tokens.push(Token::LParen);
-                    i += 1;
-                }
-                ')' => {
-                    tokens.push(Token::RParen);
-                    i += 1;
-                }
-                ',' => {
-                    tokens.push(Token::Comma);
-                    i += 1;
-                }
-                '$' => {
-                    i += 1;
-                    let start = i;
-                    while i < len && (bytes[i] as char).is_ascii_hexdigit() {
-                        i += 1;
-                    }
-                    if i == start {
-                        return Err(AssemblerError::ExpressionError(
-                            "empty hex literal after $".into(),
-                            line,
-                        ));
-                    }
-                    let hex = &s[start..i];
-                    let v = u16::from_str_radix(hex, 16)
-                        .map_err(|_| AssemblerError::ExpressionError(format!("invalid hex ${hex}"), line))?;
-                    tokens.push(Token::Number(v));
-                }
-                '%' => {
-                    i += 1;
-                    let start = i;
-                    while i < len && matches!(bytes[i] as char, '0' | '1') {
-                        i += 1;
-                    }
-                    if i == start {
-                        return Err(AssemblerError::ExpressionError(
-                            "empty binary literal after %".into(),
-                            line,
-                        ));
-                    }
-                    let mut val: u16 = 0;
-                    for &b in &s.as_bytes()[start..i] {
-                        val = (val << 1) | (if b == b'1' { 1 } else { 0 });
-                    }
-                    tokens.push(Token::Number(val));
-                }
-                '\'' => {
-                    i += 1; // opening quote
-                    if i >= len {
-                        return Err(AssemblerError::ExpressionError(
-                            "unclosed character literal".into(),
-                            line,
-                        ));
-                    }
-                    let c = bytes[i];
-                    i += 1;
-                    if i >= len || bytes[i] as char != '\'' {
-                        return Err(AssemblerError::ExpressionError(
-                            "unclosed character literal".into(),
-                            line,
-                        ));
-                    }
-                    i += 1; // closing quote
-                    tokens.push(Token::Number(c as u16));
-                }
-                '0'..='9' => {
-                    let start = i;
-                    while i < len && (bytes[i] as char).is_ascii_digit() {
-                        i += 1;
-                    }
-                    let num = &s[start..i];
-                    let val: u32 = num
-                        .parse()
-                        .map_err(|_| AssemblerError::ExpressionError(format!("invalid number `{num}`"), line))?;
-                    if val > 0xFFFF {
-                        return Err(AssemblerError::ExpressionError("decimal value > 0xFFFF".into(), line));
-                    }
-                    tokens.push(Token::Number(val as u16));
-                }
-                'a'..='z' | 'A'..='Z' | '_' => {
-                    let start = i;
-                    while i < len {
-                        let c = bytes[i] as char;
-                        if c.is_alphanumeric() || c == '_' || c == '?' {
-                            i += 1;
-                        } else {
-                            break;
-                        }
-                    }
-                    let ident = &s[start..i];
-                    match ident.to_ascii_lowercase().as_str() {
-                        "hi" => tokens.push(Token::Hi),
-                        "lo" => tokens.push(Token::Lo),
-                        _ => tokens.push(Token::Ident(ident)),
-                    }
-                }
-                _ => {
+/// Tokenize an expression string into a token vec.
+fn tokenize_expr<'a>(s: &'a str, line: usize) -> Result<Vec<Token<'a>>, AssemblerError> {
+    let mut tokens = Vec::new();
+    let bytes = s.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+
+    while i < len {
+        let ch = bytes[i] as char;
+        match ch {
+            ' ' | '\t' => i += 1,
+            '+' => {
+                tokens.push(Token::Plus);
+                i += 1;
+            }
+            '-' => {
+                tokens.push(Token::Minus);
+                i += 1;
+            }
+            '&' => {
+                tokens.push(Token::BitAnd);
+                i += 1;
+            }
+            '|' => {
+                tokens.push(Token::BitOr);
+                i += 1;
+            }
+            '~' => {
+                tokens.push(Token::BitNot);
+                i += 1;
+            }
+            '^' => {
+                tokens.push(Token::BitXor);
+                i += 1;
+            }
+            '*' => {
+                tokens.push(Token::Star);
+                i += 1;
+            }
+            '!' => {
+                if i + 1 < len && bytes[i + 1] == b'=' {
+                    tokens.push(Token::Ne);
+                    i += 2;
+                } else {
                     return Err(AssemblerError::ExpressionError(
-                        format!("unexpected character '{ch}'"),
+                        "unexpected '!' — use '~' for bitwise not".into(),
                         line,
                     ));
                 }
             }
-        }
-
-        tokens.push(Token::Eof);
-        Ok(tokens)
-    }
-
-    // -- Recursive-descent parser ---------------------------------------
-
-    // expr       = comparison (('+' | '-') comparison)*
-    // comparison = term (('=' | '!=' | '<' | '>' | '<=' | '>=') term)*
-    // term       = unary (('*' | '&' | '|') unary)*
-    fn parse_expr(&self, toks: &[Token], pos: usize, line: usize) -> Result<(u16, usize), AssemblerError> {
-        let (mut left, mut p) = self.parse_comparison(toks, pos, line)?;
-        while p < toks.len() {
-            match toks[p] {
-                Token::Plus => {
-                    let (r, q) = self.parse_comparison(toks, p + 1, line)?;
-                    left = left.wrapping_add(r);
-                    p = q;
+            '=' => {
+                tokens.push(Token::Eq);
+                i += 1;
+            }
+            '<' => {
+                if i + 1 < len && bytes[i + 1] == b'=' {
+                    tokens.push(Token::Le);
+                    i += 2;
+                } else {
+                    tokens.push(Token::Lt);
+                    i += 1;
                 }
-                Token::Minus => {
-                    let (r, q) = self.parse_comparison(toks, p + 1, line)?;
-                    left = left.wrapping_sub(r);
-                    p = q;
+            }
+            '>' => {
+                if i + 1 < len && bytes[i + 1] == b'=' {
+                    tokens.push(Token::Ge);
+                    i += 2;
+                } else {
+                    tokens.push(Token::Gt);
+                    i += 1;
                 }
-                _ => break,
+            }
+            '(' => {
+                tokens.push(Token::LParen);
+                i += 1;
+            }
+            ')' => {
+                tokens.push(Token::RParen);
+                i += 1;
+            }
+            ',' => {
+                tokens.push(Token::Comma);
+                i += 1;
+            }
+            '$' => {
+                i += 1;
+                let start = i;
+                while i < len && (bytes[i] as char).is_ascii_hexdigit() {
+                    i += 1;
+                }
+                if i == start {
+                    return Err(AssemblerError::ExpressionError(
+                        "empty hex literal after $".into(),
+                        line,
+                    ));
+                }
+                let hex = &s[start..i];
+                let v = u16::from_str_radix(hex, 16)
+                    .map_err(|_| AssemblerError::ExpressionError(format!("invalid hex ${hex}"), line))?;
+                tokens.push(Token::Number(v));
+            }
+            '%' => {
+                i += 1;
+                let start = i;
+                while i < len && matches!(bytes[i] as char, '0' | '1') {
+                    i += 1;
+                }
+                if i == start {
+                    return Err(AssemblerError::ExpressionError(
+                        "empty binary literal after %".into(),
+                        line,
+                    ));
+                }
+                let mut val: u16 = 0;
+                for &b in &s.as_bytes()[start..i] {
+                    val = (val << 1) | (if b == b'1' { 1 } else { 0 });
+                }
+                tokens.push(Token::Number(val));
+            }
+            '\'' => {
+                i += 1; // opening quote
+                if i >= len {
+                    return Err(AssemblerError::ExpressionError(
+                        "unclosed character literal".into(),
+                        line,
+                    ));
+                }
+                let c = bytes[i];
+                i += 1;
+                if i >= len || bytes[i] as char != '\'' {
+                    return Err(AssemblerError::ExpressionError(
+                        "unclosed character literal".into(),
+                        line,
+                    ));
+                }
+                i += 1; // closing quote
+                tokens.push(Token::Number(c as u16));
+            }
+            '0'..='9' => {
+                let start = i;
+                while i < len && (bytes[i] as char).is_ascii_digit() {
+                    i += 1;
+                }
+                let num = &s[start..i];
+                let val: u32 = num
+                    .parse()
+                    .map_err(|_| AssemblerError::ExpressionError(format!("invalid number `{num}`"), line))?;
+                if val > 0xFFFF {
+                    return Err(AssemblerError::ExpressionError("decimal value > 0xFFFF".into(), line));
+                }
+                tokens.push(Token::Number(val as u16));
+            }
+            'a'..='z' | 'A'..='Z' | '_' => {
+                let start = i;
+                while i < len {
+                    let c = bytes[i] as char;
+                    if c.is_alphanumeric() || c == '_' || c == '?' {
+                        i += 1;
+                    } else {
+                        break;
+                    }
+                }
+                let ident = &s[start..i];
+                match ident.to_ascii_lowercase().as_str() {
+                    "hi" => tokens.push(Token::Hi),
+                    "lo" => tokens.push(Token::Lo),
+                    _ => tokens.push(Token::Ident(ident)),
+                }
+            }
+            _ => {
+                return Err(AssemblerError::ExpressionError(
+                    format!("unexpected character '{ch}'"),
+                    line,
+                ));
             }
         }
-        Ok((left, p))
     }
 
-    fn parse_comparison(&self, toks: &[Token], pos: usize, line: usize) -> Result<(u16, usize), AssemblerError> {
-        let (mut left, mut p) = self.parse_term(toks, pos, line)?;
-        while p < toks.len() {
-            match toks[p] {
-                Token::Eq => {
-                    let (r, q) = self.parse_term(toks, p + 1, line)?;
-                    left = if left == r { 1 } else { 0 };
-                    p = q;
-                }
-                Token::Ne => {
-                    let (r, q) = self.parse_term(toks, p + 1, line)?;
-                    left = if left != r { 1 } else { 0 };
-                    p = q;
-                }
-                Token::Lt => {
-                    let (r, q) = self.parse_term(toks, p + 1, line)?;
-                    left = if left < r { 1 } else { 0 };
-                    p = q;
-                }
-                Token::Gt => {
-                    let (r, q) = self.parse_term(toks, p + 1, line)?;
-                    left = if left > r { 1 } else { 0 };
-                    p = q;
-                }
-                Token::Le => {
-                    let (r, q) = self.parse_term(toks, p + 1, line)?;
-                    left = if left <= r { 1 } else { 0 };
-                    p = q;
-                }
-                Token::Ge => {
-                    let (r, q) = self.parse_term(toks, p + 1, line)?;
-                    left = if left >= r { 1 } else { 0 };
-                    p = q;
-                }
-                _ => break,
+    tokens.push(Token::Eof);
+    Ok(tokens)
+}
+
+// -- Recursive-descent parser ---------------------------------------
+
+// expr       = comparison (('+' | '-') comparison)*
+// comparison = term (('=' | '!=' | '<' | '>' | '<=' | '>=') term)*
+// term       = unary (('*' | '&' | '|') unary)*
+
+fn parse_expr(
+    toks: &[Token],
+    pos: usize,
+    symbols: &HashMap<String, u16>,
+    star_pc: u16,
+    line: usize,
+) -> Result<(u16, usize), AssemblerError> {
+    let (mut left, mut p) = parse_comparison(toks, pos, symbols, star_pc, line)?;
+    while p < toks.len() {
+        match toks[p] {
+            Token::Plus => {
+                let (r, q) = parse_comparison(toks, p + 1, symbols, star_pc, line)?;
+                left = left.wrapping_add(r);
+                p = q;
             }
-        }
-        Ok((left, p))
-    }
-
-    // term    = unary (('*' | '&' | '|') unary)*
-    fn parse_term(&self, toks: &[Token], pos: usize, line: usize) -> Result<(u16, usize), AssemblerError> {
-        let (mut left, mut p) = self.parse_unary(toks, pos, line)?;
-        while p < toks.len() {
-            match toks[p] {
-                Token::Star => {
-                    // '*' as binary operator → multiplication
-                    let (r, q) = self.parse_unary(toks, p + 1, line)?;
-                    left = left.wrapping_mul(r);
-                    p = q;
-                }
-                Token::BitAnd => {
-                    let (r, q) = self.parse_unary(toks, p + 1, line)?;
-                    left &= r;
-                    p = q;
-                }
-                Token::BitOr => {
-                    let (r, q) = self.parse_unary(toks, p + 1, line)?;
-                    left |= r;
-                    p = q;
-                }
-                Token::BitXor => {
-                    let (r, q) = self.parse_unary(toks, p + 1, line)?;
-                    left ^= r;
-                    p = q;
-                }
-                _ => break,
-            }
-        }
-        Ok((left, p))
-    }
-
-    // unary   = '-' unary | '~' unary | primary
-    fn parse_unary(&self, toks: &[Token], pos: usize, line: usize) -> Result<(u16, usize), AssemblerError> {
-        if pos >= toks.len() {
-            return Err(AssemblerError::UnexpectedEnd(line));
-        }
-        match toks[pos] {
             Token::Minus => {
-                let (v, p) = self.parse_unary(toks, pos + 1, line)?;
-                Ok(((!v).wrapping_add(1), p))
+                let (r, q) = parse_comparison(toks, p + 1, symbols, star_pc, line)?;
+                left = left.wrapping_sub(r);
+                p = q;
             }
-            Token::BitNot => {
-                let (v, p) = self.parse_unary(toks, pos + 1, line)?;
-                Ok((!v, p))
+            _ => break,
+        }
+    }
+    Ok((left, p))
+}
+
+fn parse_comparison(
+    toks: &[Token],
+    pos: usize,
+    symbols: &HashMap<String, u16>,
+    star_pc: u16,
+    line: usize,
+) -> Result<(u16, usize), AssemblerError> {
+    let (mut left, mut p) = parse_term(toks, pos, symbols, star_pc, line)?;
+    while p < toks.len() {
+        match toks[p] {
+            Token::Eq => {
+                let (r, q) = parse_term(toks, p + 1, symbols, star_pc, line)?;
+                left = if left == r { 1 } else { 0 };
+                p = q;
             }
-            _ => self.parse_primary(toks, pos, line),
+            Token::Ne => {
+                let (r, q) = parse_term(toks, p + 1, symbols, star_pc, line)?;
+                left = if left != r { 1 } else { 0 };
+                p = q;
+            }
+            Token::Lt => {
+                let (r, q) = parse_term(toks, p + 1, symbols, star_pc, line)?;
+                left = if left < r { 1 } else { 0 };
+                p = q;
+            }
+            Token::Gt => {
+                let (r, q) = parse_term(toks, p + 1, symbols, star_pc, line)?;
+                left = if left > r { 1 } else { 0 };
+                p = q;
+            }
+            Token::Le => {
+                let (r, q) = parse_term(toks, p + 1, symbols, star_pc, line)?;
+                left = if left <= r { 1 } else { 0 };
+                p = q;
+            }
+            Token::Ge => {
+                let (r, q) = parse_term(toks, p + 1, symbols, star_pc, line)?;
+                left = if left >= r { 1 } else { 0 };
+                p = q;
+            }
+            _ => break,
+        }
+    }
+    Ok((left, p))
+}
+
+// term    = unary (('*' | '&' | '|') unary)*
+fn parse_term(
+    toks: &[Token],
+    pos: usize,
+    symbols: &HashMap<String, u16>,
+    star_pc: u16,
+    line: usize,
+) -> Result<(u16, usize), AssemblerError> {
+    let (mut left, mut p) = parse_unary(toks, pos, symbols, star_pc, line)?;
+    while p < toks.len() {
+        match toks[p] {
+            Token::Star => {
+                // '*' as binary operator → multiplication
+                let (r, q) = parse_unary(toks, p + 1, symbols, star_pc, line)?;
+                left = left.wrapping_mul(r);
+                p = q;
+            }
+            Token::BitAnd => {
+                let (r, q) = parse_unary(toks, p + 1, symbols, star_pc, line)?;
+                left &= r;
+                p = q;
+            }
+            Token::BitOr => {
+                let (r, q) = parse_unary(toks, p + 1, symbols, star_pc, line)?;
+                left |= r;
+                p = q;
+            }
+            Token::BitXor => {
+                let (r, q) = parse_unary(toks, p + 1, symbols, star_pc, line)?;
+                left ^= r;
+                p = q;
+            }
+            _ => break,
+        }
+    }
+    Ok((left, p))
+}
+
+// unary   = '-' unary | '~' unary | primary
+fn parse_unary(
+    toks: &[Token],
+    pos: usize,
+    symbols: &HashMap<String, u16>,
+    star_pc: u16,
+    line: usize,
+) -> Result<(u16, usize), AssemblerError> {
+    if pos >= toks.len() {
+        return Err(AssemblerError::UnexpectedEnd(line));
+    }
+    match toks[pos] {
+        Token::Minus => {
+            let (v, p) = parse_unary(toks, pos + 1, symbols, star_pc, line)?;
+            Ok(((!v).wrapping_add(1), p))
+        }
+        Token::BitNot => {
+            let (v, p) = parse_unary(toks, pos + 1, symbols, star_pc, line)?;
+            Ok((!v, p))
+        }
+        _ => parse_primary(toks, pos, symbols, star_pc, line),
+    }
+}
+
+// primary = number | '$'hex | '%'bin | ''char'' | '*' | ident
+//         | '(' expr ')' | 'hi' '(' expr ')' | 'lo' '(' expr ')'
+fn parse_primary(
+    toks: &[Token],
+    pos: usize,
+    symbols: &HashMap<String, u16>,
+    star_pc: u16,
+    line: usize,
+) -> Result<(u16, usize), AssemblerError> {
+    if pos >= toks.len() {
+        return Err(AssemblerError::UnexpectedEnd(line));
+    }
+    match toks[pos] {
+        Token::Number(n) => Ok((n, pos + 1)),
+        Token::Star => Ok((star_pc, pos + 1)),
+        Token::LParen => {
+            let (v, p) = parse_expr(toks, pos + 1, symbols, star_pc, line)?;
+            if p >= toks.len() || toks[p] != Token::RParen {
+                return Err(AssemblerError::ExpressionError("expected ')'".into(), line));
+            }
+            Ok((v, p + 1))
+        }
+        Token::Hi => {
+            // Support both `hi(expr)` and `hi expr` (space-separated).
+            if pos + 1 < toks.len() && toks[pos + 1] == Token::LParen {
+                let (v, p) = parse_expr(toks, pos + 2, symbols, star_pc, line)?;
+                if p >= toks.len() || toks[p] != Token::RParen {
+                    return Err(AssemblerError::ExpressionError("expected ')' after hi()".into(), line));
+                }
+                Ok(((v >> 8) & 0xFF, p + 1))
+            } else {
+                let (v, p) = parse_expr(toks, pos + 1, symbols, star_pc, line)?;
+                Ok(((v >> 8) & 0xFF, p))
+            }
+        }
+        Token::Lo => {
+            // Support both `lo(expr)` and `lo expr` (space-separated).
+            if pos + 1 < toks.len() && toks[pos + 1] == Token::LParen {
+                let (v, p) = parse_expr(toks, pos + 2, symbols, star_pc, line)?;
+                if p >= toks.len() || toks[p] != Token::RParen {
+                    return Err(AssemblerError::ExpressionError("expected ')' after lo()".into(), line));
+                }
+                Ok((v & 0xFF, p + 1))
+            } else {
+                let (v, p) = parse_expr(toks, pos + 1, symbols, star_pc, line)?;
+                Ok((v & 0xFF, p))
+            }
+        }
+        Token::Ident(name) => {
+            let key = name.to_ascii_lowercase();
+            match symbols.get(&key) {
+                Some(&v) => Ok((v, pos + 1)),
+                None => Err(AssemblerError::UnknownLabel(name.to_string(), line)),
+            }
+        }
+        _ => Err(AssemblerError::ExpressionError(
+            format!("unexpected token {:?}", toks[pos]),
+            line,
+        )),
+    }
+}
+
+/// Evaluate an expression string, returning the numeric value.
+fn eval_expr(expr: &str, symbols: &HashMap<String, u16>, star_pc: u16, line: usize) -> Result<u16, AssemblerError> {
+    let trimmed = expr.trim();
+    if trimmed.is_empty() {
+        return Err(AssemblerError::ExpressionError("empty expression".into(), line));
+    }
+    let tokens = tokenize_expr(trimmed, line)?;
+    let (val, pos) = parse_expr(&tokens, 0, symbols, star_pc, line)?;
+    if pos < tokens.len() && tokens[pos] != Token::Comma && tokens[pos] != Token::Eof {
+        return Err(AssemblerError::ExpressionError(
+            format!("trailing tokens in `{trimmed}`"),
+            line,
+        ));
+    }
+    Ok(val)
+}
+
+/// Evaluate an `if` condition, treating unknown labels as 0 (false-y).
+fn eval_cond_expr(expr: &str, symbols: &HashMap<String, u16>, line: usize) -> u16 {
+    eval_expr(expr, symbols, 0, line).unwrap_or(0)
+}
+
+// ---------------------------------------------------------------------------
+// Macro Expander — text-level pre-processor
+// ---------------------------------------------------------------------------
+
+/// A collected macro definition (body lines).
+#[derive(Clone)]
+struct MacroDef {
+    body: Vec<String>,
+}
+
+/// Expands macros at the text level: evaluates `if`/`else`/`endif` conditionals,
+/// collects macro bodies from active branches, and expands macro invocations.
+///
+/// This runs BEFORE `preprocess()` in the assembly pipeline.
+fn expand_source(source: &str) -> Result<String, AssemblerError> {
+    let mut expander = MacroExpander::new();
+    expander.process(source)
+}
+
+struct MacroExpander {
+    symbols: HashMap<String, u16>,
+    macros: HashMap<String, MacroDef>,
+    if_stack: Vec<bool>,
+    output: Vec<String>,
+    collecting: Option<String>, // name of macro being collected
+    body_buf: Vec<String>,      // body lines being collected
+    unique_counter: u32,
+    /// Depth of `if`/`else`/`endif` nesting inside the macro body being collected.
+    /// Non-zero means the collected body lines are inside an if-block.
+    collecting_if_depth: usize,
+}
+
+impl MacroExpander {
+    fn new() -> Self {
+        let mut symbols = HashMap::new();
+        // Pre-populate common status-flag constants (same as Assembler::new).
+        symbols.insert("carry".into(), 0x01);
+        symbols.insert("zero".into(), 0x02);
+        symbols.insert("intdis".into(), 0x04);
+        symbols.insert("decmode".into(), 0x08);
+        symbols.insert("break".into(), 0x10);
+        symbols.insert("reserv".into(), 0x20);
+        symbols.insert("overfl".into(), 0x40);
+        symbols.insert("minus".into(), 0x80);
+
+        Self {
+            symbols,
+            macros: HashMap::new(),
+            if_stack: Vec::new(),
+            output: Vec::new(),
+            collecting: None,
+            body_buf: Vec::new(),
+            unique_counter: 0,
+            collecting_if_depth: 0,
         }
     }
 
-    // primary = number | '$'hex | '%'bin | ''char'' | '*' | ident
-    //         | '(' expr ')' | 'hi' '(' expr ')' | 'lo' '(' expr ')'
-    fn parse_primary(&self, toks: &[Token], pos: usize, line: usize) -> Result<(u16, usize), AssemblerError> {
-        if pos >= toks.len() {
-            return Err(AssemblerError::UnexpectedEnd(line));
+    /// True when we are not inside a skipped `if`/`else`/`endif` block.
+    fn is_active(&self) -> bool {
+        self.if_stack.iter().all(|&active| active)
+    }
+
+    /// Process source text line-by-line, expanding macros.
+    fn process(&mut self, source: &str) -> Result<String, AssemblerError> {
+        // Phase 1: Extract all `name = expr` / `name equ expr` definitions.
+        // We need this before processing conditionals so symbols like
+        // `report`, `I_flag`, `disable_decimal`, etc. are available.
+        self.extract_equ_definitions(source);
+
+        // Phase 2: Main line-by-line processing.
+        for (idx, raw) in source.lines().enumerate() {
+            let line_num = idx + 1;
+            // Strip comments before any processing.
+            let clean = if let Some(sc) = raw.find(';') { &raw[..sc] } else { raw };
+            let trimmed = clean.trim();
+            self.process_line(trimmed, line_num)?;
         }
-        match toks[pos] {
-            Token::Number(n) => Ok((n, pos + 1)),
-            Token::Star => Ok((self.star_pc, pos + 1)),
-            Token::LParen => {
-                let (v, p) = self.parse_expr(toks, pos + 1, line)?;
-                if p >= toks.len() || toks[p] != Token::RParen {
-                    return Err(AssemblerError::ExpressionError("expected ')'".into(), line));
-                }
-                Ok((v, p + 1))
+
+        // Phase 3: If still collecting a macro body that was never finished,
+        // discard it (no endm seen — treat as error, but for now discard).
+        self.collecting = None;
+        self.body_buf.clear();
+        self.collecting_if_depth = 0;
+
+        Ok(self.output.join("\n"))
+    }
+
+    /// Scan source for `name = expr` / `name equ expr` to pre-populate symbols.
+    fn extract_equ_definitions(&mut self, source: &str) {
+        for line in source.lines() {
+            let clean = if let Some(sc) = line.find(';') {
+                &line[..sc]
+            } else {
+                line
+            };
+            let trimmed = clean.trim();
+            if trimmed.is_empty() {
+                continue;
             }
-            Token::Hi => {
-                // Support both `hi(expr)` and `hi expr` (space-separated).
-                if pos + 1 < toks.len() && toks[pos + 1] == Token::LParen {
-                    let (v, p) = self.parse_expr(toks, pos + 2, line)?;
-                    if p >= toks.len() || toks[p] != Token::RParen {
-                        return Err(AssemblerError::ExpressionError("expected ')' after hi()".into(), line));
+
+            // Try to match a simple `name = expr` or `name equ expr` pattern.
+            let lower = trimmed.to_ascii_lowercase();
+            if let Some(_eq_pos) = lower.find(|c: char| c == '=' || c == 'e') {
+                let (name, rest) = if lower.contains(" equ ") || lower.starts_with("equ ") {
+                    // `name equ expr` or `equ name` — skip the latter.
+                    let parts: Vec<&str> = trimmed.splitn(2, char::is_whitespace).collect();
+                    if parts.len() < 2 {
+                        continue;
                     }
-                    Ok(((v >> 8) & 0xFF, p + 1))
-                } else {
-                    let (v, p) = self.parse_expr(toks, pos + 1, line)?;
-                    Ok(((v >> 8) & 0xFF, p))
-                }
-            }
-            Token::Lo => {
-                // Support both `lo(expr)` and `lo expr` (space-separated).
-                if pos + 1 < toks.len() && toks[pos + 1] == Token::LParen {
-                    let (v, p) = self.parse_expr(toks, pos + 2, line)?;
-                    if p >= toks.len() || toks[p] != Token::RParen {
-                        return Err(AssemblerError::ExpressionError("expected ')' after lo()".into(), line));
+                    // `equ` is the first word → skip (not an eq-def)
+                    if parts[0].eq_ignore_ascii_case("equ") {
+                        continue;
                     }
-                    Ok((v & 0xFF, p + 1))
+                    // Split: name, "equ expr"
+                    let rest = parts[1].trim();
+                    if !rest.to_ascii_lowercase().starts_with("equ ") && rest != "equ" {
+                        continue;
+                    }
+                    let expr = rest.trim_start_matches("equ ").trim_start_matches("equ").trim();
+                    if expr.is_empty() {
+                        continue;
+                    }
+                    (parts[0], expr)
+                } else if let Some(eq) = lower.find('=') {
+                    let name = trimmed[..eq].trim();
+                    if name.is_empty() || name.contains(' ') || name.contains('\t') {
+                        continue;
+                    }
+                    // Skip conditionals and directives.
+                    let name_lower = name.to_ascii_lowercase();
+                    if name_lower == "if"
+                        || name_lower == "else"
+                        || name_lower == "endif"
+                        || name_lower == "macro"
+                        || name_lower == "endm"
+                    {
+                        continue;
+                    }
+                    let expr = trimmed[eq + 1..].trim();
+                    if expr.is_empty() {
+                        continue;
+                    }
+                    (name, expr)
                 } else {
-                    let (v, p) = self.parse_expr(toks, pos + 1, line)?;
-                    Ok((v & 0xFF, p))
+                    continue;
+                };
+
+                // Skip names with special chars / not simple identifiers.
+                if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                    continue;
+                }
+                // Skip reserved words.
+                let name_lower = name.to_ascii_lowercase();
+                if is_directive(&name_lower) || parse_mnemonic(&name_lower).is_some() {
+                    continue;
+                }
+
+                // Evaluate the expression and store.
+                if let Ok(val) = eval_expr(rest, &self.symbols, 0, 0) {
+                    self.symbols.insert(name_lower, val);
                 }
             }
-            Token::Ident(name) => {
-                let key = name.to_ascii_lowercase();
-                match self.symbols.get(&key) {
-                    Some(&v) => Ok((v, pos + 1)),
-                    None => Err(AssemblerError::UnknownLabel(name.to_string(), line)),
-                }
-            }
-            _ => Err(AssemblerError::ExpressionError(
-                format!("unexpected token {:?}", toks[pos]),
-                line,
-            )),
         }
+    }
+
+    fn process_line(&mut self, line: &str, line_num: usize) -> Result<(), AssemblerError> {
+        if line.is_empty() {
+            if self.collecting.is_none() {
+                self.output.push(String::new());
+            } else {
+                self.body_buf.push(String::new());
+            }
+            return Ok(());
+        }
+
+        let lower = line.to_ascii_lowercase();
+        let words: Vec<&str> = lower.split_whitespace().collect();
+        let first = words.first().copied().unwrap_or("");
+
+        // --- Macro body collection ---
+        if let Some(ref macro_name) = self.collecting.clone() {
+            if first == "endm" || first == "endmacro" {
+                // Check if we have any open if-inside-macro.
+                if self.collecting_if_depth == 0 {
+                    // Store the macro definition.
+                    let body = std::mem::take(&mut self.body_buf);
+                    self.macros.insert(macro_name.clone(), MacroDef { body });
+                    self.collecting = None;
+                } else {
+                    // End of a nested if-block inside the macro body.
+                    self.collecting_if_depth -= 1;
+                    self.body_buf.push(line.to_string());
+                }
+            } else {
+                self.body_buf.push(line.to_string());
+            }
+            return Ok(());
+        }
+
+        // --- Top-level processing (not collecting a macro) ---
+
+        // Conditionals are evaluated at the top level.
+        if first == "if" {
+            let cond = words[1..].join(" ");
+            let val = eval_cond_expr(&cond, &self.symbols, line_num);
+            self.if_stack.push(val != 0);
+            return Ok(());
+        }
+        if first == "else" {
+            if let Some(top) = self.if_stack.last_mut() {
+                *top = !*top;
+            }
+            return Ok(());
+        }
+        if first == "endif" {
+            self.if_stack.pop();
+            return Ok(());
+        }
+
+        // Skip lines in inactive branches.
+        if !self.is_active() {
+            return Ok(());
+        }
+
+        // --- Macro definition ---
+        if words.len() >= 2 && words[1] == "macro" {
+            let name = words[0].to_string();
+            self.collecting = Some(name);
+            self.body_buf.clear();
+            self.collecting_if_depth = 0;
+            return Ok(());
+        }
+
+        // --- Macro invocation ---
+        if let Some(mdef) = self.macros.get(first) {
+            // Clone the body to avoid borrow conflict with &mut self.
+            let body = mdef.body.clone();
+            // Extract invocation arguments.
+            let args_str = line
+                .trim_start()
+                .split_whitespace()
+                .skip(1)
+                .collect::<Vec<_>>()
+                .join(" ");
+            let args: Vec<&str> = if args_str.is_empty() {
+                vec![]
+            } else {
+                args_str.split(',').map(|a| a.trim()).collect()
+            };
+
+            let expanded = self.expand_macro_body(&body, &args, line_num)?;
+            for expanded_line in &expanded {
+                // Recursively process the expanded line (may contain further
+                // macro invocations or conditionals).
+                self.process_line(expanded_line, line_num)?;
+            }
+            return Ok(());
+        }
+
+        // --- Regular line — pass through ---
+        self.output.push(line.to_string());
+        Ok(())
+    }
+
+    /// Expand a macro body by substituting `\N` params and `\?` unique labels,
+    /// then returning the expanded lines.
+    fn expand_macro_body(
+        &mut self,
+        body: &[String],
+        args: &[&str],
+        _line: usize,
+    ) -> Result<Vec<String>, AssemblerError> {
+        self.unique_counter += 1;
+        let uniq_id = format!("?{:04X}", self.unique_counter);
+
+        let mut expanded = Vec::new();
+        for line in body {
+            let mut result = line.clone();
+            // Replace \? with unique label id.
+            result = result.replace("\\?", &uniq_id);
+            // Replace \1, \2, ... \N with positional arguments.
+            for (i, arg) in args.iter().enumerate() {
+                let param = format!("\\{}", i + 1);
+                result = result.replace(&param, arg);
+            }
+            expanded.push(result);
+        }
+        Ok(expanded)
     }
 }
 
@@ -989,41 +1328,16 @@ impl Assembler {
 
 /// Pre-process source into parsed lines (strip comments, classify).
 fn preprocess(source: &str) -> Vec<ParsedLine> {
-    let mut macro_names: HashSet<String> = HashSet::new();
-
-    // First pass: collect all macro names by scanning for `name macro` patterns.
-    for line in source.lines() {
-        let trimmed = if let Some(sc) = line.find(';') {
-            &line[..sc]
-        } else {
-            line
-        }
-        .trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let lowered = trimmed.to_ascii_lowercase();
-        let words: Vec<&str> = lowered.split_whitespace().collect();
-        // `name macro` — the first word is the macro name.
-        if words.len() >= 2 && words.last() == Some(&"macro") {
-            macro_names.insert(words[0].to_string());
-        }
-        // `macro name`
-        if words.first() == Some(&"macro") && words.len() >= 2 {
-            macro_names.insert(words[1].to_string());
-        }
-    }
-
-    // Second pass: parse lines, skipping macro bodies and invocations.
-    let mut in_macro_skip: u32 = 0;
+    // Macros have already been expanded by `expand_source()`, so this function
+    // simply parses lines (strip comments, classify). No macro handling needed.
     source
         .lines()
         .enumerate()
         .filter_map(|(idx, raw)| {
             let line_num = idx + 1;
             // Strip comments
-            let without_comment = if let Some(sc) = raw.find(';') { &raw[..sc] } else { raw };
-            let trimmed = without_comment.trim();
+            let trimmed = if let Some(sc) = raw.find(';') { &raw[..sc] } else { raw };
+            let trimmed = trimmed.trim();
             if trimmed.is_empty() {
                 return Some(ParsedLine {
                     label: None,
@@ -1032,45 +1346,6 @@ fn preprocess(source: &str) -> Vec<ParsedLine> {
                     operand: String::new(),
                 });
             }
-
-            // Track macro nesting so bodies are skipped.
-            let lowered = trimmed.to_ascii_lowercase();
-            let words: Vec<&str> = lowered.split_whitespace().collect();
-            let is_macro_def = words.first() == Some(&"macro") || words.get(1) == Some(&"macro");
-            if is_macro_def {
-                in_macro_skip += 1;
-                return Some(ParsedLine {
-                    label: None,
-                    kind: LineKind::Skip,
-                    line: line_num,
-                    operand: String::new(),
-                });
-            }
-            if in_macro_skip > 0 {
-                let first_word = words.first().copied().unwrap_or("");
-                if first_word == "endm" || first_word == "endmacro" {
-                    in_macro_skip -= 1;
-                }
-                return Some(ParsedLine {
-                    label: None,
-                    kind: LineKind::Skip,
-                    line: line_num,
-                    operand: String::new(),
-                });
-            }
-
-            // Macro invocation — the first word names a defined macro.
-            if let Some(first) = words.first() {
-                if macro_names.contains(*first) {
-                    return Some(ParsedLine {
-                        label: None,
-                        kind: LineKind::Skip,
-                        line: line_num,
-                        operand: String::new(),
-                    });
-                }
-            }
-
             parse_line(trimmed, line_num)
         })
         .collect()
@@ -1128,7 +1403,11 @@ fn parse_line(line: &str, line_num: usize) -> Option<ParsedLine> {
 /// Extract a label from the start of a line.  Labels can be `name` or `name:`.
 /// Returns `None` (and the original line) when no label is present.
 fn extract_label(line: &str) -> Option<(Option<String>, &str)> {
-    let ident_len = line.chars().take_while(|&c| c.is_alphanumeric() || c == '_').count();
+    // Allow '?' in labels (generated by macro \? unique label expansion).
+    let ident_len = line
+        .chars()
+        .take_while(|&c| c.is_alphanumeric() || c == '_' || c == '?')
+        .count();
     if ident_len == 0 {
         return Some((None, line));
     }
@@ -1333,7 +1612,11 @@ fn line_size(line: &ParsedLine, asm: &Assembler) -> Option<u16> {
         LineKind::Db => Some(split_values(&line.operand).len() as u16),
         LineKind::Dw => Some((split_values(&line.operand).len() * 2) as u16),
         LineKind::Instruction(m) => {
-            let mode = asm.detect_mode(&line.operand, *m, line.line, false).ok()?;
+            // Use emit=true so that known zero-page addresses are correctly
+            // sized (2 bytes) instead of falling back to Absolute (3 bytes).
+            // This keeps label registration in pass1 consistent with pass1's
+            // own mode detection (which also uses emit=true).
+            let mode = asm.detect_mode(&line.operand, *m, line.line, true).ok()?;
             Some(mode_size(mode) as u16)
         }
     }
@@ -1710,16 +1993,100 @@ brk";
     }
 
     #[test]
-    fn test_macro_skip() {
-        // Macros should be silently skipped
+    fn test_macro_expansion() {
+        // Macros should be expanded — the body replaces the invocation.
         let src = r#"
             org $1000
             trap macro
                 jmp *
                 endm
             nop
+            trap
         "#;
         let bytes = assemble_str(src);
+        // nop=EA at $1000, then macro body expanded: jmp * at $1001 = 4C 01 10
+        assert_eq!(bytes, vec![0xEA, 0x4C, 0x01, 0x10]);
+    }
+
+    #[test]
+    fn test_macro_with_params() {
+        // Macro with parameters: \1, \2 substitution.
+        let src = r#"
+            org $1000
+            set_a macro
+                lda #\1
+                ldx #\2
+                endm
+            set_a $42, $99
+        "#;
+        let bytes = assemble_str(src);
+        // lda #$42 = A9 42, ldx #$99 = A2 99
+        assert_eq!(bytes, vec![0xA9, 0x42, 0xA2, 0x99]);
+    }
+
+    #[test]
+    fn test_macro_unique_labels() {
+        // \? generates unique labels so multiple invocations don't collide.
+        let src = r#"
+            org $1000
+            mytrap macro
+                bne skip\?
+                brk
+            skip\?
+                endm
+            mytrap
+            mytrap
+        "#;
+        let bytes = assemble_str(src);
+        // First invocation: bne $1003 (skip?0001), brk=00
+        // Second invocation: bne $1006 (skip?0002), brk=00
+        // Total: 2+1 + 2+1 = 6 bytes
+        assert_eq!(bytes.len(), 6);
+        assert_eq!(bytes[0], 0xD0); // bne
+        assert_eq!(bytes[1], 0x01); // offset to skip first brk
+        assert_eq!(bytes[2], 0x00); // brk
+        assert_eq!(bytes[3], 0xD0); // bne
+        assert_eq!(bytes[4], 0x01); // offset to skip second brk
+        assert_eq!(bytes[5], 0x00); // brk
+    }
+
+    #[test]
+    fn test_macro_nested_invocation() {
+        // A macro body can invoke another macro.
+        let src = r#"
+            org $1000
+            load_flag macro
+                lda #\1
+                endm
+            set_stat macro
+                load_flag \1
+                pha
+                plp
+                endm
+            set_stat $42
+        "#;
+        let bytes = assemble_str(src);
+        // load_flag $42 expands to: lda #$42 = A9 42
+        // then pha = 48, plp = 28
+        assert_eq!(bytes, vec![0xA9, 0x42, 0x48, 0x28]);
+    }
+
+    #[test]
+    fn test_macro_if_in_body() {
+        // Conditionals inside a macro body are evaluated at expansion time.
+        let src = r#"
+            org $1000
+            myop macro
+                if \1
+                nop
+                endif
+                endm
+            myop 0
+            myop 1
+        "#;
+        let bytes = assemble_str(src);
+        // First invocation: if 0 → skip nop
+        // Second invocation: if 1 → nop = EA
         assert_eq!(bytes, vec![0xEA]);
     }
 
