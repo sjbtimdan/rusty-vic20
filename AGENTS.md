@@ -42,16 +42,14 @@ There are TWO distinct `Addressable` traits — do not confuse them:
 
 ## CPU (`nmos6502` crate)
 
-- `CPU6502` at `nmos6502/src/cpu.rs`. Created with `CPU6502::new()`.
-- Execution model: micro-op sequences. `cpu.cycle(&mut bus)` executes ONE micro-op per call (cycle-accurate).
-- All instruction sequences are in `nmos6502/src/sequences.rs`. Sequences are built with **`const fn` helpers** (`seq_imm`, `seq_zp`, `seq_abs`, `rmw_zp`, `branch_seq`, etc.) producing `&[MicroOp]` constants. The only remaining macro is `interrupt_seq!` (generates differently-named public statics from vector addresses).
-- Auxiliary helpers `m(bus, internal)`, `i(internal)`, `b(bus)`, and constants `N` (no-op internal), `BN` (no-op bus), `NONE` reduce boilerplate.
-- NMI: `cpu.nmi_latch: EdgeLatch` (falling-edge triggered, `nmos6502/src/edge_latch.rs`). Set from VIA1 CA1 in `bus.step_devices()`.
-- IRQ: `cpu.irq_line_low: bool`. Set from VIA2 in `bus.step_devices()`.
-- Reset: `cpu.reset(&mut bus)` loads PC from `0xFFFC`-`0xFFFD`.
-- CPU is generic over `impl nmos6502::Addressable`, not coupled to the main crate's bus.
+See [`nmos6502/AGENTS.md`](nmos6502/AGENTS.md) for the full crate guide — execution model, bus interface, test suite, architecture, and gotchas.
 
-Test suite: `nmos6502/tests/harte_tests.rs` — 2.56M parametrized JSON test cases (Tom Harte). Per-opcode isolation via `rstest`. Run single opcode: `cargo test -p nmos6502 --test harte_tests a9`.
+Key facts that affect the main crate:
+- `CPU6502` at `nmos6502/src/cpu.rs`. Execution model: micro-op sequences — `cpu.cycle(&mut bus)` executes ONE micro-op per call (cycle-accurate).
+- All instruction sequences are in `nmos6502/src/sequences.rs`, built with **`const fn` helpers** (`seq_imm`, `seq_zp`, `seq_abs`, `rmw_zp`, `branch_seq`, etc.).
+- NMI: `cpu.nmi_latch: EdgeLatch` (falling-edge triggered). Set from VIA1 CA1 in `bus.step_devices()`.
+- IRQ: `cpu.irq_line_low: bool`. Set from VIA2 in `bus.step_devices()`.
+- CPU is generic over `impl nmos6502::Addressable`, not coupled to the main crate's bus.
 
 ## Module Map (main crate)
 
@@ -108,5 +106,6 @@ Test suite: `nmos6502/tests/harte_tests.rs` — 2.56M parametrized JSON test cas
 - [ARCHITECTURE.md](ARCHITECTURE.md) — full architectural detail
 - [WIP.md](WIP.md) — missing features / roadmap
 - [docs/REFERENCES.md](docs/REFERENCES.md) — VIC-20 hardware references
+- [nmos6502/AGENTS.md](nmos6502/AGENTS.md) — CPU crate agent guide
 - [nmos6502/README.md](nmos6502/README.md) — CPU crate docs, Harte test suite usage
 - [nmos6502/docs/cycle-perfect-cpu.md](nmos6502/docs/cycle-perfect-cpu.md) — micro-op execution model
