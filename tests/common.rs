@@ -122,7 +122,7 @@ fn build_runner(expansion: MemoryExpansion) -> EmulatorRunner {
     let brake = Brake::new_default(make_brake_channel().1);
     let mut bus = Bus::default();
     bus.memory = new_memory_with_roms(expansion);
-    let mut cpu = CPU6502::new();
+    let mut cpu = CPU6502::default();
     cpu.reset(&mut bus);
     EmulatorRunner::new(
         receivers,

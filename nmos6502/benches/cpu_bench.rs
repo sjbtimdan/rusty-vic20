@@ -20,7 +20,7 @@ impl Addressable for Ram {
 }
 
 fn bench_steps(steps: u64, b: &mut Bencher) {
-    let mut cpu = CPU6502::new();
+    let mut cpu = CPU6502::default();
     let mut mem = Ram::new();
     mem.write_byte(0x0200, 0xE8); // INX
     mem.write_byte(0x0201, 0xD0); // BNE

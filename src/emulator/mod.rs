@@ -43,7 +43,7 @@ pub fn spawn_emulator(
         .spawn(move || {
             let mut bus = Bus::default();
             bus.memory = new_memory_with_roms(memory_expansion);
-            let mut cpu = CPU6502::new();
+            let mut cpu = CPU6502::default();
             cpu.reset(&mut bus);
             EmulatorRunner::new(
                 receivers,

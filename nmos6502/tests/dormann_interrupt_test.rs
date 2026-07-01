@@ -48,7 +48,7 @@ fn run_interrupt_test() {
     let (bytes, syms) = common::assemble_program(source, 0);
     let start_addr = *syms.get("start").expect("symbol 'start' not found");
 
-    let mut cpu = CPU6502::new();
+    let mut cpu = CPU6502::default();
     let mut bus = InterruptBus {
         ram: Ram::new(),
         feedback: 0,

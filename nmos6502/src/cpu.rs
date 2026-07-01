@@ -16,6 +16,7 @@ pub enum Interrupt {
     Reset,
 }
 
+#[derive(Default)]
 pub struct CPU6502 {
     pub registers: Registers,
 
@@ -45,24 +46,6 @@ fn page_cross(base: u16, index: u8) -> (u16, bool) {
 }
 
 impl CPU6502 {
-    pub fn new() -> Self {
-        Self {
-            registers: Registers::default(),
-            sequence: &[],
-            sequence_index: 0,
-            operands: [0; 2],
-            addr: 0,
-            data_latch: 0,
-            branch_taken: false,
-            page_crossed: false,
-            irq_line_low: false,
-            nmi_latch: EdgeLatch::default(),
-            breakpoints: Vec::new(),
-            halted: false,
-            total_cycles: 0,
-        }
-    }
-
     /// Returns `true` when the CPU has no pending micro-ops and is ready to
     /// fetch the next instruction. Useful for determining when a given value of
     /// `registers.pc` is a stable instruction boundary rather than an
@@ -76,7 +59,7 @@ impl CPU6502 {
     }
 
     pub fn reset(&mut self, _memory: &mut impl Addressable) {
-        *self = Self::new();
+        *self = Self::default();
         self.nmi_latch.set_level(true);
         self.enter_interrupt(Interrupt::Reset);
     }
@@ -817,12 +800,6 @@ impl CPU6502 {
     }
 }
 
-impl Default for CPU6502 {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Return the instruction length in bytes for a given opcode.
 #[cfg(test)]
 mod tests {
@@ -831,7 +808,7 @@ mod tests {
 
     #[test]
     fn test_lda_immediate() {
-        let mut cpu = CPU6502::new();
+        let mut cpu = CPU6502::default();
         let mut mem = Ram::new();
         cpu.registers.pc = 0x0200;
         mem.write_byte(0x0200, 0xA9); // LDA #
@@ -850,7 +827,7 @@ mod tests {
 
     #[test]
     fn test_lda_immediate_zero() {
-        let mut cpu = CPU6502::new();
+        let mut cpu = CPU6502::default();
         let mut mem = Ram::new();
         cpu.registers.pc = 0x0200;
         mem.write_byte(0x0200, 0xA9);
@@ -865,7 +842,7 @@ mod tests {
 
     #[test]
     fn test_inx() {
-        let mut cpu = CPU6502::new();
+        let mut cpu = CPU6502::default();
         let mut mem = Ram::new();
         cpu.registers.pc = 0x0200;
         mem.write_byte(0x0200, 0xE8); // INX
@@ -880,7 +857,7 @@ mod tests {
 
     #[test]
     fn test_lda_zp() {
-        let mut cpu = CPU6502::new();
+        let mut cpu = CPU6502::default();
         let mut mem = Ram::new();
         cpu.registers.pc = 0x0200;
         mem.write_byte(0x0200, 0xA5); // LDA zp

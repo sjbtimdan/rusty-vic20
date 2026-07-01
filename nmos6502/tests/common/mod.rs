@@ -13,7 +13,7 @@ pub fn assemble_program(source: &str, origin: u16) -> (Vec<u8>, HashMap<String, 
 
 #[allow(dead_code)]
 pub fn load_program(bytes: &[u8], start_addr: u16) -> (CPU6502, Ram) {
-    let mut cpu = CPU6502::new();
+    let mut cpu = CPU6502::default();
     let mut mem = Ram::new();
     for (i, &b) in bytes.iter().enumerate() {
         mem.write_byte(i as u16, b);

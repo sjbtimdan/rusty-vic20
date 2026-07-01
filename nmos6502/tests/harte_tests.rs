@@ -187,7 +187,7 @@ mod tests {
         let mut errors = Vec::new();
         let label = format!("#{case_index} [{}]", case.name);
 
-        let mut cpu = CPU6502::new();
+        let mut cpu = CPU6502::default();
         let mut mem = Ram::new();
 
         for &(addr, val) in &case.initial.ram {

@@ -45,7 +45,7 @@ fn run_boot_with_keyboard() -> (rusty_vic20::emulator::EmulatorRunner, SyncSende
     };
     let mut bus = Bus::default();
     bus.memory = new_memory_with_roms(MemoryExpansion::None);
-    let mut cpu = CPU6502::new();
+    let mut cpu = CPU6502::default();
     cpu.reset(&mut bus);
     let mut runner = rusty_vic20::emulator::EmulatorRunner::new(
         receivers,
