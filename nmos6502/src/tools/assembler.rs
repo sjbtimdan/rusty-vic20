@@ -2184,14 +2184,12 @@ brk";
 
     #[test]
     fn test_if_true() {
-        // `if 1` is always true, so the nop is assembled.
         let bytes = assemble_str("org $1000\nif 1\nnop\nendif\n");
         assert_eq!(bytes, vec![0xEA]);
     }
 
     #[test]
     fn test_if_false() {
-        // `if 0` is always false, so the nop is skipped.
         let bytes = assemble_str("org $1000\nif 0\nnop\nendif\n");
         assert_eq!(bytes, vec![]);
     }

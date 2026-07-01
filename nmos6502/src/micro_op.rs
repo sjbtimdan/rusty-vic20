@@ -89,9 +89,6 @@ pub enum BusOp {
     ReadVecLo(u16),
     /// Read vector high byte; combine with stored low → PC.
     ReadVecHi(u16),
-
-    /// No bus access (internal-only cycle: ALU, register transfer, etc.).
-    None,
 }
 
 use crate::cpu::CPU6502;

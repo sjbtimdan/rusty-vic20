@@ -161,8 +161,6 @@ impl CPU6502 {
                     let hi = memory.read_byte(addr);
                     self.registers.pc = (hi as u16) << 8 | self.operands[0] as u16;
                 }
-
-                BusOp::None => {}
             }
 
             // Execute internal operation

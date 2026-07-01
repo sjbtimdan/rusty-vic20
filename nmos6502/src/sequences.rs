@@ -3,7 +3,9 @@
 //! Each sequence represents cycles 2+ of an instruction. Cycle 1 (opcode
 //! fetch) is handled by `CPU6502::step()` when no sequence is active.
 //!
-//! Naming: `BusOp::None` = no bus access. `InternalOp::None` = no internal work.
+//! The CPU always drives the address bus every cycle — there are no idle bus
+//! cycles. Even internal-only register operations perform a dummy read from a
+//! (possibly stale) address.
 
 use crate::{
     cpu::CPU6502,
@@ -24,8 +26,7 @@ const fn b(bus: B) -> MicroOp {
 
 // Common constants
 const N: I = I::Fn(CPU6502::op_none);
-const BN: B = B::None;
-const NONE: MicroOp = m(BN, N);
+const NONE: MicroOp = m(B::ReadDummy, N);
 
 // ── Commmon sub-sequences ──
 
