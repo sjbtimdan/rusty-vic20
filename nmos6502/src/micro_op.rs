@@ -28,8 +28,6 @@ pub enum BusOp {
 
     /// Read memory[addr] → data_latch.
     ReadAddr,
-    /// Read memory[addr] — data discarded (dummy read for timing).
-    ReadDummy,
     /// Read memory[zp_base] — dummy, then addr = (zp_base + X) & 0xFF.
     ReadDummyZpX,
     /// Read memory[zp_base] — dummy, then addr = (zp_base + Y) & 0xFF.
@@ -62,10 +60,7 @@ pub enum BusOp {
     PushPCH,
     /// Push PC low byte: write to 0x0100+SP, SP--.
     PushPCL,
-    /// Push return-address high byte (PC+2 >> 8) for JSR/BRK.
-    PushReturnHi,
-    /// Push return-address low byte (PC+2 & 0xFF) for JSR/BRK.
-    PushReturnLo,
+
     /// Push accumulator: write A to 0x0100+SP, SP--.
     PushA,
     /// Push status register with B=1 and UNUSED=1 set (PHP, BRK).
@@ -79,8 +74,6 @@ pub enum BusOp {
     Pop,
     /// Pop stack: SP++, read 0x0100+SP — store as PC low byte directly.
     PopPCL,
-    /// Pop stack: SP++, read 0x0100+SP — store as PC high byte directly.
-    PopPCH,
 
     /// Read interrupt/reset vector low byte.
     ReadVecLo(u16),

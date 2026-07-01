@@ -68,11 +68,8 @@ impl CPU6502 {
     #[inline]
     pub fn cycle(&mut self, memory: &mut impl Addressable) {
         self.total_cycles += 1;
-
-        // Fast path: currently executing an instruction
         if self.sequence_index < self.sequence.len() {
             let op = self.sequence[self.sequence_index];
-
             match op.bus {
                 BusOp::ReadPC1 => {
                     let val = memory.read_byte(self.registers.pc);
@@ -87,9 +84,6 @@ impl CPU6502 {
 
                 BusOp::ReadAddr => {
                     self.data_latch = memory.read_byte(self.addr);
-                }
-                BusOp::ReadDummy => {
-                    let _ = memory.read_byte(self.addr);
                 }
                 BusOp::ReadDummyZpX => {
                     let zp = self.operands[0];
@@ -111,7 +105,6 @@ impl CPU6502 {
                 BusOp::ReadRTS => {
                     let _ = memory.read_byte(self.registers.pc.wrapping_sub(1));
                 }
-
                 BusOp::WriteAddrA => memory.write_byte(self.addr, self.registers.a),
                 BusOp::WriteAddrX => memory.write_byte(self.addr, self.registers.x),
                 BusOp::WriteAddrY => memory.write_byte(self.addr, self.registers.y),
@@ -122,33 +115,20 @@ impl CPU6502 {
                 BusOp::WriteAddrSHY => self.masked_write(memory, self.registers.y),
                 BusOp::WriteAddrSHX => self.masked_write(memory, self.registers.x),
                 BusOp::WriteDataLatch => memory.write_byte(self.addr, self.data_latch),
-
                 BusOp::PushPCH => self.push_byte(memory, (self.registers.pc >> 8) as u8),
                 BusOp::PushPCL => self.push_byte(memory, self.registers.pc as u8),
-                BusOp::PushReturnHi => {
-                    self.push_byte(memory, (self.registers.pc >> 8) as u8);
-                }
-                BusOp::PushReturnLo => {
-                    self.push_byte(memory, self.registers.pc as u8);
-                }
                 BusOp::PushA => self.push_byte(memory, self.registers.a),
                 BusOp::PushStatusB => {
-                    self.push_byte(
-                        memory,
-                        self.registers.status | crate::registers::UNUSED | crate::registers::BREAK,
-                    );
+                    self.push_byte(memory, self.registers.status | crate::registers::BREAK);
                 }
                 BusOp::PushStatus => {
-                    self.push_byte(memory, self.registers.status | crate::registers::UNUSED);
+                    self.push_byte(memory, self.registers.status);
                 }
-
                 BusOp::PopDummy => {
                     let _ = memory.read_byte(0x0100 + self.registers.sp as u16);
                 }
                 BusOp::Pop => self.data_latch = self.pop_byte(memory),
                 BusOp::PopPCL => self.operands[0] = self.pop_byte(memory),
-                BusOp::PopPCH => self.data_latch = self.pop_byte(memory),
-
                 BusOp::ReadVecLo(addr) => {
                     self.operands[0] = memory.read_byte(addr);
                 }
@@ -157,10 +137,7 @@ impl CPU6502 {
                     self.registers.pc = (hi as u16) << 8 | self.operands[0] as u16;
                 }
             }
-
-            // Execute internal operation
             (op.internal)(self);
-
             self.sequence_index += 1;
         } else {
             if self.halted {
@@ -171,7 +148,6 @@ impl CPU6502 {
     }
 
     fn fetch_and_decode(&mut self, memory: &mut impl Addressable) {
-        // Check for pending interrupts before fetching
         if self.nmi_latch.take() {
             self.enter_interrupt(Interrupt::NMI);
             return;
@@ -180,19 +156,13 @@ impl CPU6502 {
             self.enter_interrupt(Interrupt::IRQ);
             return;
         }
-
         let opcode = memory.read_byte(self.registers.pc);
-
-        // Fire breakpoints (at current PC before increment)
         if !self.breakpoints.is_empty() {
             for bp in &self.breakpoints {
                 bp.on_hit(self.registers.pc);
             }
         }
-
-        // PC increments after the opcode fetch (like real 6502)
         self.registers.pc = self.registers.pc.wrapping_add(1);
-
         self.sequence = OPCODE_SEQUENCES[opcode as usize];
         self.sequence_index = 0;
         self.reset_instruction_state();

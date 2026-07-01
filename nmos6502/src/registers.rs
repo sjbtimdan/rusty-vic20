@@ -33,54 +33,66 @@ impl Default for Registers {
 }
 
 impl Registers {
+    #[inline]
     pub fn is_flag_set(&self, flag: u8) -> bool {
         self.status & flag != 0
     }
 
+    #[inline]
     pub fn update_carry_flag(&mut self, on: bool) {
         self.set_flag(CARRY, on);
     }
 
+    #[inline]
     pub fn update_zero_flag(&mut self, on: bool) {
         self.set_flag(ZERO, on);
     }
 
+    #[inline]
     pub fn update_negative_flag(&mut self, on: bool) {
         self.set_flag(NEGATIVE, on);
     }
 
+    #[inline]
     pub fn update_overflow_flag(&mut self, on: bool) {
         self.set_flag(OVERFLOW, on);
     }
 
+    #[inline]
     pub fn update_decimal_flag(&mut self, on: bool) {
         self.set_flag(DECIMAL, on);
     }
 
+    #[inline]
     pub fn update_interrupt_flag(&mut self, on: bool) {
         self.set_flag(INTERRUPT, on);
     }
 
+    #[inline]
     pub fn update_zero_and_negative(&mut self, value: u8) {
         self.update_zero_flag(value == 0);
         self.update_negative_flag(value & 0x80 != 0);
     }
 
+    #[inline]
     pub fn set_accumulator(&mut self, value: u8) {
         self.a = value;
         self.update_zero_and_negative(value);
     }
 
+    #[inline]
     pub fn set_x(&mut self, value: u8) {
         self.x = value;
         self.update_zero_and_negative(value);
     }
 
+    #[inline]
     pub fn set_y(&mut self, value: u8) {
         self.y = value;
         self.update_zero_and_negative(value);
     }
 
+    #[inline]
     fn set_flag(&mut self, flag: u8, on: bool) {
         if on {
             self.status |= flag;
