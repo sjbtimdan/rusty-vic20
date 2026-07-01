@@ -113,6 +113,8 @@ enum Token<'a> {
     Gt,
     Le,
     Ge,
+    Shl,
+    Shr,
     Eof,
 }
 
@@ -689,6 +691,9 @@ fn tokenize_expr<'a>(s: &'a str, line: usize) -> Result<Vec<Token<'a>>, Assemble
                 if i + 1 < len && bytes[i + 1] == b'=' {
                     tokens.push(Token::Le);
                     i += 2;
+                } else if i + 1 < len && bytes[i + 1] == b'<' {
+                    tokens.push(Token::Shl);
+                    i += 2;
                 } else {
                     tokens.push(Token::Lt);
                     i += 1;
@@ -697,6 +702,9 @@ fn tokenize_expr<'a>(s: &'a str, line: usize) -> Result<Vec<Token<'a>>, Assemble
             '>' => {
                 if i + 1 < len && bytes[i + 1] == b'=' {
                     tokens.push(Token::Ge);
+                    i += 2;
+                } else if i + 1 < len && bytes[i + 1] == b'>' {
+                    tokens.push(Token::Shr);
                     i += 2;
                 } else {
                     tokens.push(Token::Gt);
@@ -926,7 +934,7 @@ fn parse_additive(
     Ok((left, p))
 }
 
-// term    = unary (('*') unary)*
+// term    = unary (('*'|'/'|'%'|'<<'|'>>') unary)*
 fn parse_term(
     toks: &[Token],
     pos: usize,
@@ -938,9 +946,18 @@ fn parse_term(
     while p < toks.len() {
         match toks[p] {
             Token::Star => {
-                // '*' as binary operator → multiplication
                 let (r, q) = parse_unary(toks, p + 1, symbols, star_pc, line)?;
                 left = left.wrapping_mul(r);
+                p = q;
+            }
+            Token::Shl => {
+                let (r, q) = parse_unary(toks, p + 1, symbols, star_pc, line)?;
+                left = left.wrapping_shl(r as u32);
+                p = q;
+            }
+            Token::Shr => {
+                let (r, q) = parse_unary(toks, p + 1, symbols, star_pc, line)?;
+                left = left.wrapping_shr(r as u32);
                 p = q;
             }
             _ => break,
@@ -1061,10 +1078,11 @@ fn eval_cond_expr(expr: &str, symbols: &HashMap<String, u16>, line: usize) -> u1
 // Macro Expander — text-level pre-processor
 // ---------------------------------------------------------------------------
 
-/// A collected macro definition (body lines).
+/// A collected macro definition (body lines + parameter names).
 #[derive(Clone)]
 struct MacroDef {
     body: Vec<String>,
+    params: Vec<String>, // parameter names (for name-style substitution)
 }
 
 /// Expands macros at the text level: evaluates `if`/`else`/`endif` conditionals,
@@ -1083,6 +1101,8 @@ struct MacroExpander {
     output: Vec<String>,
     collecting: Option<String>, // name of macro being collected
     body_buf: Vec<String>,      // body lines being collected
+    /// Parameter names for the macro currently being collected.
+    macro_params: HashMap<String, Vec<String>>,
     unique_counter: u32,
     /// Depth of `if`/`else`/`endif` nesting inside the macro body being collected.
     /// Non-zero means the collected body lines are inside an if-block.
@@ -1109,6 +1129,7 @@ impl MacroExpander {
             output: Vec::new(),
             collecting: None,
             body_buf: Vec::new(),
+            macro_params: HashMap::new(),
             unique_counter: 0,
             collecting_if_depth: 0,
         }
@@ -1159,7 +1180,7 @@ impl MacroExpander {
 
             // Try to match a simple `name = expr` or `name equ expr` pattern.
             let lower = trimmed.to_ascii_lowercase();
-            if let Some(_eq_pos) = lower.find(|c: char| c == '=' || c == 'e') {
+            if let Some(_eq_pos) = lower.find(['=', 'e']) {
                 let (name, rest) = if lower.contains(" equ ") || lower.starts_with("equ ") {
                     // `name equ expr` or `equ name` — skip the latter.
                     let parts: Vec<&str> = trimmed.splitn(2, char::is_whitespace).collect();
@@ -1243,7 +1264,8 @@ impl MacroExpander {
                 if self.collecting_if_depth == 0 {
                     // Store the macro definition.
                     let body = std::mem::take(&mut self.body_buf);
-                    self.macros.insert(macro_name.clone(), MacroDef { body });
+                    let params = self.macro_params.remove(macro_name).unwrap_or_default();
+                    self.macros.insert(macro_name.clone(), MacroDef { body, params });
                     self.collecting = None;
                 } else {
                     // End of a nested if-block inside the macro body.
@@ -1284,6 +1306,16 @@ impl MacroExpander {
         // --- Macro definition ---
         if words.len() >= 2 && words[1] == "macro" {
             let name = words[0].to_string();
+            // Extract parameter names from the original line (preserve casing).
+            let line_words: Vec<&str> = line.split_whitespace().collect();
+            let params: Vec<String> = line_words[2..]
+                .iter()
+                .filter(|w| !w.starts_with(';')) // strip trailing comment
+                .map(|w| w.to_string())
+                .collect();
+            if !params.is_empty() {
+                self.macro_params.insert(name.clone(), params);
+            }
             self.collecting = Some(name);
             self.body_buf.clear();
             self.collecting_if_depth = 0;
@@ -1292,22 +1324,18 @@ impl MacroExpander {
 
         // --- Macro invocation ---
         if let Some(mdef) = self.macros.get(first) {
-            // Clone the body to avoid borrow conflict with &mut self.
+            // Clone body and params to avoid borrow conflict with &mut self.
             let body = mdef.body.clone();
+            let params = mdef.params.clone();
             // Extract invocation arguments.
-            let args_str = line
-                .trim_start()
-                .split_whitespace()
-                .skip(1)
-                .collect::<Vec<_>>()
-                .join(" ");
+            let args_str = line.split_whitespace().skip(1).collect::<Vec<_>>().join(" ");
             let args: Vec<&str> = if args_str.is_empty() {
                 vec![]
             } else {
                 args_str.split(',').map(|a| a.trim()).collect()
             };
 
-            let expanded = self.expand_macro_body(&body, &args, line_num)?;
+            let expanded = self.expand_macro_body(&body, &params, &args, line_num)?;
             for expanded_line in &expanded {
                 // Recursively process the expanded line (may contain further
                 // macro invocations or conditionals).
@@ -1321,11 +1349,43 @@ impl MacroExpander {
         Ok(())
     }
 
+    /// Replace `name` with `replacement` when `name` is surrounded by
+    /// non-alphanumeric characters (word boundary), so that `ibit` inside
+    /// `(1<<ibit)` is replaced but not `my_ibit`.
+    fn replace_param_name(s: &str, name: &str, replacement: &str) -> String {
+        if name.is_empty() {
+            return s.to_string();
+        }
+        let mut result = String::with_capacity(s.len());
+        let name_chars: Vec<char> = name.chars().collect();
+        let name_len = name_chars.len();
+        let src: Vec<char> = s.chars().collect();
+        let mut i = 0;
+        while i < src.len() {
+            // Check if this position starts a match for the parameter name.
+            if i + name_len <= src.len() && &src[i..i + name_len] == name_chars.as_slice() {
+                let at_start = i == 0;
+                let at_end = i + name_len == src.len();
+                let prev_ok = !at_start && !src[i - 1].is_alphanumeric();
+                let next_ok = !at_end && !src[i + name_len].is_alphanumeric();
+                if (at_start || prev_ok) && (at_end || next_ok) {
+                    result.push_str(replacement);
+                    i += name_len;
+                    continue;
+                }
+            }
+            result.push(src[i]);
+            i += 1;
+        }
+        result
+    }
+
     /// Expand a macro body by substituting `\N` params and `\?` unique labels,
     /// then returning the expanded lines.
     fn expand_macro_body(
         &mut self,
         body: &[String],
+        params: &[String],
         args: &[&str],
         _line: usize,
     ) -> Result<Vec<String>, AssemblerError> {
@@ -1341,6 +1401,12 @@ impl MacroExpander {
             for (i, arg) in args.iter().enumerate() {
                 let param = format!("\\{}", i + 1);
                 result = result.replace(&param, arg);
+            }
+            // Replace parameter names with their argument values.
+            for (i, pname) in params.iter().enumerate() {
+                if let Some(arg) = args.get(i) {
+                    result = Self::replace_param_name(&result, pname, arg);
+                }
             }
             expanded.push(result);
         }
