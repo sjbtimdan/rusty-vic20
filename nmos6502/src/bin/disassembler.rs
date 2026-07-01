@@ -1,7 +1,7 @@
-use nmos6502::tools::disassembler::{DefaultDisassembler, disassemble_bytes};
+use nmos6502::tools::disassembler::{disassemble_bytes, DefaultDisassembler};
 use std::env::args;
 
-// Example: cargo run --bin disassembler ./data/kernal.901486-07.bin E000 FF72 | head -10
+// Example: cargo run -p nmos6502 --bin disassembler ./data/kernal.901486-07.bin E000 FF72 | head -10
 fn main() {
     sigpipe::reset(); // so <disassemble> | head -10 will work.
     let filename = args()

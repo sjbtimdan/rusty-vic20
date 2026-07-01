@@ -43,7 +43,7 @@ In-depth architectural guide for the `rusty-vic20` VIC-20 emulator.
 | Binary | Entrypoint | Purpose |
 |--------|-----------|---------|
 | `vic20` | `src/bin/vic20.rs` | Main emulator, accepts optional `tick-duration` in microseconds |
-| `disassembler` | `src/bin/disassembler.rs` | Standalone 6502 disassembler, accepts `<file> [base] [start]` |
+| `disassembler` | `nmos6502/src/bin/disassembler.rs` | Standalone 6502 disassembler, accepts `<file> [base] [start]` |
 
 **`rustfmt.toml`** — `max_width=120`, `use_field_init_shorthand`, imports granularity `"Crate"`, `unstable_features=true`.
 
@@ -866,7 +866,7 @@ Called once when the winit event loop starts:
 
 **`src/bin/vic20.rs`**: Initializes `env_logger`, parses optional tick duration (microseconds) from CLI args, creates `Vic20Controller`, calls `run()` to start the winit event loop.
 
-**`src/bin/disassembler.rs`**: Resets SIGPIPE handler for pipe support. Reads file from CLI arg, creates `DefaultDisassembler` with tab separator, calls `disassemble_bytes()`, prints results.
+**`nmos6502/src/bin/disassembler.rs`**: Resets SIGPIPE handler for pipe support. Reads file from CLI arg, creates `DefaultDisassembler` with tab separator, calls `disassemble_bytes()`, prints results.
 
 ## 16. Data Flow Summary
 

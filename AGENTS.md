@@ -18,7 +18,7 @@ OpenCode configuration in `.opencode/`.
 - Bench: `cargo +nightly bench` (requires ROM files in `data/`, uses `#![feature(test)]`)
 - Bench nmos6502: `cargo +nightly bench -p nmos6502`
 - Run emulator: `cargo run --bin vic20` (logging: `RUST_LOG=info cargo run --bin vic20` or `vic20-info-log.sh`)
-- Run disassembler: `cargo run --bin disassembler -- <file> [base_address] [disassemble_start_addr]`
+- Run disassembler: `cargo run -p nmos6502 --bin disassembler -- <file> [base_address] [disassemble_start_addr]`
 
 ## Project Structure
 
@@ -29,7 +29,7 @@ Two crates (NOT a workspace — `nmos6502` is a `path` dependency):
 | `rusty-vic20` | `/` | VIC-20 emulator: bus, VIC, VIA, peripherals, UI, controller. Edition 2024 (Rust >= 1.85.0). |
 | `nmos6502` | `nmos6502/` | Cycle-perfect NMOS 6502 CPU. Edition 2021. |
 
-Entry points: `src/bin/vic20.rs` (emulator — trivial main, env_logger init + controller run), `src/bin/disassembler.rs` (6502 disassembler).
+Entry points: `src/bin/vic20.rs` (emulator — trivial main, env_logger init + controller run), `nmos6502/src/bin/disassembler.rs` (6502 disassembler).
 
 ## The Two `Addressable` Traits
 

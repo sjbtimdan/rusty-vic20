@@ -708,9 +708,8 @@ impl CPU6502 {
     fn enter_interrupt(&mut self, interrupt: Interrupt) {
         let seq = match interrupt {
             Interrupt::NMI => INTERRUPT_SEQ_NMI,
-            Interrupt::IRQ => INTERRUPT_SEQ_IRQ,
+            Interrupt::IRQ | Interrupt::BRK => INTERRUPT_SEQ_IRQ,
             Interrupt::Reset => INTERRUPT_SEQ_RESET,
-            Interrupt::BRK => INTERRUPT_SEQ_IRQ, // BRK uses IRQ vector; handled via S_BRK sequence, not this path
         };
         self.sequence = seq;
         self.sequence_index = 0;
