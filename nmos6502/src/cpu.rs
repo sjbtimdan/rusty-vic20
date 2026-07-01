@@ -170,17 +170,17 @@ impl CPU6502 {
 
     // ── Internal operation implementations (called via function pointer) ──
 
-    pub(crate) fn op_none(&mut self) {}
+    pub fn op_none(&mut self) {}
 
     // ── Address computation ──
 
-    pub(crate) fn op_set_addr_zp(&mut self) {
+    pub fn op_set_addr_zp(&mut self) {
         self.addr = self.operands[0] as u16;
     }
-    pub(crate) fn op_set_addr_abs(&mut self) {
+    pub fn op_set_addr_abs(&mut self) {
         self.addr = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
     }
-    pub(crate) fn op_set_addr_absx(&mut self) {
+    pub fn op_set_addr_absx(&mut self) {
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
         let full = base.wrapping_add(self.registers.x as u16);
         self.page_crossed = (base & 0xFF00) != (full & 0xFF00);
@@ -189,7 +189,7 @@ impl CPU6502 {
             self.sequence_index += 1;
         }
     }
-    pub(crate) fn op_set_addr_absy(&mut self) {
+    pub fn op_set_addr_absy(&mut self) {
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
         let full = base.wrapping_add(self.registers.y as u16);
         self.page_crossed = (base & 0xFF00) != (full & 0xFF00);
@@ -199,30 +199,30 @@ impl CPU6502 {
         }
     }
     /// Like `op_set_addr_absx` but never skips the next micro‑op (for writes/RMW).
-    pub(crate) fn op_set_addr_absx_full(&mut self) {
+    pub fn op_set_addr_absx_full(&mut self) {
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
         let full = base.wrapping_add(self.registers.x as u16);
         self.page_crossed = (base & 0xFF00) != (full & 0xFF00);
         self.addr = (base & 0xFF00) | (full as u8 as u16);
     }
     /// Like `op_set_addr_absy` but never skips the next micro‑op (for writes/RMW).
-    pub(crate) fn op_set_addr_absy_full(&mut self) {
+    pub fn op_set_addr_absy_full(&mut self) {
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
         let full = base.wrapping_add(self.registers.y as u16);
         self.page_crossed = (base & 0xFF00) != (full & 0xFF00);
         self.addr = (base & 0xFF00) | (full as u8 as u16);
     }
-    pub(crate) fn op_fix_addr_cross(&mut self) {
+    pub fn op_fix_addr_cross(&mut self) {
         if self.page_crossed {
             self.addr = self.addr.wrapping_add(0x100);
         }
     }
     /// Save `data_latch` → `operands[1]` (stores lo byte for later addr compute).
-    pub(crate) fn op_save_lo(&mut self) {
+    pub fn op_save_lo(&mut self) {
         self.operands[1] = self.data_latch;
     }
     /// Combine `operands[1]` (lo) with `data_latch` (hi) → `self.addr`.
-    pub(crate) fn op_compute_ind_addr(&mut self) {
+    pub fn op_compute_ind_addr(&mut self) {
         let lo = self.operands[1] as u16;
         let hi = self.data_latch as u16;
         self.addr = (hi << 8) | lo;
@@ -230,7 +230,7 @@ impl CPU6502 {
     /// (Indirect),Y combine: like `op_compute_ind_addr` but also adds Y and
     /// sets `self.addr` to the page-wrapped address (for dummy read on page
     /// cross).  Skips the dummy micro-op when the page doesn't cross.
-    pub(crate) fn op_compute_indy_addr(&mut self) {
+    pub fn op_compute_indy_addr(&mut self) {
         let lo = self.operands[1] as u16;
         let hi = self.data_latch as u16;
         let ptr = (hi << 8) | lo;
@@ -242,7 +242,7 @@ impl CPU6502 {
         }
     }
     /// (Indirect),Y combine for RMW (no skip — RMW always has the dummy cycle).
-    pub(crate) fn op_compute_indy_addr_rmw(&mut self) {
+    pub fn op_compute_indy_addr_rmw(&mut self) {
         let lo = self.operands[1] as u16;
         let hi = self.data_latch as u16;
         let ptr = (hi << 8) | lo;
@@ -252,7 +252,7 @@ impl CPU6502 {
     }
     /// AHX (indirect),Y setup: like `op_compute_indy_addr_rmw` but also saves
     /// `base_hi` in `operands[1]` for the subsequent masked write.
-    pub(crate) fn op_compute_ahx_addr(&mut self) {
+    pub fn op_compute_ahx_addr(&mut self) {
         let lo = self.operands[1] as u16;
         let hi = self.data_latch as u16;
         let ptr = (hi << 8) | lo;
@@ -264,7 +264,7 @@ impl CPU6502 {
 
     /// TAS/SHS (abs,Y) setup: sets SP = A & X, then computes page-wrapped address
     /// for C4 ReadDummy (like AHX but abs,Y). Reuses WriteAddrAHX for the write.
-    pub(crate) fn op_tas_setup_addr(&mut self) {
+    pub fn op_tas_setup_addr(&mut self) {
         self.registers.sp = self.registers.a & self.registers.x;
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
         (self.addr, self.page_crossed) = page_cross(base, self.registers.y);
@@ -273,7 +273,7 @@ impl CPU6502 {
     /// SHY (abs,X) setup: like `op_set_addr_absx` but stores the page-wrapped
     /// address (C4 dummy-read target) in `self.addr` and does NOT skip the
     /// ReadDummy cycle (always 5 cycles for SHY, unlike LDA abs,X).
-    pub(crate) fn op_shy_setup_addr(&mut self) {
+    pub fn op_shy_setup_addr(&mut self) {
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
         (self.addr, self.page_crossed) = page_cross(base, self.registers.x);
         self.addr = (self.operands[1] as u16) << 8 | (self.operands[0].wrapping_add(self.registers.x)) as u16;
@@ -281,7 +281,7 @@ impl CPU6502 {
     /// SHX (abs,Y) setup: like `op_set_addr_absy` but stores the page-wrapped
     /// address (C4 dummy-read target) in `self.addr` and does NOT skip the
     /// ReadDummy cycle (always 5 cycles for SHX, unlike LDA abs,Y).
-    pub(crate) fn op_shx_setup_addr(&mut self) {
+    pub fn op_shx_setup_addr(&mut self) {
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
         (self.addr, self.page_crossed) = page_cross(base, self.registers.y);
         self.addr = (self.operands[1] as u16) << 8 | (self.operands[0].wrapping_add(self.registers.y)) as u16;
@@ -289,100 +289,100 @@ impl CPU6502 {
 
     // ── Register operations ──
 
-    pub(crate) fn op_set_a(&mut self) {
+    pub fn op_set_a(&mut self) {
         self.registers.set_accumulator(self.data_latch);
     }
-    pub(crate) fn op_set_x(&mut self) {
+    pub fn op_set_x(&mut self) {
         self.registers.set_x(self.data_latch);
     }
-    pub(crate) fn op_set_y(&mut self) {
+    pub fn op_set_y(&mut self) {
         self.registers.set_y(self.data_latch);
     }
-    pub(crate) fn op_txa(&mut self) {
+    pub fn op_txa(&mut self) {
         self.registers.set_accumulator(self.registers.x);
     }
-    pub(crate) fn op_tya(&mut self) {
+    pub fn op_tya(&mut self) {
         self.registers.set_accumulator(self.registers.y);
     }
-    pub(crate) fn op_tax(&mut self) {
+    pub fn op_tax(&mut self) {
         self.registers.set_x(self.registers.a);
     }
-    pub(crate) fn op_tay(&mut self) {
+    pub fn op_tay(&mut self) {
         self.registers.set_y(self.registers.a);
     }
-    pub(crate) fn op_tsx(&mut self) {
+    pub fn op_tsx(&mut self) {
         self.registers.set_x(self.registers.sp);
     }
-    pub(crate) fn op_txs(&mut self) {
+    pub fn op_txs(&mut self) {
         self.registers.sp = self.registers.x;
     }
-    pub(crate) fn op_inc_x(&mut self) {
+    pub fn op_inc_x(&mut self) {
         self.registers.set_x(self.registers.x.wrapping_add(1));
     }
-    pub(crate) fn op_inc_y(&mut self) {
+    pub fn op_inc_y(&mut self) {
         self.registers.set_y(self.registers.y.wrapping_add(1));
     }
-    pub(crate) fn op_dec_x(&mut self) {
+    pub fn op_dec_x(&mut self) {
         self.registers.set_x(self.registers.x.wrapping_sub(1));
     }
-    pub(crate) fn op_dec_y(&mut self) {
+    pub fn op_dec_y(&mut self) {
         self.registers.set_y(self.registers.y.wrapping_sub(1));
     }
 
     // ── Flag operations ──
 
-    pub(crate) fn op_set_c(&mut self) {
+    pub fn op_set_c(&mut self) {
         self.registers.update_carry_flag(true);
     }
-    pub(crate) fn op_clr_c(&mut self) {
+    pub fn op_clr_c(&mut self) {
         self.registers.update_carry_flag(false);
     }
-    pub(crate) fn op_set_d(&mut self) {
+    pub fn op_set_d(&mut self) {
         self.registers.update_decimal_flag(true);
     }
-    pub(crate) fn op_clr_d(&mut self) {
+    pub fn op_clr_d(&mut self) {
         self.registers.update_decimal_flag(false);
     }
-    pub(crate) fn op_set_i(&mut self) {
+    pub fn op_set_i(&mut self) {
         self.registers.update_interrupt_flag(true);
     }
-    pub(crate) fn op_clr_i(&mut self) {
+    pub fn op_clr_i(&mut self) {
         self.registers.update_interrupt_flag(false);
     }
-    pub(crate) fn op_clr_v(&mut self) {
+    pub fn op_clr_v(&mut self) {
         self.registers.update_overflow_flag(false);
     }
 
     // ── ALU operations ──
 
-    pub(crate) fn op_adc(&mut self) {
+    pub fn op_adc(&mut self) {
         alu::adc(&mut self.registers, self.data_latch);
     }
-    pub(crate) fn op_sbc(&mut self) {
+    pub fn op_sbc(&mut self) {
         alu::sbc(&mut self.registers, self.data_latch);
     }
-    pub(crate) fn op_and(&mut self) {
+    pub fn op_and(&mut self) {
         self.registers.set_accumulator(self.registers.a & self.data_latch);
     }
-    pub(crate) fn op_ora(&mut self) {
+    pub fn op_ora(&mut self) {
         self.registers.set_accumulator(self.registers.a | self.data_latch);
     }
-    pub(crate) fn op_eor(&mut self) {
+    pub fn op_eor(&mut self) {
         self.registers.set_accumulator(self.registers.a ^ self.data_latch);
     }
-    pub(crate) fn op_cmp_a(&mut self) {
+    pub fn op_cmp_a(&mut self) {
         let a = self.registers.a;
         alu::compare(&mut self.registers, a, self.data_latch);
     }
-    pub(crate) fn op_cmp_x(&mut self) {
+    pub fn op_cmp_x(&mut self) {
         let x = self.registers.x;
         alu::compare(&mut self.registers, x, self.data_latch);
     }
-    pub(crate) fn op_cmp_y(&mut self) {
+    pub fn op_cmp_y(&mut self) {
         let y = self.registers.y;
         alu::compare(&mut self.registers, y, self.data_latch);
     }
-    pub(crate) fn op_bit(&mut self) {
+    pub fn op_bit(&mut self) {
         let v = self.data_latch;
         self.registers.update_zero_flag(self.registers.a & v == 0);
         self.registers.update_overflow_flag(v & 0x40 != 0);
@@ -391,63 +391,63 @@ impl CPU6502 {
 
     // ── RMW memory operations ──
 
-    pub(crate) fn op_asl(&mut self) {
+    pub fn op_asl(&mut self) {
         let c = self.data_latch & 0x80 != 0;
         self.data_latch <<= 1;
         self.registers.update_carry_flag(c);
         self.registers.update_zero_and_negative(self.data_latch);
     }
-    pub(crate) fn op_lsr(&mut self) {
+    pub fn op_lsr(&mut self) {
         let c = self.data_latch & 0x01 != 0;
         self.data_latch >>= 1;
         self.registers.update_carry_flag(c);
         self.registers.update_zero_and_negative(self.data_latch);
     }
-    pub(crate) fn op_rol(&mut self) {
+    pub fn op_rol(&mut self) {
         let old_c = self.registers.is_flag_set(crate::registers::CARRY) as u8;
         let new_c = self.data_latch & 0x80 != 0;
         self.data_latch = (self.data_latch << 1) | old_c;
         self.registers.update_carry_flag(new_c);
         self.registers.update_zero_and_negative(self.data_latch);
     }
-    pub(crate) fn op_ror(&mut self) {
+    pub fn op_ror(&mut self) {
         let old_c = self.registers.is_flag_set(crate::registers::CARRY) as u8;
         let new_c = self.data_latch & 0x01 != 0;
         self.data_latch = (self.data_latch >> 1) | (old_c << 7);
         self.registers.update_carry_flag(new_c);
         self.registers.update_zero_and_negative(self.data_latch);
     }
-    pub(crate) fn op_inc(&mut self) {
+    pub fn op_inc(&mut self) {
         self.data_latch = self.data_latch.wrapping_add(1);
         self.registers.update_zero_and_negative(self.data_latch);
     }
-    pub(crate) fn op_dec(&mut self) {
+    pub fn op_dec(&mut self) {
         self.data_latch = self.data_latch.wrapping_sub(1);
         self.registers.update_zero_and_negative(self.data_latch);
     }
 
     // ── Accumulator shifts ──
 
-    pub(crate) fn op_asl_a(&mut self) {
+    pub fn op_asl_a(&mut self) {
         let c = self.registers.a & 0x80 != 0;
         let result = self.registers.a << 1;
         self.registers.update_carry_flag(c);
         self.registers.set_accumulator(result);
     }
-    pub(crate) fn op_lsr_a(&mut self) {
+    pub fn op_lsr_a(&mut self) {
         let c = self.registers.a & 0x01 != 0;
         let result = self.registers.a >> 1;
         self.registers.update_carry_flag(c);
         self.registers.set_accumulator(result);
     }
-    pub(crate) fn op_rol_a(&mut self) {
+    pub fn op_rol_a(&mut self) {
         let old_c = self.registers.is_flag_set(crate::registers::CARRY) as u8;
         let new_c = self.registers.a & 0x80 != 0;
         let result = (self.registers.a << 1) | old_c;
         self.registers.update_carry_flag(new_c);
         self.registers.set_accumulator(result);
     }
-    pub(crate) fn op_ror_a(&mut self) {
+    pub fn op_ror_a(&mut self) {
         let old_c = self.registers.is_flag_set(crate::registers::CARRY) as u8;
         let new_c = self.registers.a & 0x01 != 0;
         let result = (self.registers.a >> 1) | (old_c << 7);
@@ -457,7 +457,7 @@ impl CPU6502 {
 
     // ── Undocumented load/store ──
 
-    pub(crate) fn op_las(&mut self) {
+    pub fn op_las(&mut self) {
         let val = self.registers.sp & self.data_latch;
         self.registers.set_accumulator(val);
         self.registers.set_x(val);
@@ -466,16 +466,16 @@ impl CPU6502 {
 
     // ── Unofficial opcodes ──
 
-    pub(crate) fn op_lax(&mut self) {
+    pub fn op_lax(&mut self) {
         self.registers.set_accumulator(self.data_latch);
         self.registers.set_x(self.data_latch);
     }
-    pub(crate) fn op_lax_imm(&mut self) {
+    pub fn op_lax_imm(&mut self) {
         let result = self.data_latch & (self.registers.a | 0xEE);
         self.registers.set_accumulator(result);
         self.registers.set_x(result);
     }
-    pub(crate) fn op_slo(&mut self) {
+    pub fn op_slo(&mut self) {
         let c = self.data_latch & 0x80 != 0;
         self.data_latch <<= 1;
         self.registers.update_carry_flag(c);
@@ -483,7 +483,7 @@ impl CPU6502 {
         let a = self.registers.a | self.data_latch;
         self.registers.set_accumulator(a);
     }
-    pub(crate) fn op_rla(&mut self) {
+    pub fn op_rla(&mut self) {
         let old_c = self.registers.is_flag_set(crate::registers::CARRY) as u8;
         let new_c = self.data_latch & 0x80 != 0;
         self.data_latch = (self.data_latch << 1) | old_c;
@@ -492,7 +492,7 @@ impl CPU6502 {
         let a = self.registers.a & self.data_latch;
         self.registers.set_accumulator(a);
     }
-    pub(crate) fn op_sre(&mut self) {
+    pub fn op_sre(&mut self) {
         let c = self.data_latch & 0x01 != 0;
         self.data_latch >>= 1;
         self.registers.update_carry_flag(c);
@@ -500,7 +500,7 @@ impl CPU6502 {
         let a = self.registers.a ^ self.data_latch;
         self.registers.set_accumulator(a);
     }
-    pub(crate) fn op_rra(&mut self) {
+    pub fn op_rra(&mut self) {
         let old_c = self.registers.is_flag_set(crate::registers::CARRY) as u8;
         let new_c = self.data_latch & 0x01 != 0;
         self.data_latch = (self.data_latch >> 1) | (old_c << 7);
@@ -508,30 +508,30 @@ impl CPU6502 {
         self.registers.update_zero_and_negative(self.data_latch);
         alu::adc(&mut self.registers, self.data_latch);
     }
-    pub(crate) fn op_dcp(&mut self) {
+    pub fn op_dcp(&mut self) {
         self.data_latch = self.data_latch.wrapping_sub(1);
         self.registers.update_zero_and_negative(self.data_latch);
         let a = self.registers.a;
         alu::compare(&mut self.registers, a, self.data_latch);
     }
-    pub(crate) fn op_isc(&mut self) {
+    pub fn op_isc(&mut self) {
         self.data_latch = self.data_latch.wrapping_add(1);
         self.registers.update_zero_and_negative(self.data_latch);
         alu::sbc(&mut self.registers, self.data_latch);
     }
-    pub(crate) fn op_anc(&mut self) {
+    pub fn op_anc(&mut self) {
         self.registers.set_accumulator(self.registers.a & self.data_latch);
         self.registers
             .update_carry_flag(self.registers.is_flag_set(crate::registers::NEGATIVE));
     }
-    pub(crate) fn op_alr(&mut self) {
+    pub fn op_alr(&mut self) {
         let result = self.registers.a & self.data_latch;
         self.registers.update_carry_flag(result & 1 != 0);
         let shifted = result >> 1;
         self.registers.a = shifted;
         self.registers.update_zero_and_negative(shifted);
     }
-    pub(crate) fn op_arr(&mut self) {
+    pub fn op_arr(&mut self) {
         let and = self.registers.a & self.data_latch;
         let old_c = self.registers.is_flag_set(crate::registers::CARRY) as u8;
 
@@ -567,11 +567,11 @@ impl CPU6502 {
                 .update_overflow_flag(((result >> 6) ^ (result >> 5)) & 1 != 0);
         }
     }
-    pub(crate) fn op_xaa(&mut self) {
+    pub fn op_xaa(&mut self) {
         let val = (self.registers.a | 0xEE) & self.registers.x & self.data_latch;
         self.registers.set_accumulator(val);
     }
-    pub(crate) fn op_sbx(&mut self) {
+    pub fn op_sbx(&mut self) {
         let ax = self.registers.a & self.registers.x;
         let result = ax.wrapping_sub(self.data_latch);
         self.registers.update_carry_flag(ax >= self.data_latch);
@@ -619,64 +619,64 @@ impl CPU6502 {
 
     // ── Control flow ──
 
-    pub(crate) fn op_jam_set_addr_ffff(&mut self) {
+    pub fn op_jam_set_addr_ffff(&mut self) {
         self.addr = 0xFFFF;
     }
-    pub(crate) fn op_jam_set_addr_fffe(&mut self) {
+    pub fn op_jam_set_addr_fffe(&mut self) {
         self.addr = 0xFFFE;
     }
 
-    pub(crate) fn op_branch_cc(&mut self) {
+    pub fn op_branch_cc(&mut self) {
         self.branch_if(|r| !r.is_flag_set(crate::registers::CARRY))
     }
-    pub(crate) fn op_branch_cs(&mut self) {
+    pub fn op_branch_cs(&mut self) {
         self.branch_if(|r| r.is_flag_set(crate::registers::CARRY))
     }
-    pub(crate) fn op_branch_eq(&mut self) {
+    pub fn op_branch_eq(&mut self) {
         self.branch_if(|r| r.is_flag_set(crate::registers::ZERO))
     }
-    pub(crate) fn op_branch_ne(&mut self) {
+    pub fn op_branch_ne(&mut self) {
         self.branch_if(|r| !r.is_flag_set(crate::registers::ZERO))
     }
-    pub(crate) fn op_branch_mi(&mut self) {
+    pub fn op_branch_mi(&mut self) {
         self.branch_if(|r| r.is_flag_set(crate::registers::NEGATIVE))
     }
-    pub(crate) fn op_branch_pl(&mut self) {
+    pub fn op_branch_pl(&mut self) {
         self.branch_if(|r| !r.is_flag_set(crate::registers::NEGATIVE))
     }
-    pub(crate) fn op_branch_vc(&mut self) {
+    pub fn op_branch_vc(&mut self) {
         self.branch_if(|r| !r.is_flag_set(crate::registers::OVERFLOW))
     }
-    pub(crate) fn op_branch_vs(&mut self) {
+    pub fn op_branch_vs(&mut self) {
         self.branch_if(|r| r.is_flag_set(crate::registers::OVERFLOW))
     }
 
-    pub(crate) fn op_jmp_abs(&mut self) {
+    pub fn op_jmp_abs(&mut self) {
         self.addr = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
         self.registers.pc = self.addr;
     }
-    pub(crate) fn op_jump_ind_save_lo(&mut self) {
+    pub fn op_jump_ind_save_lo(&mut self) {
         self.operands[1] = self.data_latch;
         self.addr = (self.addr & 0xFF00) | ((self.addr as u8).wrapping_add(1) as u16);
     }
-    pub(crate) fn op_jump_ind_hi(&mut self) {
+    pub fn op_jump_ind_hi(&mut self) {
         let lo = self.operands[1];
         let hi = self.data_latch;
         self.registers.pc = (hi as u16) << 8 | lo as u16;
     }
-    pub(crate) fn op_jsr_c6(&mut self) {
+    pub fn op_jsr_c6(&mut self) {
         self.addr = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
         self.registers.pc = self.addr;
     }
-    pub(crate) fn op_rts_finish(&mut self) {
+    pub fn op_rts_finish(&mut self) {
         let pc = ((self.data_latch as u16) << 8 | self.operands[0] as u16).wrapping_add(1);
         self.registers.pc = pc;
     }
-    pub(crate) fn op_rti_finish(&mut self) {
+    pub fn op_rti_finish(&mut self) {
         let pc = (self.data_latch as u16) << 8 | self.operands[0] as u16;
         self.registers.pc = pc;
     }
-    pub(crate) fn op_set_status(&mut self) {
+    pub fn op_set_status(&mut self) {
         self.registers.status = (self.data_latch | crate::registers::UNUSED) & !crate::registers::BREAK;
     }
 
@@ -697,7 +697,7 @@ impl CPU6502 {
         }
     }
 
-    pub(crate) fn op_branch_dummy(&mut self) {
+    pub fn op_branch_dummy(&mut self) {
         if !self.page_crossed {
             self.sequence_index += 1;
         } else {

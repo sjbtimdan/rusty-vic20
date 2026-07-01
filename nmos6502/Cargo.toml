@@ -7,6 +7,7 @@ license = "MIT"
 repository = "https://github.com/steve/rusty-vic20"
 
 [dependencies]
+sigpipe = "0.1.3"
 
 [dev-dependencies]
 rstest = "0.26.1"
