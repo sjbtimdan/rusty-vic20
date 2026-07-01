@@ -3,7 +3,7 @@ use crate::{
     breakpoint::Breakpoint,
     edge_latch::EdgeLatch,
     memory::Addressable,
-    micro_op::{BusOp, InternalOp, MicroOp},
+    micro_op::{BusOp, MicroOp},
     registers::Registers,
     sequences::{INTERRUPT_SEQ_IRQ, INTERRUPT_SEQ_NMI, INTERRUPT_SEQ_RESET, OPCODE_SEQUENCES},
 };
@@ -164,7 +164,7 @@ impl CPU6502 {
             }
 
             // Execute internal operation
-            self.execute_internal(op.internal);
+            (op.internal)(self);
 
             self.sequence_index += 1;
 
@@ -218,34 +218,6 @@ impl CPU6502 {
         self.sequence = OPCODE_SEQUENCES[opcode as usize];
         self.sequence_index = 0;
         self.reset_instruction_state();
-    }
-
-    /// Dispatch an `InternalOp` to its implementation.
-    ///
-    /// The `Fn` variant calls the stored function pointer (the common case for
-    /// all non-parameterized operations). The three `Skip*` variants are handled
-    /// inline since they carry runtime data (`u8` skip counts) that function
-    /// pointers cannot express.
-    #[inline(always)]
-    fn execute_internal(&mut self, op: InternalOp) {
-        match op {
-            InternalOp::Fn(f) => f(self),
-            InternalOp::SkipIfCrossed(n) => {
-                if self.page_crossed {
-                    self.sequence_index += n as usize;
-                }
-            }
-            InternalOp::SkipIfNotCrossed(n) => {
-                if !self.page_crossed {
-                    self.sequence_index += n as usize;
-                }
-            }
-            InternalOp::SkipIfNotTaken(n) => {
-                if !self.branch_taken {
-                    self.sequence_index += n as usize;
-                }
-            }
-        }
     }
 
     // ── Internal operation implementations (called via function pointer) ──

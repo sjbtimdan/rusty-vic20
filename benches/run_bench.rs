@@ -7,7 +7,7 @@ use rusty_vic20::hardware::bus::Bus;
 use test::Bencher;
 
 fn run_steps(steps: usize) -> (Bus, CPU6502) {
-    let mut cpu = CPU6502::new();
+    let mut cpu = CPU6502::default();
     let mut bus = Bus::default();
     cpu.reset(&mut bus);
 

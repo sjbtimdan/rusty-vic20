@@ -1,4 +1,6 @@
-/// One cycle of CPU execution: a bus operation plus an optional internal operation.
+use crate::cpu::CPU6502;
+
+/// One cycle of CPU execution: a bus operation plus a concurrent internal operation.
 ///
 /// Every 6502 instruction decomposes into a static sequence of `MicroOp` values.
 /// The `bus` field specifies what appears on the address/data bus this cycle.
@@ -91,42 +93,4 @@ pub enum BusOp {
     ReadVecHi(u16),
 }
 
-use crate::cpu::CPU6502;
-
-/// Function pointer type for internal CPU operations.
-///
-/// Each `InternalOp` variant (except the sequence-control ones) becomes a
-/// standalone function with this signature, eliminating the central dispatch
-/// match in `execute_internal()`.
-type InternalOpFn = fn(&mut CPU6502);
-
-/// Internal operation performed concurrently with the bus operation.
-///
-/// The vast majority of variants carry no runtime data and are dispatched via
-/// function pointer. The three `Skip*` variants carry a `u8` skip count that
-/// the function-pointer pattern cannot express.
-#[derive(Clone, Copy)]
-#[allow(non_camel_case_types)]
-pub enum InternalOp {
-    /// Function-pointer-dispatched internal operation.
-    Fn(InternalOpFn),
-
-    // ── Sequence control (parameterized — stay as enum variants) ──
-    /// If page_crossed is true, skip the next `n` MicroOps in the sequence.
-    SkipIfCrossed(u8),
-    /// If page_crossed is false, skip the next `n` MicroOps.
-    SkipIfNotCrossed(u8),
-    /// If branch_taken is false, skip the next `n` MicroOps.
-    SkipIfNotTaken(u8),
-}
-
-impl std::fmt::Debug for InternalOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            InternalOp::Fn(_) => f.write_str("Fn"),
-            InternalOp::SkipIfCrossed(n) => write!(f, "SkipIfCrossed({})", n),
-            InternalOp::SkipIfNotCrossed(n) => write!(f, "SkipIfNotCrossed({})", n),
-            InternalOp::SkipIfNotTaken(n) => write!(f, "SkipIfNotTaken({})", n),
-        }
-    }
-}
+pub type InternalOp = fn(&mut CPU6502);
