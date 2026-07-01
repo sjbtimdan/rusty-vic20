@@ -28,10 +28,8 @@ const fn b(bus: B) -> MicroOp {
 }
 
 const R_ZP: MicroOp = m(B::ReadPC1, CPU6502::op_set_addr_zp);
-
 const C_ABSX: MicroOp = m(B::ReadPC2, CPU6502::op_set_addr_absx);
 const C_ABSY: MicroOp = m(B::ReadPC2, CPU6502::op_set_addr_absy);
-
 const X_DUMMY: MicroOp = m(B::ReadDummy, CPU6502::op_fix_addr_cross);
 
 // ── Addressing-mode family macros ──
@@ -99,15 +97,15 @@ macro_rules! interrupt_seq {
 }
 
 const fn rmw_zp(op: InternalOp) -> [MicroOp; 4] {
-    [R_ZP, b(B::ReadAddr), m(B::WriteDummy, op), b(B::WriteAddrDL)]
+    [R_ZP, b(B::ReadAddr), m(B::WriteDataLatch, op), b(B::WriteDataLatch)]
 }
 const fn rmw_zpx(op: InternalOp) -> [MicroOp; 5] {
     [
         b(B::ReadPC1),
         b(B::ReadDummyZpX),
         b(B::ReadAddr),
-        m(B::WriteDummy, op),
-        b(B::WriteAddrDL),
+        m(B::WriteDataLatch, op),
+        b(B::WriteDataLatch),
     ]
 }
 const fn rmw_abs(op: InternalOp) -> [MicroOp; 5] {
@@ -115,8 +113,8 @@ const fn rmw_abs(op: InternalOp) -> [MicroOp; 5] {
         b(B::ReadPC1),
         m(B::ReadPC2, CPU6502::op_set_addr_abs),
         b(B::ReadAddr),
-        m(B::WriteDummy, op),
-        b(B::WriteAddrDL),
+        m(B::WriteDataLatch, op),
+        b(B::WriteDataLatch),
     ]
 }
 const fn rmw_absx(op: InternalOp) -> [MicroOp; 6] {
@@ -125,8 +123,8 @@ const fn rmw_absx(op: InternalOp) -> [MicroOp; 6] {
         m(B::ReadPC2, CPU6502::op_set_addr_absx_full),
         X_DUMMY,
         b(B::ReadAddr),
-        m(B::WriteDummy, op),
-        b(B::WriteAddrDL),
+        m(B::WriteDataLatch, op),
+        b(B::WriteDataLatch),
     ]
 }
 const fn rmw_absy(op: InternalOp) -> [MicroOp; 6] {
@@ -135,8 +133,8 @@ const fn rmw_absy(op: InternalOp) -> [MicroOp; 6] {
         m(B::ReadPC2, CPU6502::op_set_addr_absy_full),
         X_DUMMY,
         b(B::ReadAddr),
-        m(B::WriteDummy, op),
-        b(B::WriteAddrDL),
+        m(B::WriteDataLatch, op),
+        b(B::WriteDataLatch),
     ]
 }
 const fn rmw_indx(op: InternalOp) -> [MicroOp; 7] {
@@ -146,8 +144,8 @@ const fn rmw_indx(op: InternalOp) -> [MicroOp; 7] {
         m(B::ReadAddr, CPU6502::op_save_lo),
         m(B::ReadAddrZp1, CPU6502::op_compute_ind_addr),
         b(B::ReadAddr),
-        m(B::WriteDummy, op),
-        b(B::WriteAddrDL),
+        m(B::WriteDataLatch, op),
+        b(B::WriteDataLatch),
     ]
 }
 const fn rmw_indy(op: InternalOp) -> [MicroOp; 7] {
@@ -157,8 +155,8 @@ const fn rmw_indy(op: InternalOp) -> [MicroOp; 7] {
         m(B::ReadAddrZp1, CPU6502::op_compute_indy_addr_rmw),
         X_DUMMY,
         b(B::ReadAddr),
-        m(B::WriteDummy, op),
-        b(B::WriteAddrDL),
+        m(B::WriteDataLatch, op),
+        b(B::WriteDataLatch),
     ]
 }
 const fn branch_seq(op: InternalOp) -> [MicroOp; 3] {

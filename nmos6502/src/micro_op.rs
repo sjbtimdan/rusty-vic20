@@ -21,9 +21,6 @@ impl MicroOp {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
 pub enum BusOp {
-    /// Read opcode at PC (always cycle 1 of every instruction).
-    Fetch,
-
     /// Read byte at PC+1 → operands[0].
     ReadPC1,
     /// Read byte at PC+2 → operands[1].
@@ -59,9 +56,7 @@ pub enum BusOp {
     /// Write X & ((addr >> 8) + 1) to memory[addr] (SHX unofficial opcode).
     WriteAddrSHX,
     /// Write data_latch to memory[addr].
-    WriteAddrDL,
-    /// Write data_latch to memory[addr] — RMW dummy write of original value.
-    WriteDummy,
+    WriteDataLatch,
 
     /// Push PC high byte: write to 0x0100+SP, SP--.
     PushPCH,

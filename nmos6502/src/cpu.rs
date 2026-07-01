@@ -74,10 +74,6 @@ impl CPU6502 {
             let op = self.sequence[self.sequence_index];
 
             match op.bus {
-                // Fetch is handled by the `else` branch above; it never
-                // appears in an instruction sequence.
-                BusOp::Fetch => unreachable!(),
-
                 BusOp::ReadPC1 => {
                     let val = memory.read_byte(self.registers.pc);
                     self.operands[0] = val;
@@ -125,8 +121,7 @@ impl CPU6502 {
                 }
                 BusOp::WriteAddrSHY => self.masked_write(memory, self.registers.y),
                 BusOp::WriteAddrSHX => self.masked_write(memory, self.registers.x),
-                BusOp::WriteAddrDL => memory.write_byte(self.addr, self.data_latch),
-                BusOp::WriteDummy => memory.write_byte(self.addr, self.data_latch),
+                BusOp::WriteDataLatch => memory.write_byte(self.addr, self.data_latch),
 
                 BusOp::PushPCH => self.push_byte(memory, (self.registers.pc >> 8) as u8),
                 BusOp::PushPCL => self.push_byte(memory, self.registers.pc as u8),
