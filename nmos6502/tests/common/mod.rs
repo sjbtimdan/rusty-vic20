@@ -3,7 +3,7 @@
 //! Provides `assemble_program`, `load_program`, and `run_until` so
 //! integration tests don't duplicate the boilerplate.
 
-use nmos6502::{assembler::assemble, memory::Ram, Addressable, CPU6502};
+use nmos6502::{memory::Ram, tools::assembler::assemble, Addressable, CPU6502};
 use std::collections::HashMap;
 
 /// Assemble a test program, returning `(bytes, symbol_table)`.

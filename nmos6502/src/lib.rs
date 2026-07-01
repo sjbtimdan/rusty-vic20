@@ -1,14 +1,13 @@
 pub mod alu;
-pub mod assembler;
 pub mod breakpoint;
 pub mod cpu;
-pub mod disassembler;
 pub mod edge_latch;
 pub mod memory;
 pub mod micro_op;
 pub mod opcode;
 pub mod registers;
 pub mod sequences;
+pub mod tools;
 
 pub use breakpoint::Breakpoint;
 pub use cpu::CPU6502;
