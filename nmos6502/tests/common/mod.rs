@@ -3,8 +3,8 @@
 //! Provides `assemble_program`, `load_program`, and `run_until` so
 //! integration tests don't duplicate the boilerplate.
 
-use std::collections::HashMap;
 use nmos6502::{assembler::assemble, memory::Ram, Addressable, CPU6502};
+use std::collections::HashMap;
 
 /// Assemble a test program, returning `(bytes, symbol_table)`.
 pub fn assemble_program(source: &str, origin: u16) -> (Vec<u8>, HashMap<String, u16>) {
@@ -22,31 +22,27 @@ pub fn load_program(bytes: &[u8], start_addr: u16) -> (CPU6502, Ram) {
     (cpu, mem)
 }
 
+#[allow(dead_code)]
 /// Run the CPU until `stop` returns `true`.
 ///
-/// `stop` is called AFTER every call to `cpu.cycle()`.  The closure
-/// receives immutable references to both the CPU and memory so it can
-/// inspect registers or peek at RAM.
+/// `stop` is called after EVERY call to `cpu.cycle()` so it sees the
+/// post-cycle state.  The closure receives immutable references to both
+/// CPU and memory.
 ///
 /// # Panics
 ///
 /// Panics if the `max_cycles` budget is exhausted before `stop` fires.
-pub fn run_until<F>(
-    cpu: &mut CPU6502,
-    mem: &mut Ram,
-    mut stop: F,
-    max_cycles: u64,
-) -> u64
+pub fn run_until<F>(cpu: &mut CPU6502, mem: &mut Ram, mut stop: F, max_cycles: u64) -> u64
 where
     F: FnMut(&CPU6502, &Ram) -> bool,
 {
     let mut cycles: u64 = 0;
     loop {
+        cpu.cycle(mem);
+        cycles += 1;
         if stop(cpu, mem) {
             return cycles;
         }
-        cpu.cycle(mem);
-        cycles += 1;
         if cycles >= max_cycles {
             panic!("did not meet stop condition after {max_cycles} cycles");
         }

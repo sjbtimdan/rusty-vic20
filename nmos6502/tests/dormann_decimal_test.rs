@@ -1,32 +1,38 @@
 //! Assemble and run the Klaus Dormann decimal test against the emulated 6502.
 //!
-//! The test is assembled, loaded into RAM at address 0, and run until the CPU
-//! reaches DONE on an instruction boundary (all pending micro-ops complete).
-//! ERROR ($0B) is then checked for 0 (pass) or non-zero (fail).
+//! The test is assembled, loaded into RAM at address 0, and run until the
+//! CPU reaches DONE on an instruction boundary. ERROR ($0B) is checked for
+//! 0 (pass) or non-zero (fail).  When the test fails, detailed state is
+//! captured at the BNE DONE that was taken.
 
-use nmos6502::{assembler::assemble, memory::Ram, registers::ZERO, Addressable, CPU6502};
+use nmos6502::{registers::ZERO, Addressable};
+
+mod common;
 
 #[test]
-fn trace_decimal_test_failure() {
-    let raw = include_str!("../external/Klaus2m5/6502_decimal_test.a65");
+fn run_decimal_test() {
+    let source = include_str!("../external/Klaus2m5/6502_decimal_test.a65");
+    let (bytes, syms) = common::assemble_program(source, 0);
 
-    let (bytes, syms) = assemble(raw, 0, None).expect("decimal test assembly failed");
-
-    let test_addr = *syms.get("test").expect("symbol table must contain 'test'");
-    let done_addr = *syms.get("done").expect("symbol table must contain 'done'");
+    let test_addr = *syms.get("test").expect("symbol 'test' not found");
+    let done_addr = *syms.get("done").expect("symbol 'done' not found");
     let error_addr = 0x0B;
 
-    // Find BNE DONE instructions
-    let mut fail_addrs = Vec::new();
-    for i in 0..bytes.len().saturating_sub(2) {
-        if bytes[i] == 0xD0 {
-            let offset = bytes[i + 1] as i8;
+    // Find all BNE DONE instructions — these are the "fail" branches.
+    let fail_addrs: Vec<u16> = bytes
+        .windows(2)
+        .enumerate()
+        .filter(|(_, w)| w[0] == 0xD0)
+        .filter_map(|(i, w)| {
+            let offset = w[1] as i8;
             let target = (i as u16 + 2).wrapping_add(offset as u16);
             if target == done_addr {
-                fail_addrs.push(i as u16);
+                Some(i as u16)
+            } else {
+                None
             }
-        }
-    }
+        })
+        .collect();
 
     eprintln!(
         "test=${test_addr:04X} done=${done_addr:04X} BNE_DONE_at=[{}]  bytes={}",
@@ -38,18 +44,21 @@ fn trace_decimal_test_failure() {
         bytes.len()
     );
 
-    let mut cpu = CPU6502::new();
-    let mut mem = Ram::new();
-    for (i, &b) in bytes.iter().enumerate() {
-        mem.write_byte(i as u16, b);
-    }
-    cpu.registers.pc = test_addr;
+    let (mut cpu, mut mem) = common::load_program(&bytes, test_addr);
 
     let max_cycles: u64 = 100_000_000;
     let mut cycles: u64 = 0;
     let mut fail_info = String::new();
 
-    while !(cpu.registers.pc == done_addr && cpu.is_at_instruction_boundary()) {
+    loop {
+        cpu.cycle(&mut mem);
+        cycles += 1;
+
+        if cpu.registers.pc == done_addr && cpu.is_at_instruction_boundary() {
+            break;
+        }
+
+        // Capture state when a BNE DONE branch is actually taken.
         if fail_addrs.contains(&cpu.registers.pc) && !cpu.registers.is_flag_set(ZERO) {
             let n1 = mem.read_byte(0x00);
             let n2 = mem.read_byte(0x01);
@@ -72,8 +81,7 @@ fn trace_decimal_test_failure() {
                 cf,
             );
         }
-        cpu.cycle(&mut mem);
-        cycles += 1;
+
         if cycles >= max_cycles {
             panic!("did not reach DONE after {max_cycles} cycles");
         }
@@ -92,7 +100,7 @@ fn trace_decimal_test_failure() {
     }
 
     eprintln!(
-        "decimal test PASSED in {cycles} cycles (~{:.0} Mcycle/s)",
+        "PASSED in {cycles} cycles (~{:.0} Mcycle/s)",
         cycles as f64 / 1_000_000.0
     );
 }

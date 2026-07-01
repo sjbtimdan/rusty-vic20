@@ -255,6 +255,7 @@ impl Assembler {
                     self.origin_seen = true;
                 }
                 LineKind::Equ => {
+                    self.star_pc = self.pc; // `*` resolves to current PC
                     let val = self.eval(&line.operand, line.line)?;
                     if let Some(ref label) = line.label {
                         let key = label.to_ascii_lowercase();
@@ -361,7 +362,12 @@ impl Assembler {
                     self.origin_seen = true;
                 }
                 LineKind::Equ => {
-                    let _ = self.eval(&line.operand, line.line)?; // validate
+                    self.star_pc = self.pc; // `*` resolves to current PC
+                    let val = self.eval(&line.operand, line.line)?;
+                    if let Some(ref label) = line.label {
+                        let key = label.to_ascii_lowercase();
+                        self.symbols.insert(key, val);
+                    }
                 }
                 LineKind::Ds => {
                     self.star_pc = self.pc;
@@ -808,10 +814,13 @@ fn tokenize_expr<'a>(s: &'a str, line: usize) -> Result<Vec<Token<'a>>, Assemble
 }
 
 // -- Recursive-descent parser ---------------------------------------
-
-// expr       = comparison (('+' | '-') comparison)*
-// comparison = term (('=' | '!=' | '<' | '>' | '<=' | '>=') term)*
-// term       = unary (('*' | '&' | '|') unary)*
+//
+// Precedence (highest to lowest):
+//   unary '-', '~'
+//   '*'
+//   '+', '-'
+//   '=', '!=', '<', '>', '<=', '>='
+//   '&', '|', '^'
 
 fn parse_expr(
     toks: &[Token],
@@ -823,14 +832,19 @@ fn parse_expr(
     let (mut left, mut p) = parse_comparison(toks, pos, symbols, star_pc, line)?;
     while p < toks.len() {
         match toks[p] {
-            Token::Plus => {
+            Token::BitAnd => {
                 let (r, q) = parse_comparison(toks, p + 1, symbols, star_pc, line)?;
-                left = left.wrapping_add(r);
+                left &= r;
                 p = q;
             }
-            Token::Minus => {
+            Token::BitOr => {
                 let (r, q) = parse_comparison(toks, p + 1, symbols, star_pc, line)?;
-                left = left.wrapping_sub(r);
+                left |= r;
+                p = q;
+            }
+            Token::BitXor => {
+                let (r, q) = parse_comparison(toks, p + 1, symbols, star_pc, line)?;
+                left ^= r;
                 p = q;
             }
             _ => break,
@@ -846,36 +860,36 @@ fn parse_comparison(
     star_pc: u16,
     line: usize,
 ) -> Result<(u16, usize), AssemblerError> {
-    let (mut left, mut p) = parse_term(toks, pos, symbols, star_pc, line)?;
+    let (mut left, mut p) = parse_additive(toks, pos, symbols, star_pc, line)?;
     while p < toks.len() {
         match toks[p] {
             Token::Eq => {
-                let (r, q) = parse_term(toks, p + 1, symbols, star_pc, line)?;
+                let (r, q) = parse_additive(toks, p + 1, symbols, star_pc, line)?;
                 left = if left == r { 1 } else { 0 };
                 p = q;
             }
             Token::Ne => {
-                let (r, q) = parse_term(toks, p + 1, symbols, star_pc, line)?;
+                let (r, q) = parse_additive(toks, p + 1, symbols, star_pc, line)?;
                 left = if left != r { 1 } else { 0 };
                 p = q;
             }
             Token::Lt => {
-                let (r, q) = parse_term(toks, p + 1, symbols, star_pc, line)?;
+                let (r, q) = parse_additive(toks, p + 1, symbols, star_pc, line)?;
                 left = if left < r { 1 } else { 0 };
                 p = q;
             }
             Token::Gt => {
-                let (r, q) = parse_term(toks, p + 1, symbols, star_pc, line)?;
+                let (r, q) = parse_additive(toks, p + 1, symbols, star_pc, line)?;
                 left = if left > r { 1 } else { 0 };
                 p = q;
             }
             Token::Le => {
-                let (r, q) = parse_term(toks, p + 1, symbols, star_pc, line)?;
+                let (r, q) = parse_additive(toks, p + 1, symbols, star_pc, line)?;
                 left = if left <= r { 1 } else { 0 };
                 p = q;
             }
             Token::Ge => {
-                let (r, q) = parse_term(toks, p + 1, symbols, star_pc, line)?;
+                let (r, q) = parse_additive(toks, p + 1, symbols, star_pc, line)?;
                 left = if left >= r { 1 } else { 0 };
                 p = q;
             }
@@ -885,7 +899,34 @@ fn parse_comparison(
     Ok((left, p))
 }
 
-// term    = unary (('*' | '&' | '|') unary)*
+// additive = term (('+' | '-') term)*
+fn parse_additive(
+    toks: &[Token],
+    pos: usize,
+    symbols: &HashMap<String, u16>,
+    star_pc: u16,
+    line: usize,
+) -> Result<(u16, usize), AssemblerError> {
+    let (mut left, mut p) = parse_term(toks, pos, symbols, star_pc, line)?;
+    while p < toks.len() {
+        match toks[p] {
+            Token::Plus => {
+                let (r, q) = parse_term(toks, p + 1, symbols, star_pc, line)?;
+                left = left.wrapping_add(r);
+                p = q;
+            }
+            Token::Minus => {
+                let (r, q) = parse_term(toks, p + 1, symbols, star_pc, line)?;
+                left = left.wrapping_sub(r);
+                p = q;
+            }
+            _ => break,
+        }
+    }
+    Ok((left, p))
+}
+
+// term    = unary (('*') unary)*
 fn parse_term(
     toks: &[Token],
     pos: usize,
@@ -900,21 +941,6 @@ fn parse_term(
                 // '*' as binary operator → multiplication
                 let (r, q) = parse_unary(toks, p + 1, symbols, star_pc, line)?;
                 left = left.wrapping_mul(r);
-                p = q;
-            }
-            Token::BitAnd => {
-                let (r, q) = parse_unary(toks, p + 1, symbols, star_pc, line)?;
-                left &= r;
-                p = q;
-            }
-            Token::BitOr => {
-                let (r, q) = parse_unary(toks, p + 1, symbols, star_pc, line)?;
-                left |= r;
-                p = q;
-            }
-            Token::BitXor => {
-                let (r, q) = parse_unary(toks, p + 1, symbols, star_pc, line)?;
-                left ^= r;
                 p = q;
             }
             _ => break,
@@ -2187,5 +2213,41 @@ brk";
         let src = "org $1000\nstart: nop\nloop: dex\nbne loop\n";
         let bytes = assemble_str(src);
         assert_eq!(bytes, vec![0xEA, 0xCA, 0xD0, 0xFD]);
+    }
+
+    #[test]
+    fn test_ff_minus_zero_expr() {
+        // Test how `$ff-zero` evaluates when `zero = %00000010`
+        // Expected: $ff - $02 = $FD
+        // Then: cmp #($fd|$30)&$ff = cmp #$fd
+        let src = "org $1000\n\
+                    zero = %00000010\n\
+                    cmp #($ff-zero|$30)&$ff\n";
+        // C9 FD = cmp #$FD
+        // C9 CD = cmp #$CD (WRONG - would mean $ff-zero = $ff-($02|$30) = $ff-$32 = $CD)
+        let bytes = assemble_str(src);
+        assert_eq!(
+            bytes,
+            vec![0xC9, 0xFD],
+            "expected C9 FD (cmp #$FD), got: {:02X?}",
+            bytes
+        );
+    }
+
+    #[test]
+    fn test_cmp_flag_ff_zero() {
+        // Simulate cmp_flag macro (I_flag=3): cmp #(($ff-zero)|fao)&m8
+        // fao = $30, m8 = $ff
+        let src = "org $1000\n\
+                    zero = %00000010\n\
+                    fao = $30\n\
+                    cmp #(($ff-zero)|fao)&$ff\n";
+        let bytes = assemble_str(src);
+        assert_eq!(
+            bytes,
+            vec![0xC9, 0xFD],
+            "expected C9 FD (cmp #$FD), got: {:02X?}",
+            bytes
+        );
     }
 }
