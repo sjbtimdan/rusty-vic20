@@ -162,29 +162,12 @@ impl CPU6502 {
             (op.internal)(self);
 
             self.sequence_index += 1;
-
-            // If sequence exhausted, end instruction immediately (same cycle)
-            if self.sequence_index >= self.sequence.len() && !self.sequence.is_empty() {
-                self.end_instruction();
-            }
         } else {
-            // Not in an active sequence — fetch the next instruction
-            self.end_instruction();
-
             if self.halted {
                 return;
             }
-
             self.fetch_and_decode(memory);
         }
-    }
-
-    fn end_instruction(&mut self) {
-        // PC was already incremented during fetches. Control-flow ops set PC
-        // explicitly, overwriting any fetch-based increments. Either way,
-        // PC is correct — just clear the sequence.
-        self.sequence = &[];
-        self.sequence_index = 0;
     }
 
     fn fetch_and_decode(&mut self, memory: &mut impl Addressable) {
