@@ -31,6 +31,7 @@ fn bench_steps(steps: u64, b: &mut Bencher) {
         for _ in 0..steps {
             cpu.cycle(&mut mem);
         }
+        test::black_box(cpu.total_cycles)
     });
 }
 

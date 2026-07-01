@@ -11,7 +11,7 @@ pub fn assemble_program(source: &str, origin: u16) -> (Vec<u8>, HashMap<String, 
     assemble(source, origin, None).expect("assembly failed")
 }
 
-/// Load bytes into RAM and initialise the CPU at the given start address.
+#[allow(dead_code)]
 pub fn load_program(bytes: &[u8], start_addr: u16) -> (CPU6502, Ram) {
     let mut cpu = CPU6502::new();
     let mut mem = Ram::new();
@@ -23,15 +23,6 @@ pub fn load_program(bytes: &[u8], start_addr: u16) -> (CPU6502, Ram) {
 }
 
 #[allow(dead_code)]
-/// Run the CPU until `stop` returns `true`.
-///
-/// `stop` is called after EVERY call to `cpu.cycle()` so it sees the
-/// post-cycle state.  The closure receives immutable references to both
-/// CPU and memory.
-///
-/// # Panics
-///
-/// Panics if the `max_cycles` budget is exhausted before `stop` fires.
 pub fn run_until<F>(cpu: &mut CPU6502, mem: &mut Ram, mut stop: F, max_cycles: u64) -> u64
 where
     F: FnMut(&CPU6502, &Ram) -> bool,

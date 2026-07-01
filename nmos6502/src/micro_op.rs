@@ -94,14 +94,14 @@ pub enum BusOp {
     None,
 }
 
-use crate::{cpu::CPU6502, memory::Addressable};
+use crate::cpu::CPU6502;
 
 /// Function pointer type for internal CPU operations.
 ///
 /// Each `InternalOp` variant (except the sequence-control ones) becomes a
 /// standalone function with this signature, eliminating the central dispatch
 /// match in `execute_internal()`.
-type InternalOpFn = fn(&mut CPU6502, &mut dyn Addressable);
+type InternalOpFn = fn(&mut CPU6502);
 
 /// Internal operation performed concurrently with the bus operation.
 ///

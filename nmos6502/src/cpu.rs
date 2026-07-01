@@ -75,138 +75,135 @@ impl CPU6502 {
         self.breakpoints.push(bp);
     }
 
-    pub fn reset(&mut self, memory: &mut impl Addressable) {
+    pub fn reset(&mut self, _memory: &mut impl Addressable) {
         *self = Self::new();
         self.nmi_latch.set_level(true);
-        self.enter_interrupt(Interrupt::Reset, memory);
+        self.enter_interrupt(Interrupt::Reset);
     }
 
     /// Execute one CPU clock cycle.
+    #[inline]
     pub fn cycle(&mut self, memory: &mut impl Addressable) {
         self.total_cycles += 1;
 
-        if self.halted {
-            return;
-        }
+        // Fast path: currently executing an instruction
+        if self.sequence_index < self.sequence.len() {
+            let op = self.sequence[self.sequence_index];
 
-        let op = if self.sequence_index < self.sequence.len() {
-            self.sequence[self.sequence_index]
-        } else if self.sequence.is_empty() {
-            // No active instruction — fetch next
-            self.fetch_and_decode(memory);
-            return;
+            match op.bus {
+                // Fetch is handled by the `else` branch above; it never
+                // appears in an instruction sequence.
+                BusOp::Fetch => unreachable!(),
+
+                BusOp::ReadPC1 => {
+                    let val = memory.read_byte(self.registers.pc);
+                    self.operands[0] = val;
+                    self.data_latch = val;
+                    self.registers.pc = self.registers.pc.wrapping_add(1);
+                }
+                BusOp::ReadPC2 => {
+                    self.operands[1] = memory.read_byte(self.registers.pc);
+                    self.registers.pc = self.registers.pc.wrapping_add(1);
+                }
+
+                BusOp::ReadAddr => {
+                    self.data_latch = memory.read_byte(self.addr);
+                }
+                BusOp::ReadDummy => {
+                    let _ = memory.read_byte(self.addr);
+                }
+                BusOp::ReadDummyZpX => {
+                    let zp = self.operands[0];
+                    let _ = memory.read_zp_byte(zp);
+                    self.addr = (zp.wrapping_add(self.registers.x)) as u16;
+                }
+                BusOp::ReadDummyZpY => {
+                    let zp = self.operands[0];
+                    let _ = memory.read_zp_byte(zp);
+                    self.addr = (zp.wrapping_add(self.registers.y)) as u16;
+                }
+                BusOp::ReadAddrZp1 => {
+                    let addr = (self.addr as u8).wrapping_add(1) as u16;
+                    self.data_latch = memory.read_byte(addr);
+                }
+                BusOp::ReadDummyNext => {
+                    let _ = memory.read_byte(self.registers.pc);
+                }
+                BusOp::ReadRTS => {
+                    let _ = memory.read_byte(self.registers.pc.wrapping_sub(1));
+                }
+
+                BusOp::WriteAddrA => memory.write_byte(self.addr, self.registers.a),
+                BusOp::WriteAddrX => memory.write_byte(self.addr, self.registers.x),
+                BusOp::WriteAddrY => memory.write_byte(self.addr, self.registers.y),
+                BusOp::WriteAddrAX => memory.write_byte(self.addr, self.registers.a & self.registers.x),
+                BusOp::WriteAddrAHX => {
+                    self.masked_write(memory, self.registers.a & self.registers.x);
+                }
+                BusOp::WriteAddrSHY => self.masked_write(memory, self.registers.y),
+                BusOp::WriteAddrSHX => self.masked_write(memory, self.registers.x),
+                BusOp::WriteAddrDL => memory.write_byte(self.addr, self.data_latch),
+                BusOp::WriteDummy => memory.write_byte(self.addr, self.data_latch),
+
+                BusOp::PushPCH => self.push_byte(memory, (self.registers.pc >> 8) as u8),
+                BusOp::PushPCL => self.push_byte(memory, self.registers.pc as u8),
+                BusOp::PushReturnHi => {
+                    self.push_byte(memory, (self.registers.pc >> 8) as u8);
+                }
+                BusOp::PushReturnLo => {
+                    self.push_byte(memory, self.registers.pc as u8);
+                }
+                BusOp::PushA => self.push_byte(memory, self.registers.a),
+                BusOp::PushStatusB => {
+                    self.push_byte(
+                        memory,
+                        self.registers.status | crate::registers::UNUSED | crate::registers::BREAK,
+                    );
+                }
+                BusOp::PushStatus => {
+                    self.push_byte(memory, self.registers.status | crate::registers::UNUSED);
+                }
+
+                BusOp::PopDummy => {
+                    let _ = memory.read_byte(0x0100 + self.registers.sp as u16);
+                }
+                BusOp::Pop => self.data_latch = self.pop_byte(memory),
+                BusOp::PopPCL => self.operands[0] = self.pop_byte(memory),
+                BusOp::PopPCH => self.data_latch = self.pop_byte(memory),
+
+                BusOp::ReadVecLo(addr) => {
+                    self.operands[0] = memory.read_byte(addr);
+                }
+                BusOp::ReadVecHi(addr) => {
+                    let hi = memory.read_byte(addr);
+                    self.registers.pc = (hi as u16) << 8 | self.operands[0] as u16;
+                }
+
+                BusOp::None => {}
+            }
+
+            // Execute internal operation
+            self.execute_internal(op.internal);
+
+            self.sequence_index += 1;
+
+            // If sequence exhausted, end instruction immediately (same cycle)
+            if self.sequence_index >= self.sequence.len() && !self.sequence.is_empty() {
+                self.end_instruction();
+            }
         } else {
-            // Sequence exhausted — end current instruction, then fetch next
-            self.end_instruction(memory);
+            // Not in an active sequence — fetch the next instruction
+            self.end_instruction();
+
+            if self.halted {
+                return;
+            }
+
             self.fetch_and_decode(memory);
-            return;
-        };
-
-        match op.bus {
-            BusOp::Fetch => {
-                self.fetch_and_decode(memory);
-                return; // Fetch resets sequence_index; don't increment
-            }
-
-            BusOp::ReadPC1 => {
-                let val = memory.read_byte(self.registers.pc);
-                self.operands[0] = val;
-                self.data_latch = val;
-                self.registers.pc = self.registers.pc.wrapping_add(1);
-            }
-            BusOp::ReadPC2 => {
-                self.operands[1] = memory.read_byte(self.registers.pc);
-                self.registers.pc = self.registers.pc.wrapping_add(1);
-            }
-
-            BusOp::ReadAddr => {
-                self.data_latch = memory.read_byte(self.addr);
-            }
-            BusOp::ReadDummy => {
-                let _ = memory.read_byte(self.addr);
-            }
-            BusOp::ReadDummyZpX => {
-                let zp = self.operands[0];
-                let _ = memory.read_zp_byte(zp);
-                self.addr = (zp.wrapping_add(self.registers.x)) as u16;
-            }
-            BusOp::ReadDummyZpY => {
-                let zp = self.operands[0];
-                let _ = memory.read_zp_byte(zp);
-                self.addr = (zp.wrapping_add(self.registers.y)) as u16;
-            }
-            BusOp::ReadAddrZp1 => {
-                let addr = (self.addr as u8).wrapping_add(1) as u16;
-                self.data_latch = memory.read_byte(addr);
-            }
-            BusOp::ReadDummyNext => {
-                let _ = memory.read_byte(self.registers.pc);
-            }
-            BusOp::ReadRTS => {
-                let _ = memory.read_byte(self.registers.pc.wrapping_sub(1));
-            }
-
-            BusOp::WriteAddrA => memory.write_byte(self.addr, self.registers.a),
-            BusOp::WriteAddrX => memory.write_byte(self.addr, self.registers.x),
-            BusOp::WriteAddrY => memory.write_byte(self.addr, self.registers.y),
-            BusOp::WriteAddrAX => memory.write_byte(self.addr, self.registers.a & self.registers.x),
-            BusOp::WriteAddrAHX => {
-                self.masked_write(memory, self.registers.a & self.registers.x);
-            }
-            BusOp::WriteAddrSHY => self.masked_write(memory, self.registers.y),
-            BusOp::WriteAddrSHX => self.masked_write(memory, self.registers.x),
-            BusOp::WriteAddrDL => memory.write_byte(self.addr, self.data_latch),
-            BusOp::WriteDummy => memory.write_byte(self.addr, self.data_latch),
-
-            BusOp::PushPCH => self.push_byte(memory, (self.registers.pc >> 8) as u8),
-            BusOp::PushPCL => self.push_byte(memory, self.registers.pc as u8),
-            BusOp::PushReturnHi => {
-                self.push_byte(memory, (self.registers.pc >> 8) as u8);
-            }
-            BusOp::PushReturnLo => {
-                self.push_byte(memory, self.registers.pc as u8);
-            }
-            BusOp::PushA => self.push_byte(memory, self.registers.a),
-            BusOp::PushStatusB => {
-                self.push_byte(
-                    memory,
-                    self.registers.status | crate::registers::UNUSED | crate::registers::BREAK,
-                );
-            }
-            BusOp::PushStatus => {
-                self.push_byte(memory, self.registers.status | crate::registers::UNUSED);
-            }
-
-            BusOp::PopDummy => {
-                let _ = memory.read_byte(0x0100 + self.registers.sp as u16);
-            }
-            BusOp::Pop => self.data_latch = self.pop_byte(memory),
-            BusOp::PopPCL => self.operands[0] = self.pop_byte(memory),
-            BusOp::PopPCH => self.data_latch = self.pop_byte(memory),
-
-            BusOp::ReadVecLo(addr) => {
-                self.operands[0] = memory.read_byte(addr);
-            }
-            BusOp::ReadVecHi(addr) => {
-                let hi = memory.read_byte(addr);
-                self.registers.pc = (hi as u16) << 8 | self.operands[0] as u16;
-            }
-
-            BusOp::None => {} // internal-only cycle
-        }
-
-        // Execute internal operation
-        self.execute_internal(op.internal, memory);
-
-        self.sequence_index += 1;
-
-        // If sequence exhausted, end instruction immediately (same cycle)
-        if self.sequence_index >= self.sequence.len() && !self.sequence.is_empty() {
-            self.end_instruction(memory);
         }
     }
 
-    fn end_instruction(&mut self, _memory: &mut impl Addressable) {
+    fn end_instruction(&mut self) {
         // PC was already incremented during fetches. Control-flow ops set PC
         // explicitly, overwriting any fetch-based increments. Either way,
         // PC is correct — just clear the sequence.
@@ -217,19 +214,21 @@ impl CPU6502 {
     fn fetch_and_decode(&mut self, memory: &mut impl Addressable) {
         // Check for pending interrupts before fetching
         if self.nmi_latch.take() {
-            self.enter_interrupt(Interrupt::NMI, memory);
+            self.enter_interrupt(Interrupt::NMI);
             return;
         }
         if self.irq_line_low && !self.registers.is_flag_set(crate::registers::INTERRUPT) {
-            self.enter_interrupt(Interrupt::IRQ, memory);
+            self.enter_interrupt(Interrupt::IRQ);
             return;
         }
 
         let opcode = memory.read_byte(self.registers.pc);
 
         // Fire breakpoints (at current PC before increment)
-        for bp in &self.breakpoints {
-            bp.on_hit(self.registers.pc);
+        if !self.breakpoints.is_empty() {
+            for bp in &self.breakpoints {
+                bp.on_hit(self.registers.pc);
+            }
         }
 
         // PC increments after the opcode fetch (like real 6502)
@@ -246,9 +245,10 @@ impl CPU6502 {
     /// all non-parameterized operations). The three `Skip*` variants are handled
     /// inline since they carry runtime data (`u8` skip counts) that function
     /// pointers cannot express.
-    fn execute_internal(&mut self, op: InternalOp, memory: &mut dyn Addressable) {
+    #[inline(always)]
+    fn execute_internal(&mut self, op: InternalOp) {
         match op {
-            InternalOp::Fn(f) => f(self, memory),
+            InternalOp::Fn(f) => f(self),
             InternalOp::SkipIfCrossed(n) => {
                 if self.page_crossed {
                     self.sequence_index += n as usize;
@@ -269,17 +269,17 @@ impl CPU6502 {
 
     // ── Internal operation implementations (called via function pointer) ──
 
-    pub(crate) fn op_none(&mut self, _memory: &mut dyn Addressable) {}
+    pub(crate) fn op_none(&mut self) {}
 
     // ── Address computation ──
 
-    pub(crate) fn op_set_addr_zp(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_set_addr_zp(&mut self) {
         self.addr = self.operands[0] as u16;
     }
-    pub(crate) fn op_set_addr_abs(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_set_addr_abs(&mut self) {
         self.addr = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
     }
-    pub(crate) fn op_set_addr_absx(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_set_addr_absx(&mut self) {
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
         let full = base.wrapping_add(self.registers.x as u16);
         self.page_crossed = (base & 0xFF00) != (full & 0xFF00);
@@ -288,7 +288,7 @@ impl CPU6502 {
             self.sequence_index += 1;
         }
     }
-    pub(crate) fn op_set_addr_absy(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_set_addr_absy(&mut self) {
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
         let full = base.wrapping_add(self.registers.y as u16);
         self.page_crossed = (base & 0xFF00) != (full & 0xFF00);
@@ -298,30 +298,30 @@ impl CPU6502 {
         }
     }
     /// Like `op_set_addr_absx` but never skips the next micro‑op (for writes/RMW).
-    pub(crate) fn op_set_addr_absx_full(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_set_addr_absx_full(&mut self) {
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
         let full = base.wrapping_add(self.registers.x as u16);
         self.page_crossed = (base & 0xFF00) != (full & 0xFF00);
         self.addr = (base & 0xFF00) | (full as u8 as u16);
     }
     /// Like `op_set_addr_absy` but never skips the next micro‑op (for writes/RMW).
-    pub(crate) fn op_set_addr_absy_full(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_set_addr_absy_full(&mut self) {
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
         let full = base.wrapping_add(self.registers.y as u16);
         self.page_crossed = (base & 0xFF00) != (full & 0xFF00);
         self.addr = (base & 0xFF00) | (full as u8 as u16);
     }
-    pub(crate) fn op_fix_addr_cross(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_fix_addr_cross(&mut self) {
         if self.page_crossed {
             self.addr = self.addr.wrapping_add(0x100);
         }
     }
     /// Save `data_latch` → `operands[1]` (stores lo byte for later addr compute).
-    pub(crate) fn op_save_lo(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_save_lo(&mut self) {
         self.operands[1] = self.data_latch;
     }
     /// Combine `operands[1]` (lo) with `data_latch` (hi) → `self.addr`.
-    pub(crate) fn op_compute_ind_addr(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_compute_ind_addr(&mut self) {
         let lo = self.operands[1] as u16;
         let hi = self.data_latch as u16;
         self.addr = (hi << 8) | lo;
@@ -329,7 +329,7 @@ impl CPU6502 {
     /// (Indirect),Y combine: like `op_compute_ind_addr` but also adds Y and
     /// sets `self.addr` to the page-wrapped address (for dummy read on page
     /// cross).  Skips the dummy micro-op when the page doesn't cross.
-    pub(crate) fn op_compute_indy_addr(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_compute_indy_addr(&mut self) {
         let lo = self.operands[1] as u16;
         let hi = self.data_latch as u16;
         let ptr = (hi << 8) | lo;
@@ -341,7 +341,7 @@ impl CPU6502 {
         }
     }
     /// (Indirect),Y combine for RMW (no skip — RMW always has the dummy cycle).
-    pub(crate) fn op_compute_indy_addr_rmw(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_compute_indy_addr_rmw(&mut self) {
         let lo = self.operands[1] as u16;
         let hi = self.data_latch as u16;
         let ptr = (hi << 8) | lo;
@@ -351,7 +351,7 @@ impl CPU6502 {
     }
     /// AHX (indirect),Y setup: like `op_compute_indy_addr_rmw` but also saves
     /// `base_hi` in `operands[1]` for the subsequent masked write.
-    pub(crate) fn op_compute_ahx_addr(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_compute_ahx_addr(&mut self) {
         let lo = self.operands[1] as u16;
         let hi = self.data_latch as u16;
         let ptr = (hi << 8) | lo;
@@ -363,7 +363,7 @@ impl CPU6502 {
 
     /// TAS/SHS (abs,Y) setup: sets SP = A & X, then computes page-wrapped address
     /// for C4 ReadDummy (like AHX but abs,Y). Reuses WriteAddrAHX for the write.
-    pub(crate) fn op_tas_setup_addr(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_tas_setup_addr(&mut self) {
         self.registers.sp = self.registers.a & self.registers.x;
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
         (self.addr, self.page_crossed) = page_cross(base, self.registers.y);
@@ -372,7 +372,7 @@ impl CPU6502 {
     /// SHY (abs,X) setup: like `op_set_addr_absx` but stores the page-wrapped
     /// address (C4 dummy-read target) in `self.addr` and does NOT skip the
     /// ReadDummy cycle (always 5 cycles for SHY, unlike LDA abs,X).
-    pub(crate) fn op_shy_setup_addr(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_shy_setup_addr(&mut self) {
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
         (self.addr, self.page_crossed) = page_cross(base, self.registers.x);
         self.addr = (self.operands[1] as u16) << 8 | (self.operands[0].wrapping_add(self.registers.x)) as u16;
@@ -380,7 +380,7 @@ impl CPU6502 {
     /// SHX (abs,Y) setup: like `op_set_addr_absy` but stores the page-wrapped
     /// address (C4 dummy-read target) in `self.addr` and does NOT skip the
     /// ReadDummy cycle (always 5 cycles for SHX, unlike LDA abs,Y).
-    pub(crate) fn op_shx_setup_addr(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_shx_setup_addr(&mut self) {
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
         (self.addr, self.page_crossed) = page_cross(base, self.registers.y);
         self.addr = (self.operands[1] as u16) << 8 | (self.operands[0].wrapping_add(self.registers.y)) as u16;
@@ -388,100 +388,100 @@ impl CPU6502 {
 
     // ── Register operations ──
 
-    pub(crate) fn op_set_a(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_set_a(&mut self) {
         self.registers.set_accumulator(self.data_latch);
     }
-    pub(crate) fn op_set_x(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_set_x(&mut self) {
         self.registers.set_x(self.data_latch);
     }
-    pub(crate) fn op_set_y(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_set_y(&mut self) {
         self.registers.set_y(self.data_latch);
     }
-    pub(crate) fn op_txa(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_txa(&mut self) {
         self.registers.set_accumulator(self.registers.x);
     }
-    pub(crate) fn op_tya(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_tya(&mut self) {
         self.registers.set_accumulator(self.registers.y);
     }
-    pub(crate) fn op_tax(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_tax(&mut self) {
         self.registers.set_x(self.registers.a);
     }
-    pub(crate) fn op_tay(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_tay(&mut self) {
         self.registers.set_y(self.registers.a);
     }
-    pub(crate) fn op_tsx(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_tsx(&mut self) {
         self.registers.set_x(self.registers.sp);
     }
-    pub(crate) fn op_txs(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_txs(&mut self) {
         self.registers.sp = self.registers.x;
     }
-    pub(crate) fn op_inc_x(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_inc_x(&mut self) {
         self.registers.set_x(self.registers.x.wrapping_add(1));
     }
-    pub(crate) fn op_inc_y(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_inc_y(&mut self) {
         self.registers.set_y(self.registers.y.wrapping_add(1));
     }
-    pub(crate) fn op_dec_x(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_dec_x(&mut self) {
         self.registers.set_x(self.registers.x.wrapping_sub(1));
     }
-    pub(crate) fn op_dec_y(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_dec_y(&mut self) {
         self.registers.set_y(self.registers.y.wrapping_sub(1));
     }
 
     // ── Flag operations ──
 
-    pub(crate) fn op_set_c(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_set_c(&mut self) {
         self.registers.update_carry_flag(true);
     }
-    pub(crate) fn op_clr_c(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_clr_c(&mut self) {
         self.registers.update_carry_flag(false);
     }
-    pub(crate) fn op_set_d(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_set_d(&mut self) {
         self.registers.update_decimal_flag(true);
     }
-    pub(crate) fn op_clr_d(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_clr_d(&mut self) {
         self.registers.update_decimal_flag(false);
     }
-    pub(crate) fn op_set_i(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_set_i(&mut self) {
         self.registers.update_interrupt_flag(true);
     }
-    pub(crate) fn op_clr_i(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_clr_i(&mut self) {
         self.registers.update_interrupt_flag(false);
     }
-    pub(crate) fn op_clr_v(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_clr_v(&mut self) {
         self.registers.update_overflow_flag(false);
     }
 
     // ── ALU operations ──
 
-    pub(crate) fn op_adc(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_adc(&mut self) {
         alu::adc(&mut self.registers, self.data_latch);
     }
-    pub(crate) fn op_sbc(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_sbc(&mut self) {
         alu::sbc(&mut self.registers, self.data_latch);
     }
-    pub(crate) fn op_and(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_and(&mut self) {
         self.registers.set_accumulator(self.registers.a & self.data_latch);
     }
-    pub(crate) fn op_ora(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_ora(&mut self) {
         self.registers.set_accumulator(self.registers.a | self.data_latch);
     }
-    pub(crate) fn op_eor(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_eor(&mut self) {
         self.registers.set_accumulator(self.registers.a ^ self.data_latch);
     }
-    pub(crate) fn op_cmp_a(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_cmp_a(&mut self) {
         let a = self.registers.a;
         alu::compare(&mut self.registers, a, self.data_latch);
     }
-    pub(crate) fn op_cmp_x(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_cmp_x(&mut self) {
         let x = self.registers.x;
         alu::compare(&mut self.registers, x, self.data_latch);
     }
-    pub(crate) fn op_cmp_y(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_cmp_y(&mut self) {
         let y = self.registers.y;
         alu::compare(&mut self.registers, y, self.data_latch);
     }
-    pub(crate) fn op_bit(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_bit(&mut self) {
         let v = self.data_latch;
         self.registers.update_zero_flag(self.registers.a & v == 0);
         self.registers.update_overflow_flag(v & 0x40 != 0);
@@ -490,63 +490,63 @@ impl CPU6502 {
 
     // ── RMW memory operations ──
 
-    pub(crate) fn op_asl(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_asl(&mut self) {
         let c = self.data_latch & 0x80 != 0;
         self.data_latch <<= 1;
         self.registers.update_carry_flag(c);
         self.registers.update_zero_and_negative(self.data_latch);
     }
-    pub(crate) fn op_lsr(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_lsr(&mut self) {
         let c = self.data_latch & 0x01 != 0;
         self.data_latch >>= 1;
         self.registers.update_carry_flag(c);
         self.registers.update_zero_and_negative(self.data_latch);
     }
-    pub(crate) fn op_rol(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_rol(&mut self) {
         let old_c = self.registers.is_flag_set(crate::registers::CARRY) as u8;
         let new_c = self.data_latch & 0x80 != 0;
         self.data_latch = (self.data_latch << 1) | old_c;
         self.registers.update_carry_flag(new_c);
         self.registers.update_zero_and_negative(self.data_latch);
     }
-    pub(crate) fn op_ror(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_ror(&mut self) {
         let old_c = self.registers.is_flag_set(crate::registers::CARRY) as u8;
         let new_c = self.data_latch & 0x01 != 0;
         self.data_latch = (self.data_latch >> 1) | (old_c << 7);
         self.registers.update_carry_flag(new_c);
         self.registers.update_zero_and_negative(self.data_latch);
     }
-    pub(crate) fn op_inc(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_inc(&mut self) {
         self.data_latch = self.data_latch.wrapping_add(1);
         self.registers.update_zero_and_negative(self.data_latch);
     }
-    pub(crate) fn op_dec(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_dec(&mut self) {
         self.data_latch = self.data_latch.wrapping_sub(1);
         self.registers.update_zero_and_negative(self.data_latch);
     }
 
     // ── Accumulator shifts ──
 
-    pub(crate) fn op_asl_a(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_asl_a(&mut self) {
         let c = self.registers.a & 0x80 != 0;
         let result = self.registers.a << 1;
         self.registers.update_carry_flag(c);
         self.registers.set_accumulator(result);
     }
-    pub(crate) fn op_lsr_a(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_lsr_a(&mut self) {
         let c = self.registers.a & 0x01 != 0;
         let result = self.registers.a >> 1;
         self.registers.update_carry_flag(c);
         self.registers.set_accumulator(result);
     }
-    pub(crate) fn op_rol_a(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_rol_a(&mut self) {
         let old_c = self.registers.is_flag_set(crate::registers::CARRY) as u8;
         let new_c = self.registers.a & 0x80 != 0;
         let result = (self.registers.a << 1) | old_c;
         self.registers.update_carry_flag(new_c);
         self.registers.set_accumulator(result);
     }
-    pub(crate) fn op_ror_a(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_ror_a(&mut self) {
         let old_c = self.registers.is_flag_set(crate::registers::CARRY) as u8;
         let new_c = self.registers.a & 0x01 != 0;
         let result = (self.registers.a >> 1) | (old_c << 7);
@@ -556,7 +556,7 @@ impl CPU6502 {
 
     // ── Undocumented load/store ──
 
-    pub(crate) fn op_las(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_las(&mut self) {
         let val = self.registers.sp & self.data_latch;
         self.registers.set_accumulator(val);
         self.registers.set_x(val);
@@ -565,16 +565,16 @@ impl CPU6502 {
 
     // ── Unofficial opcodes ──
 
-    pub(crate) fn op_lax(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_lax(&mut self) {
         self.registers.set_accumulator(self.data_latch);
         self.registers.set_x(self.data_latch);
     }
-    pub(crate) fn op_lax_imm(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_lax_imm(&mut self) {
         let result = self.data_latch & (self.registers.a | 0xEE);
         self.registers.set_accumulator(result);
         self.registers.set_x(result);
     }
-    pub(crate) fn op_slo(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_slo(&mut self) {
         let c = self.data_latch & 0x80 != 0;
         self.data_latch <<= 1;
         self.registers.update_carry_flag(c);
@@ -582,7 +582,7 @@ impl CPU6502 {
         let a = self.registers.a | self.data_latch;
         self.registers.set_accumulator(a);
     }
-    pub(crate) fn op_rla(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_rla(&mut self) {
         let old_c = self.registers.is_flag_set(crate::registers::CARRY) as u8;
         let new_c = self.data_latch & 0x80 != 0;
         self.data_latch = (self.data_latch << 1) | old_c;
@@ -591,7 +591,7 @@ impl CPU6502 {
         let a = self.registers.a & self.data_latch;
         self.registers.set_accumulator(a);
     }
-    pub(crate) fn op_sre(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_sre(&mut self) {
         let c = self.data_latch & 0x01 != 0;
         self.data_latch >>= 1;
         self.registers.update_carry_flag(c);
@@ -599,7 +599,7 @@ impl CPU6502 {
         let a = self.registers.a ^ self.data_latch;
         self.registers.set_accumulator(a);
     }
-    pub(crate) fn op_rra(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_rra(&mut self) {
         let old_c = self.registers.is_flag_set(crate::registers::CARRY) as u8;
         let new_c = self.data_latch & 0x01 != 0;
         self.data_latch = (self.data_latch >> 1) | (old_c << 7);
@@ -607,30 +607,30 @@ impl CPU6502 {
         self.registers.update_zero_and_negative(self.data_latch);
         alu::adc(&mut self.registers, self.data_latch);
     }
-    pub(crate) fn op_dcp(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_dcp(&mut self) {
         self.data_latch = self.data_latch.wrapping_sub(1);
         self.registers.update_zero_and_negative(self.data_latch);
         let a = self.registers.a;
         alu::compare(&mut self.registers, a, self.data_latch);
     }
-    pub(crate) fn op_isc(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_isc(&mut self) {
         self.data_latch = self.data_latch.wrapping_add(1);
         self.registers.update_zero_and_negative(self.data_latch);
         alu::sbc(&mut self.registers, self.data_latch);
     }
-    pub(crate) fn op_anc(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_anc(&mut self) {
         self.registers.set_accumulator(self.registers.a & self.data_latch);
         self.registers
             .update_carry_flag(self.registers.is_flag_set(crate::registers::NEGATIVE));
     }
-    pub(crate) fn op_alr(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_alr(&mut self) {
         let result = self.registers.a & self.data_latch;
         self.registers.update_carry_flag(result & 1 != 0);
         let shifted = result >> 1;
         self.registers.a = shifted;
         self.registers.update_zero_and_negative(shifted);
     }
-    pub(crate) fn op_arr(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_arr(&mut self) {
         let and = self.registers.a & self.data_latch;
         let old_c = self.registers.is_flag_set(crate::registers::CARRY) as u8;
 
@@ -666,11 +666,11 @@ impl CPU6502 {
                 .update_overflow_flag(((result >> 6) ^ (result >> 5)) & 1 != 0);
         }
     }
-    pub(crate) fn op_xaa(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_xaa(&mut self) {
         let val = (self.registers.a | 0xEE) & self.registers.x & self.data_latch;
         self.registers.set_accumulator(val);
     }
-    pub(crate) fn op_sbx(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_sbx(&mut self) {
         let ax = self.registers.a & self.registers.x;
         let result = ax.wrapping_sub(self.data_latch);
         self.registers.update_carry_flag(ax >= self.data_latch);
@@ -718,64 +718,64 @@ impl CPU6502 {
 
     // ── Control flow ──
 
-    pub(crate) fn op_jam_set_addr_ffff(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_jam_set_addr_ffff(&mut self) {
         self.addr = 0xFFFF;
     }
-    pub(crate) fn op_jam_set_addr_fffe(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_jam_set_addr_fffe(&mut self) {
         self.addr = 0xFFFE;
     }
 
-    pub(crate) fn op_branch_cc(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_branch_cc(&mut self) {
         self.branch_if(|r| !r.is_flag_set(crate::registers::CARRY))
     }
-    pub(crate) fn op_branch_cs(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_branch_cs(&mut self) {
         self.branch_if(|r| r.is_flag_set(crate::registers::CARRY))
     }
-    pub(crate) fn op_branch_eq(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_branch_eq(&mut self) {
         self.branch_if(|r| r.is_flag_set(crate::registers::ZERO))
     }
-    pub(crate) fn op_branch_ne(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_branch_ne(&mut self) {
         self.branch_if(|r| !r.is_flag_set(crate::registers::ZERO))
     }
-    pub(crate) fn op_branch_mi(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_branch_mi(&mut self) {
         self.branch_if(|r| r.is_flag_set(crate::registers::NEGATIVE))
     }
-    pub(crate) fn op_branch_pl(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_branch_pl(&mut self) {
         self.branch_if(|r| !r.is_flag_set(crate::registers::NEGATIVE))
     }
-    pub(crate) fn op_branch_vc(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_branch_vc(&mut self) {
         self.branch_if(|r| !r.is_flag_set(crate::registers::OVERFLOW))
     }
-    pub(crate) fn op_branch_vs(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_branch_vs(&mut self) {
         self.branch_if(|r| r.is_flag_set(crate::registers::OVERFLOW))
     }
 
-    pub(crate) fn op_jmp_abs(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_jmp_abs(&mut self) {
         self.addr = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
         self.registers.pc = self.addr;
     }
-    pub(crate) fn op_jump_ind_save_lo(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_jump_ind_save_lo(&mut self) {
         self.operands[1] = self.data_latch;
         self.addr = (self.addr & 0xFF00) | ((self.addr as u8).wrapping_add(1) as u16);
     }
-    pub(crate) fn op_jump_ind_hi(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_jump_ind_hi(&mut self) {
         let lo = self.operands[1];
         let hi = self.data_latch;
         self.registers.pc = (hi as u16) << 8 | lo as u16;
     }
-    pub(crate) fn op_jsr_c6(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_jsr_c6(&mut self) {
         self.addr = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
         self.registers.pc = self.addr;
     }
-    pub(crate) fn op_rts_finish(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_rts_finish(&mut self) {
         let pc = ((self.data_latch as u16) << 8 | self.operands[0] as u16).wrapping_add(1);
         self.registers.pc = pc;
     }
-    pub(crate) fn op_rti_finish(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_rti_finish(&mut self) {
         let pc = (self.data_latch as u16) << 8 | self.operands[0] as u16;
         self.registers.pc = pc;
     }
-    pub(crate) fn op_set_status(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_set_status(&mut self) {
         self.registers.status = (self.data_latch | crate::registers::UNUSED) & !crate::registers::BREAK;
     }
 
@@ -796,7 +796,7 @@ impl CPU6502 {
         }
     }
 
-    pub(crate) fn op_branch_dummy(&mut self, _memory: &mut dyn Addressable) {
+    pub(crate) fn op_branch_dummy(&mut self) {
         if !self.page_crossed {
             self.sequence_index += 1;
         } else {
@@ -804,7 +804,7 @@ impl CPU6502 {
         }
     }
 
-    fn enter_interrupt(&mut self, interrupt: Interrupt, _memory: &mut dyn Addressable) {
+    fn enter_interrupt(&mut self, interrupt: Interrupt) {
         let seq = match interrupt {
             Interrupt::NMI => INTERRUPT_SEQ_NMI,
             Interrupt::IRQ => INTERRUPT_SEQ_IRQ,
