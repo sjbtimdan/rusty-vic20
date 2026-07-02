@@ -15,63 +15,48 @@ pub struct MicroOp {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
 pub enum BusOp {
-    /// Read byte at PC+1 → operands[0].
     ReadPC1,
-    /// Read byte at PC+2 → operands[1].
     ReadPC2,
 
-    /// Read memory[addr] → data_latch.
     ReadAddr,
-    /// Read memory[zp_base] — dummy, then addr = (zp_base + X) & 0xFF.
+    /// Dummy ZP read, then addr = (zp_base + X) & 0xFF.
     ReadDummyZpX,
-    /// Read memory[zp_base] — dummy, then addr = (zp_base + Y) & 0xFF.
+    /// Dummy ZP read, then addr = (zp_base + Y) & 0xFF.
     ReadDummyZpY,
-    /// Read memory[addr + 1] with zero-page wrap (for INDX hi-byte read).
+    /// Read memory[addr + 1] with zero-page wrap (INDX hi-byte).
     ReadAddrZp1,
-    /// Read next instruction byte (PC+1) as dummy read (for 2-cycle implied ops).
+    /// Dummy read of next instruction byte (2-cycle implied ops).
     ReadDummyNext,
-    /// Read return address (PC - 1) for RTS final dummy cycle.
+    /// Dummy read at PC-1 (RTS final cycle).
     ReadRTS,
 
-    /// Write A to memory[addr].
     WriteAddrA,
-    /// Write X to memory[addr].
     WriteAddrX,
-    /// Write Y to memory[addr].
     WriteAddrY,
-    /// Write (A & X) to memory[addr] (SAX unofficial opcode).
+    /// Write (A & X) — SAX.
     WriteAddrAX,
-    /// Write A & X & ((addr >> 8) + 1) to memory[addr] (AHX/SHA unofficial opcode).
+    /// Write A & X & ((addr >> 8) + 1) — AHX/SHA.
     WriteAddrAHX,
-    /// Write Y & ((addr >> 8) + 1) to memory[addr] (SHY unofficial opcode).
+    /// Write Y & ((addr >> 8) + 1) — SHY.
     WriteAddrSHY,
-    /// Write X & ((addr >> 8) + 1) to memory[addr] (SHX unofficial opcode).
+    /// Write X & ((addr >> 8) + 1) — SHX.
     WriteAddrSHX,
-    /// Write data_latch to memory[addr].
     WriteDataLatch,
 
-    /// Push PC high byte: write to 0x0100+SP, SP--.
     PushPCH,
-    /// Push PC low byte: write to 0x0100+SP, SP--.
     PushPCL,
-
-    /// Push accumulator: write A to 0x0100+SP, SP--.
     PushA,
-    /// Push status register with B=1 and UNUSED=1 set (PHP, BRK).
+    /// Push status with B=1, UNUSED=1 (PHP, BRK).
     PushStatusB,
-    /// Push status register with UNUSED=1 set, B=0 (NMI, IRQ).
+    /// Push status with UNUSED=1, B=0 (NMI, IRQ).
     PushStatus,
 
-    /// Dummy stack read: read 0x0100+SP (SP unchanged).
+    /// Dummy stack read (SP unchanged).
     PopDummy,
-    /// Pop stack: SP++, read 0x0100+SP → data_latch.
     Pop,
-    /// Pop stack: SP++, read 0x0100+SP — store as PC low byte directly.
     PopPCL,
 
-    /// Read interrupt/reset vector low byte.
     ReadVecLo(u16),
-    /// Read vector high byte; combine with stored low → PC.
     ReadVecHi(u16),
 }
 

@@ -40,12 +40,11 @@ pub struct CPU6502 {
     pub total_cycles: u64,
 }
 
-fn page_cross(base: u16, index: u8) -> (u16, bool) {
+fn page_cross(base: u16, index: u8) -> bool {
     let addr = base.wrapping_add(index as u16);
-    (addr, (base & 0xFF00) != (addr & 0xFF00))
+    (base & 0xFF00) != (addr & 0xFF00)
 }
 
-/// Macro for branch condition wrappers.
 macro_rules! branch_op {
     ($name:ident, $cond:expr) => {
         pub fn $name(&mut self) {
@@ -73,7 +72,6 @@ impl CPU6502 {
         self.enter_interrupt(Interrupt::Reset);
     }
 
-    /// Execute one CPU clock cycle.
     #[inline]
     pub fn cycle(&mut self, memory: &mut impl Addressable) {
         self.total_cycles += 1;
@@ -189,9 +187,7 @@ impl CPU6502 {
     pub fn op_set_addr_abs(&mut self) {
         self.addr = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
     }
-    /// Shared helper: add `index` to the absolute address formed from operands,
-    /// set `addr` to the page-wrapped result, and optionally skip the next
-    /// micro-op when no page cross occurs (for read instructions).
+    /// Add `index` to operand address, set page-wrapped `addr`, optionally skip on no-cross.
     fn set_addr_abs_indexed(&mut self, index: u8, skip_on_no_cross: bool) {
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
         let full = base.wrapping_add(index as u16);
@@ -207,11 +203,11 @@ impl CPU6502 {
     pub fn op_set_addr_absy(&mut self) {
         self.set_addr_abs_indexed(self.registers.y, true);
     }
-    /// Like abs,X but never skips the next micro‑op (for writes/RMW).
+    /// Like abs,X but never skips (writes/RMW always need the dummy cycle).
     pub fn op_set_addr_absx_full(&mut self) {
         self.set_addr_abs_indexed(self.registers.x, false);
     }
-    /// Like abs,Y but never skips the next micro‑op (for writes/RMW).
+    /// Like abs,Y but never skips (writes/RMW always need the dummy cycle).
     pub fn op_set_addr_absy_full(&mut self) {
         self.set_addr_abs_indexed(self.registers.y, false);
     }
@@ -220,73 +216,57 @@ impl CPU6502 {
             self.addr = self.addr.wrapping_add(0x100);
         }
     }
-    /// Save `data_latch` → `operands[1]` (stores lo byte for later addr compute).
+    /// Combine (indirect),Y pointer with Y, set page-wrapped `addr`.
+    /// `save_base_hi` saves the page base high byte for masked writes (AHX).
+    fn set_addr_indy_indexed(&mut self, skip_on_no_cross: bool, save_base_hi: bool) {
+        let lo = self.operands[1] as u16;
+        let hi = self.data_latch as u16;
+        let ptr = (hi << 8) | lo;
+        let full = ptr.wrapping_add(self.registers.y as u16);
+        self.page_crossed = (ptr & 0xFF00) != (full & 0xFF00);
+        self.addr = (ptr & 0xFF00) | (full as u8 as u16);
+        if save_base_hi {
+            self.operands[1] = hi as u8;
+        }
+        if skip_on_no_cross && !self.page_crossed {
+            self.sequence_index += 1;
+        }
+    }
+    pub fn op_compute_indy_addr(&mut self) {
+        self.set_addr_indy_indexed(true, false);
+    }
+    pub fn op_compute_indy_addr_rmw(&mut self) {
+        self.set_addr_indy_indexed(false, false);
+    }
+    pub fn op_compute_ahx_addr(&mut self) {
+        self.set_addr_indy_indexed(false, true);
+    }
     pub fn op_save_lo(&mut self) {
         self.operands[1] = self.data_latch;
     }
-    /// Combine `operands[1]` (lo) with `data_latch` (hi) → `self.addr`.
     pub fn op_compute_ind_addr(&mut self) {
         let lo = self.operands[1] as u16;
         let hi = self.data_latch as u16;
         self.addr = (hi << 8) | lo;
     }
-    /// (Indirect),Y combine: like `op_compute_ind_addr` but also adds Y and
-    /// sets `self.addr` to the page-wrapped address (for dummy read on page
-    /// cross).  Skips the dummy micro-op when the page doesn't cross.
-    pub fn op_compute_indy_addr(&mut self) {
-        let lo = self.operands[1] as u16;
-        let hi = self.data_latch as u16;
-        let ptr = (hi << 8) | lo;
-        let full = ptr.wrapping_add(self.registers.y as u16);
-        self.page_crossed = (ptr & 0xFF00) != (full & 0xFF00);
-        self.addr = (ptr & 0xFF00) | (full as u8 as u16);
-        if !self.page_crossed {
-            self.sequence_index += 1;
-        }
-    }
-    /// (Indirect),Y combine for RMW (no skip — RMW always has the dummy cycle).
-    pub fn op_compute_indy_addr_rmw(&mut self) {
-        let lo = self.operands[1] as u16;
-        let hi = self.data_latch as u16;
-        let ptr = (hi << 8) | lo;
-        let full = ptr.wrapping_add(self.registers.y as u16);
-        self.page_crossed = (ptr & 0xFF00) != (full & 0xFF00);
-        self.addr = (ptr & 0xFF00) | (full as u8 as u16);
-    }
-    /// AHX (indirect),Y setup: like `op_compute_indy_addr_rmw` but also saves
-    /// `base_hi` in `operands[1]` for the subsequent masked write.
-    pub fn op_compute_ahx_addr(&mut self) {
-        let lo = self.operands[1] as u16;
-        let hi = self.data_latch as u16;
-        let ptr = (hi << 8) | lo;
-        let full = ptr.wrapping_add(self.registers.y as u16);
-        self.page_crossed = (ptr & 0xFF00) != (full & 0xFF00);
-        self.addr = (ptr & 0xFF00) | (full as u8 as u16);
-        self.operands[1] = hi as u8;
-    }
 
-    /// TAS/SHS (abs,Y) setup: sets SP = A & X, then computes page-wrapped address
-    /// for C4 ReadDummy (like AHX but abs,Y). Reuses WriteAddrAHX for the write.
+    /// TAS/SHS (abs,Y): SP = A & X, page-wrapped addr, reuses WriteAddrAHX for the masked write.
     pub fn op_tas_setup_addr(&mut self) {
         self.registers.sp = self.registers.a & self.registers.x;
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
-        (self.addr, self.page_crossed) = page_cross(base, self.registers.y);
+        self.page_crossed = page_cross(base, self.registers.y);
         self.addr = (self.operands[1] as u16) << 8 | (self.operands[0].wrapping_add(self.registers.y)) as u16;
     }
-    /// SHY (abs,X) setup: like `op_set_addr_absx` but stores the page-wrapped
-    /// address (C4 dummy-read target) in `self.addr` and does NOT skip the
-    /// ReadDummy cycle (always 5 cycles for SHY, unlike LDA abs,X).
+    /// SHY (abs,X): page-wrapped addr, never skips (always 5 cycles).
     pub fn op_shy_setup_addr(&mut self) {
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
-        (self.addr, self.page_crossed) = page_cross(base, self.registers.x);
+        self.page_crossed = page_cross(base, self.registers.x);
         self.addr = (self.operands[1] as u16) << 8 | (self.operands[0].wrapping_add(self.registers.x)) as u16;
     }
-    /// SHX (abs,Y) setup: like `op_set_addr_absy` but stores the page-wrapped
-    /// address (C4 dummy-read target) in `self.addr` and does NOT skip the
-    /// ReadDummy cycle (always 5 cycles for SHX, unlike LDA abs,Y).
+    /// SHX (abs,Y): page-wrapped addr, never skips (always 5 cycles).
     pub fn op_shx_setup_addr(&mut self) {
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
-        (self.addr, self.page_crossed) = page_cross(base, self.registers.y);
+        self.page_crossed = page_cross(base, self.registers.y);
         self.addr = (self.operands[1] as u16) << 8 | (self.operands[0].wrapping_add(self.registers.y)) as u16;
     }
 
@@ -704,7 +684,6 @@ impl CPU6502 {
     }
 }
 
-/// Return the instruction length in bytes for a given opcode.
 #[cfg(test)]
 mod tests {
     use super::*;

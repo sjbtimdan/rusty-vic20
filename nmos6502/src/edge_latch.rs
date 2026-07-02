@@ -40,11 +40,6 @@ impl EdgeLatch {
     pub fn is_latched(&self) -> bool {
         self.latched
     }
-
-    /// Reset the latch (e.g., on CPU reset).
-    pub fn reset(&mut self) {
-        self.latched = false;
-    }
 }
 
 impl Default for EdgeLatch {
@@ -81,15 +76,5 @@ mod tests {
 
         latch.set_level(false); // HIGH → LOW (new edge)
         assert!(latch.take());
-    }
-
-    #[test]
-    fn test_reset_clears_latch() {
-        let mut latch = EdgeLatch::new(true);
-        latch.set_level(false);
-        assert!(latch.is_latched());
-
-        latch.reset();
-        assert!(!latch.is_latched());
     }
 }

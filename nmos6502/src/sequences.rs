@@ -1,11 +1,7 @@
 //! Static instruction sequences — one per opcode, indexed by opcode byte.
 //!
-//! Each sequence represents cycles 2+ of an instruction. Cycle 1 (opcode
-//! fetch) is handled by `CPU6502::step()` when no sequence is active.
-//!
-//! The CPU always drives the address bus every cycle — there are no idle bus
-//! cycles. Even internal-only register operations perform a dummy read from a
-//! (possibly stale) address.
+//! The CPU drives the address bus every cycle — no idle cycles. Internal-only
+//! register operations perform a dummy read from a (possibly stale) address.
 
 use crate::{
     cpu::CPU6502,
@@ -13,7 +9,6 @@ use crate::{
 };
 use paste::paste;
 
-// Shorthand
 use BusOp as B;
 use InternalOp as I;
 
@@ -427,7 +422,6 @@ static S_BRK: &[MicroOp] = &[
 ];
 
 // Indirect indexed (zp),Y read — 5 cycles, +1 if page cross
-// Note: SetAddrIndY performs both zp pointer reads internally (simplification).
 static S_ORA_INDY: &[MicroOp] = &seq_indy(CPU6502::op_ora);
 static S_AND_INDY: &[MicroOp] = &seq_indy(CPU6502::op_and);
 static S_EOR_INDY: &[MicroOp] = &seq_indy(CPU6502::op_eor);
@@ -453,8 +447,7 @@ static S_AHX_INDY: &[MicroOp] = &[
     b(B::WriteAddrAHX),
 ];
 
-// SHY/SYA (abs,X) — store Y & (base_hi + 1) at abs,X with page-cross masking
-// C_ABSX but with SHY setup: reads PC2 for high byte, computes page-wrapped addr
+// SHY/SYA (abs,X) — store Y with page-cross masking
 static S_SHY_ABSX: &[MicroOp] = &[
     b(B::ReadPC1),
     m(B::ReadPC2, CPU6502::op_shy_setup_addr),
@@ -462,8 +455,7 @@ static S_SHY_ABSX: &[MicroOp] = &[
     b(B::WriteAddrSHY),
 ];
 
-// SHX/SXA (abs,Y) — store X & (base_hi + 1) at abs,Y with page-cross masking
-// C_ABSY but with SHX setup: reads PC2 for high byte, computes page-wrapped addr
+// SHX/SXA (abs,Y) — store X with page-cross masking
 static S_SHX_ABSY: &[MicroOp] = &[
     b(B::ReadPC1),
     m(B::ReadPC2, CPU6502::op_shx_setup_addr),
@@ -474,8 +466,7 @@ static S_SHX_ABSY: &[MicroOp] = &[
 // XAA/ANE (imm) — A = (A | $EE) & X & operand
 static S_XAA_IMM: &[MicroOp] = &seq_imm(CPU6502::op_xaa);
 
-// TAS/SHS (abs,Y) — SP = A & X, then store A & X & (base_hi + 1) at abs,Y
-// Reuses WriteAddrAHX (same value/write-address formula as AHX but abs,Y).
+// TAS/SHS (abs,Y) — SP = A & X, masked write via WriteAddrAHX
 static S_TAS_ABSY: &[MicroOp] = &[
     b(B::ReadPC1),
     m(B::ReadPC2, CPU6502::op_tas_setup_addr),
@@ -483,8 +474,7 @@ static S_TAS_ABSY: &[MicroOp] = &[
     b(B::WriteAddrAHX),
 ];
 
-// AHX/SHA (abs,Y) — store A & X & (base_hi + 1) at abs,Y (same write as (indirect),Y)
-// Reuses SHX's abs,Y setup — same page-wrapped address computation.
+// AHX/SHA (abs,Y) — masked write via WriteAddrAHX
 static S_AHX_ABSY: &[MicroOp] = &[
     b(B::ReadPC1),
     m(B::ReadPC2, CPU6502::op_shx_setup_addr),
