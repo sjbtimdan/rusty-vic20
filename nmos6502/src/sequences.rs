@@ -11,6 +11,7 @@ use crate::{
     cpu::CPU6502,
     micro_op::{BusOp, InternalOp, MicroOp},
 };
+use paste::paste;
 
 // Shorthand
 use BusOp as B;
@@ -499,59 +500,28 @@ static S_SBX_IMM: &[MicroOp] = &seq_imm(CPU6502::op_sbx);
 
 // ── Unofficial opcodes ──
 
-// SLO (ASL + ORA)
-static S_SLO_ZP: &[MicroOp] = &rmw_zp(CPU6502::op_slo);
-static S_SLO_ZPX: &[MicroOp] = &rmw_zpx(CPU6502::op_slo);
-static S_SLO_ABS: &[MicroOp] = &rmw_abs(CPU6502::op_slo);
-static S_SLO_ABSX: &[MicroOp] = &rmw_absx(CPU6502::op_slo);
-static S_SLO_ABSY: &[MicroOp] = &rmw_absy(CPU6502::op_slo);
-static S_SLO_INDX: &[MicroOp] = &rmw_indx(CPU6502::op_slo);
-static S_SLO_INDY: &[MicroOp] = &rmw_indy(CPU6502::op_slo);
+/// Generate the 7 standard RMW sequences (zp, zpx, abs, absx, absy, indx, indy)
+/// for a given opcode name (uppercase prefix like `SLO`) and implementation path.
+macro_rules! rmw7 {
+    ($name:ident, $op:path) => {
+        paste! {
+            static [<S_ $name _ZP>]: &[MicroOp] = &rmw_zp($op);
+            static [<S_ $name _ZPX>]: &[MicroOp] = &rmw_zpx($op);
+            static [<S_ $name _ABS>]: &[MicroOp] = &rmw_abs($op);
+            static [<S_ $name _ABSX>]: &[MicroOp] = &rmw_absx($op);
+            static [<S_ $name _ABSY>]: &[MicroOp] = &rmw_absy($op);
+            static [<S_ $name _INDX>]: &[MicroOp] = &rmw_indx($op);
+            static [<S_ $name _INDY>]: &[MicroOp] = &rmw_indy($op);
+        }
+    };
+}
 
-// RLA (ROL + AND)
-static S_RLA_ZP: &[MicroOp] = &rmw_zp(CPU6502::op_rla);
-static S_RLA_ZPX: &[MicroOp] = &rmw_zpx(CPU6502::op_rla);
-static S_RLA_ABS: &[MicroOp] = &rmw_abs(CPU6502::op_rla);
-static S_RLA_ABSX: &[MicroOp] = &rmw_absx(CPU6502::op_rla);
-static S_RLA_ABSY: &[MicroOp] = &rmw_absy(CPU6502::op_rla);
-static S_RLA_INDX: &[MicroOp] = &rmw_indx(CPU6502::op_rla);
-static S_RLA_INDY: &[MicroOp] = &rmw_indy(CPU6502::op_rla);
-
-// SRE (LSR + EOR)
-static S_SRE_ZP: &[MicroOp] = &rmw_zp(CPU6502::op_sre);
-static S_SRE_ZPX: &[MicroOp] = &rmw_zpx(CPU6502::op_sre);
-static S_SRE_ABS: &[MicroOp] = &rmw_abs(CPU6502::op_sre);
-static S_SRE_ABSX: &[MicroOp] = &rmw_absx(CPU6502::op_sre);
-static S_SRE_ABSY: &[MicroOp] = &rmw_absy(CPU6502::op_sre);
-static S_SRE_INDX: &[MicroOp] = &rmw_indx(CPU6502::op_sre);
-static S_SRE_INDY: &[MicroOp] = &rmw_indy(CPU6502::op_sre);
-
-// RRA (ROR + ADC)
-static S_RRA_ZP: &[MicroOp] = &rmw_zp(CPU6502::op_rra);
-static S_RRA_ZPX: &[MicroOp] = &rmw_zpx(CPU6502::op_rra);
-static S_RRA_ABS: &[MicroOp] = &rmw_abs(CPU6502::op_rra);
-static S_RRA_ABSX: &[MicroOp] = &rmw_absx(CPU6502::op_rra);
-static S_RRA_ABSY: &[MicroOp] = &rmw_absy(CPU6502::op_rra);
-static S_RRA_INDX: &[MicroOp] = &rmw_indx(CPU6502::op_rra);
-static S_RRA_INDY: &[MicroOp] = &rmw_indy(CPU6502::op_rra);
-
-// DCP (DEC + CMP)
-static S_DCP_ZP: &[MicroOp] = &rmw_zp(CPU6502::op_dcp);
-static S_DCP_ZPX: &[MicroOp] = &rmw_zpx(CPU6502::op_dcp);
-static S_DCP_ABS: &[MicroOp] = &rmw_abs(CPU6502::op_dcp);
-static S_DCP_ABSX: &[MicroOp] = &rmw_absx(CPU6502::op_dcp);
-static S_DCP_ABSY: &[MicroOp] = &rmw_absy(CPU6502::op_dcp);
-static S_DCP_INDX: &[MicroOp] = &rmw_indx(CPU6502::op_dcp);
-static S_DCP_INDY: &[MicroOp] = &rmw_indy(CPU6502::op_dcp);
-
-// ISC (INC + SBC)
-static S_ISC_ZP: &[MicroOp] = &rmw_zp(CPU6502::op_isc);
-static S_ISC_ZPX: &[MicroOp] = &rmw_zpx(CPU6502::op_isc);
-static S_ISC_ABS: &[MicroOp] = &rmw_abs(CPU6502::op_isc);
-static S_ISC_ABSX: &[MicroOp] = &rmw_absx(CPU6502::op_isc);
-static S_ISC_ABSY: &[MicroOp] = &rmw_absy(CPU6502::op_isc);
-static S_ISC_INDX: &[MicroOp] = &rmw_indx(CPU6502::op_isc);
-static S_ISC_INDY: &[MicroOp] = &rmw_indy(CPU6502::op_isc);
+rmw7!(SLO, CPU6502::op_slo); // ASL + ORA
+rmw7!(RLA, CPU6502::op_rla); // ROL + AND
+rmw7!(SRE, CPU6502::op_sre); // LSR + EOR
+rmw7!(RRA, CPU6502::op_rra); // ROR + ADC
+rmw7!(DCP, CPU6502::op_dcp); // DEC + CMP
+rmw7!(ISC, CPU6502::op_isc); // INC + SBC
 
 // LAX (LDA + LDX)
 static S_LAX_ZP: &[MicroOp] = &seq_zp(CPU6502::op_lax);
