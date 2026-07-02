@@ -16,7 +16,9 @@ pub enum MemoryExpansion {
     ThreeK,
     EightK,
     SixteenK,
+    TwentyFourK,
     ThirtyTwoK,
+    FortyK,
 }
 
 fn build_ram_pages(expansion: MemoryExpansion) -> [bool; 256] {
@@ -29,7 +31,16 @@ fn build_ram_pages(expansion: MemoryExpansion) -> [bool; 256] {
         MemoryExpansion::ThreeK => pages[0x04..=0x0F].fill(true),
         MemoryExpansion::EightK => pages[0x20..=0x3F].fill(true),
         MemoryExpansion::SixteenK => pages[0x20..=0x5F].fill(true),
-        MemoryExpansion::ThirtyTwoK => pages[0x20..=0x7F].fill(true),
+        MemoryExpansion::TwentyFourK => pages[0x20..=0x7F].fill(true),
+        MemoryExpansion::ThirtyTwoK => {
+            pages[0x04..=0x0F].fill(true);
+            pages[0x20..=0x7F].fill(true);
+        }
+        MemoryExpansion::FortyK => {
+            pages[0x04..=0x0F].fill(true);
+            pages[0x20..=0x7F].fill(true);
+            pages[0xA0..=0xBF].fill(true);
+        }
     }
     pages
 }
@@ -214,10 +225,84 @@ mod tests {
     }
 
     #[rstest]
+    fn test_24k_expansion_ram_at_2000(mut memory: Memory) {
+        memory.set_expansion(MemoryExpansion::TwentyFourK);
+
+        memory.write_byte(0x2000, 0x42);
+        assert_eq!(memory.read_byte(0x2000), 0x42);
+    }
+
+    #[rstest]
+    fn test_24k_expansion_range_end(mut memory: Memory) {
+        memory.set_expansion(MemoryExpansion::TwentyFourK);
+
+        memory.write_byte(0x7FFF, 0xAB);
+        assert_eq!(memory.read_byte(0x7FFF), 0xAB);
+    }
+
+    #[rstest]
+    fn test_24k_expansion_no_3k_zone(mut memory: Memory) {
+        memory.set_expansion(MemoryExpansion::TwentyFourK);
+
+        memory.data[0x0400] = 0xFF;
+        memory.write_byte(0x0400, 0x00);
+        assert_eq!(memory.read_byte(0x0400), 0xFF);
+    }
+
+    #[rstest]
     fn test_32k_expansion_ram_at_7fff(mut memory: Memory) {
         memory.set_expansion(MemoryExpansion::ThirtyTwoK);
 
         memory.write_byte(0x7FFF, 0xAB);
         assert_eq!(memory.read_byte(0x7FFF), 0xAB);
+    }
+
+    #[rstest]
+    fn test_32k_expansion_includes_3k_zone(mut memory: Memory) {
+        memory.set_expansion(MemoryExpansion::ThirtyTwoK);
+
+        memory.write_byte(0x0400, 0x42);
+        assert_eq!(memory.read_byte(0x0400), 0x42);
+    }
+
+    #[rstest]
+    fn test_40k_expansion_block_5_ram(mut memory: Memory) {
+        memory.set_expansion(MemoryExpansion::FortyK);
+
+        memory.write_byte(0xA000, 0x42);
+        assert_eq!(memory.read_byte(0xA000), 0x42);
+    }
+
+    #[rstest]
+    fn test_40k_expansion_block_5_range_end(mut memory: Memory) {
+        memory.set_expansion(MemoryExpansion::FortyK);
+
+        memory.write_byte(0xBFFF, 0xAB);
+        assert_eq!(memory.read_byte(0xBFFF), 0xAB);
+    }
+
+    #[rstest]
+    fn test_40k_expansion_includes_3k_zone(mut memory: Memory) {
+        memory.set_expansion(MemoryExpansion::FortyK);
+
+        memory.write_byte(0x0400, 0x42);
+        assert_eq!(memory.read_byte(0x0400), 0x42);
+    }
+
+    #[rstest]
+    fn test_40k_expansion_includes_blocks_1_to_3(mut memory: Memory) {
+        memory.set_expansion(MemoryExpansion::FortyK);
+
+        memory.write_byte(0x7000, 0x99);
+        assert_eq!(memory.read_byte(0x7000), 0x99);
+    }
+
+    #[rstest]
+    fn test_40k_expansion_no_ram_below_block_5(mut memory: Memory) {
+        memory.set_expansion(MemoryExpansion::FortyK);
+
+        memory.data[0x9000] = 0xFF;
+        memory.write_byte(0x9000, 0x00);
+        assert_eq!(memory.read_byte(0x9000), 0xFF);
     }
 }

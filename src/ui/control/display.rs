@@ -123,16 +123,18 @@ const MEM_HEADER_Y: i32 = CONTENT_START_Y + ROW_H;
 const MEM_RADIO_X: i32 = MARGIN;
 const MEM_RADIO_START_Y: i32 = MEM_HEADER_Y + ROW_H + 4;
 const MEM_RADIO_LABEL_X: i32 = MEM_RADIO_X + RADIO_SIZE + 8;
-const MEM_BTN_Y: i32 = MEM_RADIO_START_Y + 5 * RADIO_SPACING + ROW_H;
+const MEM_BTN_Y: i32 = MEM_RADIO_START_Y + 7 * RADIO_SPACING + ROW_H;
 const MEM_BTN_W: i32 = 12 * CHAR_W * SCALE;
 const MEM_BTN_H: i32 = ROW_H + 4;
 
-const MEM_RADIO_OPTIONS: [(MemoryExpansion, &str); 5] = [
+const MEM_RADIO_OPTIONS: [(MemoryExpansion, &str); 7] = [
     (MemoryExpansion::None, "None"),
     (MemoryExpansion::ThreeK, "3K"),
     (MemoryExpansion::EightK, "8K"),
     (MemoryExpansion::SixteenK, "16K"),
+    (MemoryExpansion::TwentyFourK, "24K"),
     (MemoryExpansion::ThirtyTwoK, "32K"),
+    (MemoryExpansion::FortyK, "40K"),
 ];
 
 const BG_COLOR: [u8; 4] = [30, 30, 30, 255];
