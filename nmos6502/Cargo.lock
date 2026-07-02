@@ -106,17 +106,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
 
 [[package]]
-name = "nmos6502"
-version = "0.1.0"
-dependencies = [
- "paste",
- "rstest",
- "serde",
- "serde_json",
- "sigpipe",
-]
-
-[[package]]
 name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -226,6 +215,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
 dependencies = [
  "semver",
+]
+
+[[package]]
+name = "rusty-nmos6502"
+version = "0.1.1"
+dependencies = [
+ "paste",
+ "rstest",
+ "serde",
+ "serde_json",
+ "sigpipe",
 ]
 
 [[package]]

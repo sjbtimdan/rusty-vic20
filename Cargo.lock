@@ -1228,14 +1228,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf5a574dadd7941adeaa71823ecba5e28331b8313fb2e1c6a5c7e5981ea53ad6"
 
 [[package]]
-name = "nmos6502"
-version = "0.1.0"
-dependencies = [
- "paste",
- "sigpipe",
-]
-
-[[package]]
 name = "num-derive"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2095,6 +2087,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
+name = "rusty-nmos6502"
+version = "0.1.1"
+dependencies = [
+ "paste",
+ "sigpipe",
+]
+
+[[package]]
 name = "rusty-vic20"
 version = "0.1.0"
 dependencies = [
@@ -2105,11 +2105,11 @@ dependencies = [
  "image",
  "log",
  "maplit",
- "nmos6502",
  "pixels",
  "rfd",
  "ringbuf",
  "rstest",
+ "rusty-nmos6502",
  "sigpipe",
  "unimock",
  "winit",

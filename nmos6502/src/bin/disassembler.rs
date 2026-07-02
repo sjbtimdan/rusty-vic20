@@ -3,6 +3,7 @@ use std::env::args;
 
 // Example: cargo run -p nmos6502 --bin disassembler ./data/kernal.901486-07.bin E000 FF72 | head -10
 fn main() {
+    #[cfg(unix)]
     sigpipe::reset(); // so <disassemble> | head -10 will work.
     let filename = args()
         .nth(1)

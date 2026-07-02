@@ -39,6 +39,6 @@ cargo +nightly run --release --bin vic20
 Run the disassembler on a binary file:
 
 ```
-cargo run -p nmos6502 --bin disassembler -- data/somefile.bin
+cargo run -p rusty-nmos6502 --bin disassembler -- data/somefile.bin
 ```
 

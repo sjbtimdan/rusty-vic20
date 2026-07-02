@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-nmos6502 = { path = "nmos6502" }
+nmos6502 = { path = "nmos6502", package = "rusty-nmos6502" }
 arboard = "3"
 cpal = "0.18.1"
 ringbuf = "0.5.0"

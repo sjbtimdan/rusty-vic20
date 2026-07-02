@@ -1,16 +1,16 @@
-# AGENTS.md — `nmos6502` crate
+# AGENTS.md — `rusty-nmos6502` crate
 
-Standalone NMOS 6502 CPU crate (`nmos6502/`). Not a workspace member — the root crate references it via `path = "nmos6502"` in `Cargo.toml`. Always use `-p nmos6502` to target it.
+Standalone NMOS 6502 CPU crate (`nmos6502/`). Published on crates.io as `rusty-nmos6502`. Not a workspace member — the root crate references it via `path = "nmos6502"` in `Cargo.toml`. Use `-p rusty-nmos6502` to target it from the root.
 
 ## Build / Test / Lint / Bench
 
 ```bash
-cargo build -p nmos6502
-cargo test -p nmos6502                           # all tests (no ROMs needed)
-cargo test -p nmos6502 --test harte_tests a9     # single Harte opcode (hex substring)
-cargo clippy -p nmos6502                         # fix all warnings
-cargo +nightly bench -p nmos6502                 # nightly-only (uses #![feature(test)])
-cargo +nightly fmt                               # root-level rustfmt.toml with imports_granularity="Crate"
+cargo build -p rusty-nmos6502
+cargo test -p rusty-nmos6502                           # all tests (no ROMs needed)
+cargo test -p rusty-nmos6502 --test harte_tests a9     # single Harte opcode (hex substring)
+cargo clippy -p rusty-nmos6502                         # fix all warnings
+cargo +nightly bench -p rusty-nmos6502                 # nightly-only (uses #![feature(test)])
+cargo +nightly fmt                                     # root-level rustfmt.toml with imports_granularity="Crate"
 ```
 
 Formatting and import style come from root `rustfmt.toml`. No crate-local config.
@@ -78,7 +78,7 @@ Shared helpers in `tests/common/mod.rs`: `assemble_program()`, `load_program()`,
 
 ## Key Gotchas
 
-- **`-p nmos6502` everywhere** — not a workspace member, so `cargo test` (without `-p`) tests the root crate only.
+- **`-p rusty-nmos6502` everywhere** — not a workspace member, so `cargo test` (without `-p`) tests the root crate only.
 - **`cpu.cycle()` ≠ one instruction** — it's one micro-op. Instructions take 2–8 calls depending on opcode/addressing/page-cross/branch.
 - **No ROMs or external files needed** for any test — all data is bundled in `external/` or generated inline.
 - **Two `Addressable` traits in the repo** — this crate's `nmos6502::Addressable` uses `&mut self` on reads. The root crate has its own `crate::hardware::addressable::Addressable` with `&self`. Don't confuse them.

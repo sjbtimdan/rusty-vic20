@@ -10,15 +10,15 @@ OpenCode configuration in `.opencode/`.
 
 - Build: `cargo build`
 - Test: `cargo test` (unit-only: `cargo test --lib`; integration: `cargo test --test '*'` — requires ROM files in `data/`)
-- Test nmos6502 crate: `cargo test -p nmos6502`
-- Test single Harte opcode: `cargo test -p nmos6502 --test harte_tests a9` (hex substring of opcode)
+- Test nmos6502 crate: `cargo test -p rusty-nmos6502`
+- Test single Harte opcode: `cargo test -p rusty-nmos6502 --test harte_tests a9` (hex substring of opcode)
 - Format: `cargo +nightly fmt` — **must use nightly**; `cargo fmt` errors due to `unstable_features = true` in `rustfmt.toml`
 - Lint: `cargo clippy` — run after every change and fix all warnings
-- Lint nmos6502: `cargo clippy -p nmos6502`
+- Lint nmos6502: `cargo clippy -p rusty-nmos6502`
 - Bench: `cargo +nightly bench` (requires ROM files in `data/`, uses `#![feature(test)]`)
-- Bench nmos6502: `cargo +nightly bench -p nmos6502`
+- Bench nmos6502: `cargo +nightly bench -p rusty-nmos6502`
 - Run emulator: `cargo run --bin vic20` (logging: `RUST_LOG=info cargo run --bin vic20` or `vic20-info-log.sh`)
-- Run disassembler: `cargo run -p nmos6502 --bin disassembler -- <file> [base_address] [disassemble_start_addr]`
+- Run disassembler: `cargo run -p rusty-nmos6502 --bin disassembler -- <file> [base_address] [disassemble_start_addr]`
 
 ## Project Structure
 
