@@ -11,12 +11,6 @@ pub struct MicroOp {
     pub internal: InternalOp,
 }
 
-impl MicroOp {
-    pub const fn new(bus: BusOp, internal: InternalOp) -> Self {
-        Self { bus, internal }
-    }
-}
-
 /// What appears on the address/data bus during one CPU cycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(non_camel_case_types)]

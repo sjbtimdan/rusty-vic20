@@ -45,6 +45,15 @@ fn page_cross(base: u16, index: u8) -> (u16, bool) {
     (addr, (base & 0xFF00) != (addr & 0xFF00))
 }
 
+/// Macro for branch condition wrappers.
+macro_rules! branch_op {
+    ($name:ident, $cond:expr) => {
+        pub fn $name(&mut self) {
+            self.branch_if($cond);
+        }
+    };
+}
+
 impl CPU6502 {
     /// Returns `true` when the CPU has no pending micro-ops and is ready to
     /// fetch the next instruction. Useful for determining when a given value of
@@ -180,37 +189,31 @@ impl CPU6502 {
     pub fn op_set_addr_abs(&mut self) {
         self.addr = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
     }
-    pub fn op_set_addr_absx(&mut self) {
+    /// Shared helper: add `index` to the absolute address formed from operands,
+    /// set `addr` to the page-wrapped result, and optionally skip the next
+    /// micro-op when no page cross occurs (for read instructions).
+    fn set_addr_abs_indexed(&mut self, index: u8, skip_on_no_cross: bool) {
         let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
-        let full = base.wrapping_add(self.registers.x as u16);
+        let full = base.wrapping_add(index as u16);
         self.page_crossed = (base & 0xFF00) != (full & 0xFF00);
         self.addr = (base & 0xFF00) | (full as u8 as u16);
-        if !self.page_crossed {
+        if skip_on_no_cross && !self.page_crossed {
             self.sequence_index += 1;
         }
+    }
+    pub fn op_set_addr_absx(&mut self) {
+        self.set_addr_abs_indexed(self.registers.x, true);
     }
     pub fn op_set_addr_absy(&mut self) {
-        let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
-        let full = base.wrapping_add(self.registers.y as u16);
-        self.page_crossed = (base & 0xFF00) != (full & 0xFF00);
-        self.addr = (base & 0xFF00) | (full as u8 as u16);
-        if !self.page_crossed {
-            self.sequence_index += 1;
-        }
+        self.set_addr_abs_indexed(self.registers.y, true);
     }
-    /// Like `op_set_addr_absx` but never skips the next micro‑op (for writes/RMW).
+    /// Like abs,X but never skips the next micro‑op (for writes/RMW).
     pub fn op_set_addr_absx_full(&mut self) {
-        let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
-        let full = base.wrapping_add(self.registers.x as u16);
-        self.page_crossed = (base & 0xFF00) != (full & 0xFF00);
-        self.addr = (base & 0xFF00) | (full as u8 as u16);
+        self.set_addr_abs_indexed(self.registers.x, false);
     }
-    /// Like `op_set_addr_absy` but never skips the next micro‑op (for writes/RMW).
+    /// Like abs,Y but never skips the next micro‑op (for writes/RMW).
     pub fn op_set_addr_absy_full(&mut self) {
-        let base = (self.operands[1] as u16) << 8 | self.operands[0] as u16;
-        let full = base.wrapping_add(self.registers.y as u16);
-        self.page_crossed = (base & 0xFF00) != (full & 0xFF00);
-        self.addr = (base & 0xFF00) | (full as u8 as u16);
+        self.set_addr_abs_indexed(self.registers.y, false);
     }
     pub fn op_fix_addr_cross(&mut self) {
         if self.page_crossed {
@@ -626,30 +629,14 @@ impl CPU6502 {
         self.addr = 0xFFFE;
     }
 
-    pub fn op_branch_cc(&mut self) {
-        self.branch_if(|r| !r.is_flag_set(crate::registers::CARRY))
-    }
-    pub fn op_branch_cs(&mut self) {
-        self.branch_if(|r| r.is_flag_set(crate::registers::CARRY))
-    }
-    pub fn op_branch_eq(&mut self) {
-        self.branch_if(|r| r.is_flag_set(crate::registers::ZERO))
-    }
-    pub fn op_branch_ne(&mut self) {
-        self.branch_if(|r| !r.is_flag_set(crate::registers::ZERO))
-    }
-    pub fn op_branch_mi(&mut self) {
-        self.branch_if(|r| r.is_flag_set(crate::registers::NEGATIVE))
-    }
-    pub fn op_branch_pl(&mut self) {
-        self.branch_if(|r| !r.is_flag_set(crate::registers::NEGATIVE))
-    }
-    pub fn op_branch_vc(&mut self) {
-        self.branch_if(|r| !r.is_flag_set(crate::registers::OVERFLOW))
-    }
-    pub fn op_branch_vs(&mut self) {
-        self.branch_if(|r| r.is_flag_set(crate::registers::OVERFLOW))
-    }
+    branch_op!(op_branch_cc, |r| !r.is_flag_set(crate::registers::CARRY));
+    branch_op!(op_branch_cs, |r| r.is_flag_set(crate::registers::CARRY));
+    branch_op!(op_branch_eq, |r| r.is_flag_set(crate::registers::ZERO));
+    branch_op!(op_branch_ne, |r| !r.is_flag_set(crate::registers::ZERO));
+    branch_op!(op_branch_mi, |r| r.is_flag_set(crate::registers::NEGATIVE));
+    branch_op!(op_branch_pl, |r| !r.is_flag_set(crate::registers::NEGATIVE));
+    branch_op!(op_branch_vc, |r| !r.is_flag_set(crate::registers::OVERFLOW));
+    branch_op!(op_branch_vs, |r| r.is_flag_set(crate::registers::OVERFLOW));
 
     pub fn op_jmp_abs(&mut self) {
         self.addr = (self.operands[1] as u16) << 8 | self.operands[0] as u16;

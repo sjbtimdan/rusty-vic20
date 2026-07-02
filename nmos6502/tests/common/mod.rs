@@ -11,14 +11,17 @@ pub fn assemble_program(source: &str, origin: u16) -> (Vec<u8>, HashMap<String, 
     assemble(source, origin, None).expect("assembly failed")
 }
 
+/// Load assembled bytes (from `assemble_program` with origin 0) into RAM and
+/// set PC to `entry_point`.  Bytes are placed at their absolute addresses
+/// (matching the assembly origin — currently always 0 for these helpers).
 #[allow(dead_code)]
-pub fn load_program(bytes: &[u8], start_addr: u16) -> (CPU6502, Ram) {
+pub fn load_program(bytes: &[u8], entry_point: u16) -> (CPU6502, Ram) {
     let mut cpu = CPU6502::default();
     let mut mem = Ram::new();
     for (i, &b) in bytes.iter().enumerate() {
         mem.write_byte(i as u16, b);
     }
-    cpu.registers.pc = start_addr;
+    cpu.registers.pc = entry_point;
     (cpu, mem)
 }
 

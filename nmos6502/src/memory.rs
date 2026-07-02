@@ -9,27 +9,9 @@ pub trait Addressable {
     fn read_byte(&mut self, address: u16) -> u8;
     fn write_byte(&mut self, address: u16, value: u8);
 
-    fn read_word(&mut self, address: u16) -> u16 {
-        let lo = self.read_byte(address) as u16;
-        let hi = self.read_byte(address.wrapping_add(1)) as u16;
-        (hi << 8) | lo
-    }
-
+    /// Convenience: read a zero-page byte (u8 address widened to u16).
     fn read_zp_byte(&mut self, address: u8) -> u8 {
         self.read_byte(address as u16)
-    }
-
-    fn read_zp_word(&mut self, address: u8) -> u16 {
-        self.read_word(address as u16)
-    }
-
-    fn write_word(&mut self, address: u16, value: u16) {
-        self.write_byte(address, value as u8);
-        self.write_byte(address.wrapping_add(1), (value >> 8) as u8);
-    }
-
-    fn write_zp_byte(&mut self, address: u8, value: u8) {
-        self.write_byte(address as u16, value);
     }
 }
 
