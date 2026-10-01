@@ -6,20 +6,19 @@ edition = "2024"
 [dependencies]
 nmos6502 = { path = "nmos6502", package = "rusty-nmos6502" }
 arboard = "3"
-cpal = "0.18.1"
+cpal = "0.18.2"
 ringbuf = "0.5.1"
 env_logger = "0.11.11"
 font8x8 = "0.3.1"
 image = { version = "0.25.10", default-features = false, features = ["png"] }
-log = "0.4.33"
-maplit = "1.0.2"
+log = "0.4.34"
 pixels = "0.17.2"
 rfd = "0.17.2"
 sigpipe = "0.1.3"
 winit = "0.30.13"
 
 [dev-dependencies]
-rstest = "0.26.1"
+rstest = "0.27.0"
 unimock = "0.6.8"
 
 [[bench]]
